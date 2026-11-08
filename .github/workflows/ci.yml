@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cmake:
+    name: ${{ matrix.os }} (CMake)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: CLI smoke test
+        shell: bash
+        run: |
+          exe=build/omnichem; [ -f build/Release/omnichem.exe ] && exe=build/Release/omnichem.exe
+          [ -f build/omnichem.exe ] && exe=build/omnichem.exe
+          "$exe" canon 'C1=CC=C(C=C1)/C=C/C(=O)O'
+          "$exe" reaction '1 C + 2 O=O -> 1 O=C=O + 2 O'
+          "$exe" kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7 > kinetics.txt
+          head -4 kinetics.txt
+
+      - name: Python binding smoke test
+        shell: bash
+        run: |
+          python -I -c "
+          import sys; sys.path.insert(0, 'python'); import omnichem
+          print('loaded', omnichem.library_path())
+          assert omnichem.canonical('C1=CC=CC=C1')['canonical'] == 'c1ccccc1'
+          r = omnichem.kinetics('data/mechanisms/h2o2.ocm', {'H2': 2, 'O2': 1, 'AR': 7}, 1000, 1e5, t_end=1e-3)
+          assert r['ignition_time'] and r['samples'][-1]['T'] > 2500
+          print('ok', r['ignition_time'])
+          "
+
+  mingw:
+    name: windows-latest (MSYS2 MinGW, Makefile)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: make mingw-w64-ucrt-x86_64-gcc
+      - name: Build and test
+        run: make -j4 all && make test

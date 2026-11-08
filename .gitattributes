@@ -1,0 +1,6 @@
+# Normalise text files; keep script line endings correct on each platform.
+* text=auto
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+*.ocm  text eol=lf
+Makefile text eol=lf

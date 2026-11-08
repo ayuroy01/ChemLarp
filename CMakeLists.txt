@@ -1,0 +1,82 @@
+# OmniChem Core — cross-platform build (Windows: MSVC or clang-cl; macOS: Apple clang; Linux: GCC/Clang).
+#
+#   cmake -S . -B build
+#   cmake --build build --config Release --parallel
+#   ctest --test-dir build -C Release --output-on-failure
+cmake_minimum_required(VERSION 3.20)
+project(omnichem_core VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# Put the DLL / dylib, CLI and tests side by side (Windows finds DLLs next to the .exe).
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+option(OMNICHEM_BUILD_TESTS "Build the test suite" ON)
+option(OMNICHEM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+add_library(omnichem_warnings INTERFACE)
+if(MSVC)
+  # /utf-8: sources and CLI output contain UTF-8; /permissive-: standards conformance.
+  target_compile_options(omnichem_warnings INTERFACE /W4 /utf-8 /permissive- /Zc:__cplusplus /EHsc
+                         /wd4244 /wd4267 /wd4305)  # implicit numeric narrowing is intentional in hot loops
+  target_compile_definitions(omnichem_warnings INTERFACE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+  if(OMNICHEM_WARNINGS_AS_ERRORS)
+    target_compile_options(omnichem_warnings INTERFACE /WX)
+  endif()
+else()
+  target_compile_options(omnichem_warnings INTERFACE -Wall -Wextra -Wpedantic -Wshadow)
+  if(OMNICHEM_WARNINGS_AS_ERRORS)
+    target_compile_options(omnichem_warnings INTERFACE -Werror)
+  endif()
+endif()
+
+file(GLOB OMNICHEM_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+
+# Static library: linked into the CLI and tests.
+add_library(omnichem_static STATIC ${OMNICHEM_SOURCES})
+target_include_directories(omnichem_static PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_compile_definitions(omnichem_static PUBLIC OMNICHEM_STATIC)
+target_link_libraries(omnichem_static PRIVATE omnichem_warnings)
+
+# Shared library: the C ABI for Python (ctypes), Node and other FFI consumers.
+#   Windows: omnichem.dll (+ omnichem.lib import library)   macOS: libomnichem.dylib   Linux: libomnichem.so
+add_library(omnichem SHARED ${OMNICHEM_SOURCES})
+target_include_directories(omnichem PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_compile_definitions(omnichem PRIVATE OMNICHEM_BUILD_DLL)
+target_link_libraries(omnichem PRIVATE omnichem_warnings)
+set_target_properties(omnichem PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
+if(MINGW)
+  # Self-contained DLL: no libstdc++/libgcc DLLs needed next to it.
+  target_link_options(omnichem PRIVATE -static-libgcc -static-libstdc++ -static)
+endif()
+
+add_executable(omnichem_cli src/cli/main.cpp)
+set_target_properties(omnichem_cli PROPERTIES OUTPUT_NAME omnichem)
+target_link_libraries(omnichem_cli PRIVATE omnichem_static omnichem_warnings)
+
+if(OMNICHEM_BUILD_TESTS)
+  enable_testing()
+  file(GLOB OMNICHEM_TESTS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp)
+  add_executable(omnichem_tests ${OMNICHEM_TESTS})
+  target_link_libraries(omnichem_tests PRIVATE omnichem_static omnichem_warnings)
+  target_compile_definitions(omnichem_tests PRIVATE OMNICHEM_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+  add_test(NAME omnichem_tests COMMAND omnichem_tests WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+
+include(GNUInstallDirs)
+install(TARGETS omnichem omnichem_cli
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY include/omnichem DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY data/ DESTINATION ${CMAKE_INSTALL_DATADIR}/omnichem)
