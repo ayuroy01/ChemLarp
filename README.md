@@ -105,3 +105,7 @@ docs/               ARCHITECTURE.md (design, provenance, status), MATH.md (SMILE
 ```
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for what is built versus planned, and [docs/MATH.md](docs/MATH.md) for the full SMILES → Gibbs matrix derivation.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
