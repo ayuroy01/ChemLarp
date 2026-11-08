@@ -1,11 +1,14 @@
 #include "omnichem/kinetics.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <sstream>
+#include <utility>
 
 #include "omnichem/elements.hpp"
 #include "omnichem/smiles.hpp"

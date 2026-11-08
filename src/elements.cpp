@@ -1,5 +1,7 @@
 #include "omnichem/elements.hpp"
 
+#include <array>
+
 namespace omnichem {
 namespace {
 

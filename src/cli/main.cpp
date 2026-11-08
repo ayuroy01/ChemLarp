@@ -6,21 +6,15 @@
 //   omnichem reaction "<equation>" [-T kelvin] [--json]
 //   omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-
-#include <cmath>
 #include <cstring>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "omnichem/canonical.hpp"

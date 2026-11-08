@@ -1,6 +1,8 @@
 #include "omnichem/thermo.hpp"
 
+#include <array>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <unordered_map>
 

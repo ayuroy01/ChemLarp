@@ -1,5 +1,6 @@
 #include <cmath>
 #include <string>
+#include <utility>
 
 #include "omnichem/gibbs.hpp"
 #include "omnichem/kinetics.hpp"

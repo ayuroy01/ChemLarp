@@ -1,6 +1,7 @@
 #include "omnichem/gibbs.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <string>
 

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <utility>
 
 #include "omnichem/gibbs.hpp"
 #include "omnichem/smiles.hpp"
