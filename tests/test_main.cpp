@@ -8,8 +8,6 @@ int main() {
   // Flush after every line so progress survives a hang or crash. (Not setvbuf(_IOLBF, 0):
   // the MSVC CRT rejects a zero buffer size and fast-fails the process.)
   for (const auto& c : octest::registry()) {
-    std::printf("  ....  %s\r", c.name);
-    std::fflush(stdout);
     try {
       c.fn();
       std::printf("  ok    %s\n", c.name);

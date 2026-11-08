@@ -36,6 +36,9 @@ jobs:
           "$exe" reaction '1 C + 2 O=O -> 1 O=C=O + 2 O'
           "$exe" kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7 > kinetics.txt
           head -4 kinetics.txt
+          "$exe" kinetics data/mechanisms/h2o2/chem.inp --thermo data/mechanisms/h2o2/therm.dat -T 1000 -t 1e-3 H2=2 O2=1 AR=7 > ck.txt
+          "$exe" kinetics data/mechanisms/h2o2.yaml -T 1000 -t 1e-3 H2=2 O2=1 AR=7 > yaml.txt
+          grep ignition kinetics.txt ck.txt yaml.txt
 
       - name: Python binding smoke test
         shell: bash

@@ -212,14 +212,16 @@ char* oc_canonical_smiles_json(const char* smiles, unsigned n_random, uint64_t s
   });
 }
 
-char* oc_kinetics_json(const char* mechanism_text, const char* model, double temperature_K, double pressure_Pa,
+char* oc_kinetics_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+                       const char* model, double temperature_K, double pressure_Pa,
                        const char* const* names, const double* moles, size_t count, double t_end, size_t n_samples,
                        double rtol) {
   if (!mechanism_text || !model || ((!names || !moles) && count > 0)) return nullptr;
   return guarded([&] {
     Diagnostics d;
     std::string out = "{\"ok\":";
-    auto mech = parse_mechanism(mechanism_text, d);
+    auto mech = parse_any_mechanism(mechanism_text, thermo_text ? thermo_text : "", smiles_map_text ? smiles_map_text : "",
+                                    MechanismFormat::Auto, d);
     auto mm = reactor_model_from_string(model);
     if (!mm) d.error(DiagCode::InvalidReactorSetup, std::string("unknown reactor model '") + model + "'");
     ReactorResult r;

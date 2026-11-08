@@ -80,7 +80,8 @@ _oc_free_string = _sig("oc_free_string", None, ctypes.c_void_p)
 _oc_version = _sig("oc_version", ctypes.c_char_p)
 _oc_parse = _sig("oc_parse_smiles_json", ctypes.c_void_p, ctypes.c_char_p)
 _oc_canon = _sig("oc_canonical_smiles_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint, ctypes.c_uint64)
-_oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double,
+_oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                    ctypes.c_char_p, ctypes.c_double,
                     ctypes.c_double, _c_char_pp, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_double,
                     ctypes.c_size_t, ctypes.c_double)
 _oc_reaction = _sig("oc_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
@@ -144,18 +145,30 @@ def canonical(smiles: str, n_random: int = 0, seed: int = 1) -> dict:
     return r
 
 
+def _text_or_file(value: str | None) -> bytes | None:
+    if value is None:
+        return None
+    if "\n" not in value and os.path.exists(value):
+        return Path(value).read_bytes()
+    return value.encode()
+
+
 def kinetics(mechanism: str, feed: dict[str, float], temperature_K: float, pressure_Pa: float = 101325.0,
-             t_end: float = 1e-3, model: str = "adiabatic-v", samples: int = 50, rtol: float = 1e-8) -> dict:
-    """Integrate a batch reactor. `mechanism` is .ocm text or a path to an .ocm file.
+             t_end: float = 1e-3, model: str = "adiabatic-v", samples: int = 50, rtol: float = 1e-8,
+             thermo: str | None = None, smiles: str | None = None) -> dict:
+    """Integrate a batch reactor.
+
+    `mechanism` is .ocm, CHEMKIN-II or Cantera YAML (text or a file path; format detected
+    from content). For CHEMKIN, `thermo` is therm.dat and `smiles` an optional NAME SMILES map
+    (both text or paths).
 
     Returns {'species', 'samples': [{'t','T','P','n'}], 'ignition_time', 'stats', 'diagnostics'}.
     Raises OmniChemError on invalid mechanisms or setups.
     """
-    if "\n" not in mechanism and os.path.exists(mechanism):
-        mechanism = Path(mechanism).read_text()
     names = (ctypes.c_char_p * len(feed))(*[k.encode() for k in feed])
     moles = (ctypes.c_double * len(feed))(*[float(v) for v in feed.values()])
-    r = _take_json(_oc_kinetics(mechanism.encode(), model.encode(), temperature_K, pressure_Pa, names, moles,
+    r = _take_json(_oc_kinetics(_text_or_file(mechanism), _text_or_file(thermo), _text_or_file(smiles), model.encode(),
+                                temperature_K, pressure_Pa, names, moles,
                                 len(feed), t_end, samples, rtol))
     if not r["ok"]:
         raise OmniChemError(r["diagnostics"])

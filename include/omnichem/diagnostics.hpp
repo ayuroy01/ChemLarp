@@ -66,6 +66,8 @@ enum class DiagCode : std::uint16_t {
   InvalidReactorSetup,
   StepSizeUnderflow,
   TooManySteps,
+  DuplicateReaction,    // warning: same reaction twice without DUPLICATE (or DUPLICATE without a partner)
+  CompositionMismatch,  // SMILES structure and thermo-card composition disagree
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

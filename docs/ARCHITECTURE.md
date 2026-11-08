@@ -114,8 +114,11 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Mass-action rates, modified Arrhenius, third bodies, detailed-balance reverse rates, analytic Jacobian | **done**; relaxes exactly to the Gibbs equilibrium (tested) |
 | Batch reactors: isothermal/adiabatic × constant V/P, ignition delay | **done** |
 | Variable-order (1–5) variable-step BDF with dense output | **done**; Robertson, Prothero–Robinson, ignition benchmarks |
-| Fall-off (Lindemann/Troe), PLOG, explicit REV, FORD/RORD | planned (`UnsupportedReactionType` today) |
-| CHEMKIN-II/Cantera YAML import with a name→SMILES map | planned |
+| Fall-off (Lindemann, Troe), chemically activated (HIGH), specific colliders `(+AR)`, PLOG, explicit REV, DUPLICATE | **done**, with analytic Jacobians (Troe dF/dPr, PLOG dk/dP) |
+| CHEMKIN-II import (chem.inp + fixed-column NASA-7 therm.dat, inline THERMO, optional NAME→SMILES map) | **done**; composition-only species when no SMILES is given |
+| Cantera YAML import (NASA7; elementary, three-body, falloff/Troe, chemically-activated, pressure-dependent-Arrhenius) | **done** (built-in YAML subset reader) |
+| Cross-format check: one mechanism as .ocm / CHEMKIN / YAML gives identical rates | **done** (`scripts/gen_h2o2_mechanism.py`, test `three_formats_give_identical_rates`) |
+| SRI fall-off, Chebyshev, FORD/RORD, NASA9 thermo, ionic species | planned (`UnsupportedReactionType` today) |
 | Sparse LU for large mechanisms (>~300 species) | planned; dense LU is O(S³) per step |
 | UFF → MMFF94 → OPLS force fields; velocity-Verlet MD | planned |
 | Docking scoring, FEP/MBAR | planned |

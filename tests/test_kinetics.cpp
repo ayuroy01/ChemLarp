@@ -268,7 +268,7 @@ TEST(mechanism_error_vectors) {
   CHECK(mech_errors(sp + "reactions\n H2 + X => H2O 1 0 0\nend\n").contains(DiagCode::UnknownSpecies));
   CHECK(mech_errors(sp + "reactions\n 2H2 + O2 => 2H2O -1 0 0\nend\n").contains(DiagCode::InvalidRateParameter));
   CHECK(mech_errors(sp + "reactions\n 2H2 + O2 => 2H2O 1 0\nend\n").contains(DiagCode::MechanismSyntax));
-  CHECK(mech_errors(sp + "reactions\n H2 + O2 (+M) => H2O 1 0 0\nend\n").contains(DiagCode::UnsupportedReactionType));
+  CHECK(mech_errors(sp + "reactions\n H2 + O2 (+M) => H2O 1 0 0\nend\n").contains(DiagCode::MechanismSyntax));  // (+M) on one side
   CHECK(mech_errors(sp + "reactions\n H2 + M => H2 + O2 1 0 0\nend\n").contains(DiagCode::MechanismSyntax));
   CHECK(mech_errors("species\n A O\n B [OH2]\nend\n").contains(DiagCode::DuplicateSpecies));  // same structure
   CHECK(mech_errors("species\n A O\n A CCO\nend\n").contains(DiagCode::DuplicateSpecies));

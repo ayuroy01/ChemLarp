@@ -5,13 +5,11 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
-#include <fstream>
 #include <optional>
-#include <sstream>
 #include <utility>
+#include <vector>
 
 #include "omnichem/elements.hpp"
-#include "omnichem/smiles.hpp"
 
 namespace omnichem {
 
@@ -31,48 +29,6 @@ std::int32_t Mechanism::find(std::string_view name) const {
 }
 
 namespace {
-
-// ---- parsing -----------------------------------------------------------------
-
-struct Tok {
-  std::string text;
-  std::size_t pos;  // offset in the whole file
-};
-
-std::vector<Tok> split_ws(std::string_view line, std::size_t base) {
-  std::vector<Tok> out;
-  std::size_t i = 0;
-  while (i < line.size()) {
-    while (i < line.size() && std::isspace(static_cast<unsigned char>(line[i]))) ++i;
-    if (i >= line.size()) break;
-    const std::size_t s = i;
-    while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i]))) ++i;
-    out.push_back({std::string(line.substr(s, i - s)), base + s});
-  }
-  return out;
-}
-
-std::string lower(std::string s) {
-  for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  return s;
-}
-
-bool parse_number(const std::string& s, double& v) {
-  if (s.empty()) return false;
-  char* end = nullptr;
-  v = std::strtod(s.c_str(), &end);
-  return end == s.c_str() + s.size() && std::isfinite(v);
-}
-
-void merge(std::vector<std::pair<std::uint32_t, double>>& side) {
-  std::sort(side.begin(), side.end());
-  std::vector<std::pair<std::uint32_t, double>> out;
-  for (auto& p : side) {
-    if (!out.empty() && out.back().first == p.first) out.back().second += p.second;
-    else out.push_back(p);
-  }
-  side = std::move(out);
-}
 
 double int_pow(double c, double nu, bool& integral) {
   const double r = std::round(nu);
@@ -98,301 +54,89 @@ double dpower(double c, double nu) {
   return c > 0.0 ? nu * std::pow(c, nu - 1.0) : 0.0;
 }
 
-}  // namespace
+constexpr double kLn10 = 2.302585092994046;
 
-std::optional<Mechanism> parse_mechanism(std::string_view text, Diagnostics& diag) {
-  Mechanism m;
-  enum class Section { None, Species, Reactions } section = Section::None;
-  double ea_factor = 4.184;     // cal/mol default (CHEMKIN)
-  double volume_factor = 1e-6;  // cm3 -> m3 default (CHEMKIN)
-  const std::size_t errors_before = diag.error_count();
-  std::size_t line_no = 0, offset = 0;
-
-  while (offset <= text.size()) {
-    std::size_t eol = text.find('\n', offset);
-    if (eol == std::string_view::npos) eol = text.size();
-    std::string_view line = text.substr(offset, eol - offset);
-    const std::size_t line_base = offset;
-    offset = eol + 1;
-    ++line_no;
-    // Comments: '!' anywhere, '#' only at line start or after whitespace ('#' is the SMILES triple bond).
-    std::size_t cut = line.find('!');
-    for (std::size_t c = 0; c < line.size() && c < cut; ++c)
-      if (line[c] == '#' && (c == 0 || std::isspace(static_cast<unsigned char>(line[c - 1])))) { cut = c; break; }
-    if (cut != std::string_view::npos) line = line.substr(0, cut);
-    auto toks = split_ws(line, line_base);
-    if (toks.empty()) {
-      if (eol == text.size()) break;
-      continue;
-    }
-    const std::string head = lower(toks[0].text);
-    const std::string where = "line " + std::to_string(line_no) + ": ";
-
-    if (head == "end") {
-      section = Section::None;
-      continue;
-    }
-    if (section == Section::None) {
-      if (head == "species") {
-        section = Section::Species;
-        if (toks.size() > 1) diag.error(DiagCode::MechanismSyntax, where + "put species on their own lines after 'species'").at(toks[1].pos);
-      } else if (head == "reactions") {
-        section = Section::Reactions;
-        for (std::size_t i = 1; i < toks.size(); ++i) {
-          const std::string u = lower(toks[i].text);
-          if (u == "cal/mol") ea_factor = 4.184;
-          else if (u == "kcal/mol") ea_factor = 4184.0;
-          else if (u == "j/mol") ea_factor = 1.0;
-          else if (u == "kj/mol") ea_factor = 1000.0;
-          else if (u == "k" || u == "kelvins") ea_factor = kGasConstant;
-          else if (u == "cm3" || u == "moles") volume_factor = 1e-6;
-          else if (u == "m3") volume_factor = 1.0;
-          else diag.error(DiagCode::MechanismSyntax, where + "unknown unit '" + toks[i].text + "'").at(toks[i].pos);
-        }
-      } else {
-        diag.error(DiagCode::MechanismSyntax, where + "expected 'species' or 'reactions' section").at(toks[0].pos);
-      }
-      continue;
-    }
-
-    if (section == Section::Species) {
-      if (toks.size() != 2) {
-        diag.error(DiagCode::MechanismSyntax, where + "species lines are 'NAME SMILES'").at(toks[0].pos);
-        continue;
-      }
-      if (m.find(toks[0].text) >= 0) {
-        diag.error(DiagCode::DuplicateSpecies, where + "species '" + toks[0].text + "' is declared twice").at(toks[0].pos);
-        continue;
-      }
-      const std::int32_t sp = parse_smiles(m.state, toks[1].text, diag, toks[1].pos);
-      if (sp < 0) continue;
-      for (std::size_t i = 0; i + 1 < m.state.species.size(); ++i) {
-        if (m.state.species[i].canonical_smiles == m.state.species.back().canonical_smiles) {
-          diag.error(DiagCode::DuplicateSpecies, where + "'" + toks[0].text + "' has the same structure as '" + m.names[i] +
-                                                     "' (" + m.state.species[i].canonical_smiles + ")")
-              .at(toks[1].pos);
-        }
-      }
-      m.names.push_back(toks[0].text);
-      continue;
-    }
-
-    // ---- reactions section ----
-    const bool has_arrow = line.find('=') != std::string_view::npos;
-    if (!has_arrow) {
-      // Third-body efficiencies: "H2/2.5/ H2O/12/" or "efficiencies: H2:2.5 H2O:12"
-      if (m.reactions.empty() || !m.reactions.back().third_body) {
-        diag.error(DiagCode::MechanismSyntax, where + "efficiencies must follow a third-body (+ M) reaction").at(toks[0].pos);
-        continue;
-      }
-      std::string body(line);
-      std::size_t start = 0;
-      if (lower(toks[0].text) == "efficiencies:") start = body.find(':') + 1;
-      for (char& ch : body) if (ch == '/' || ch == ':') ch = ' ';
-      auto parts = split_ws(std::string_view(body).substr(start), line_base + start);
-      if (parts.size() % 2 != 0) {
-        diag.error(DiagCode::MechanismSyntax, where + "efficiencies come in NAME value pairs").at(toks[0].pos);
-        continue;
-      }
-      for (std::size_t i = 0; i < parts.size(); i += 2) {
-        const std::int32_t sp = m.find(parts[i].text);
-        double v = 0;
-        if (sp < 0) {
-          diag.error(DiagCode::UnknownSpecies, where + "unknown species '" + parts[i].text + "' in efficiencies").at(parts[i].pos);
-        } else if (!parse_number(parts[i + 1].text, v) || v < 0) {
-          diag.error(DiagCode::InvalidRateParameter, where + "efficiency must be a number >= 0").at(parts[i + 1].pos);
-        } else {
-          m.reactions.back().efficiency[static_cast<std::size_t>(sp)] = v;
-        }
-      }
-      continue;
-    }
-
-    std::size_t numeric_tail = 0;
-    for (std::size_t i = toks.size(); i-- > 0;) {
-      double v;
-      if (!parse_number(toks[i].text, v)) break;
-      ++numeric_tail;
-    }
-    if (toks.size() < 4 || numeric_tail < 3) {
-      diag.error(DiagCode::MechanismSyntax, where + "reaction lines are 'EQUATION A b Ea' (three rate parameters)").at(toks[0].pos);
-      continue;
-    }
-    double A = 0, b = 0, Ea = 0;
-    const Tok& tA = toks[toks.size() - 3];
-    const Tok& tb = toks[toks.size() - 2];
-    const Tok& tE = toks[toks.size() - 1];
-    bool params_ok = true;
-    if (!parse_number(tA.text, A) || A < 0) {
-      diag.error(DiagCode::InvalidRateParameter, where + "pre-exponential factor A must be a finite number >= 0").at(tA.pos);
-      params_ok = false;
-    }
-    if (!parse_number(tb.text, b)) {
-      diag.error(DiagCode::InvalidRateParameter, where + "temperature exponent b must be a finite number").at(tb.pos);
-      params_ok = false;
-    }
-    if (!parse_number(tE.text, Ea)) {
-      diag.error(DiagCode::InvalidRateParameter, where + "activation energy Ea must be a finite number").at(tE.pos);
-      params_ok = false;
-    }
-
-    std::string eq;
-    for (std::size_t i = 0; i + 3 < toks.size(); ++i) eq += toks[i].text;
-    const std::size_t eq_pos = toks[0].pos;
-    KineticReaction r;
-    r.line = line_no;
-    if (eq.find("(+") != std::string::npos) {
-      diag.error(DiagCode::UnsupportedReactionType, where + "pressure-dependent fall-off '(+M)' reactions are not supported yet").at(eq_pos);
-      continue;
-    }
-    std::size_t arrow = eq.find("<=>");
-    std::size_t arrow_len = 3;
-    r.reversible = true;
-    if (arrow == std::string::npos) {
-      arrow = eq.find("=>");
-      arrow_len = 2;
-      r.reversible = false;
-      if (arrow == std::string::npos) {
-        arrow = eq.find('=');
-        arrow_len = 1;
-        r.reversible = true;
-      }
-    }
-    const std::string lhs = eq.substr(0, arrow), rhs = eq.substr(arrow + arrow_len);
-    bool ok = params_ok;
-    int third_lhs = 0, third_rhs = 0;
-    auto parse_side = [&](const std::string& side, std::vector<std::pair<std::uint32_t, double>>& out, int& third) {
-      if (side.empty()) {
-        diag.error(DiagCode::EmptyReactionSide, where + "reaction side is empty").at(eq_pos);
-        ok = false;
-        return;
-      }
-      std::size_t s = 0;
-      while (s <= side.size()) {
-        std::size_t e = side.find('+', s);
-        if (e == std::string::npos) e = side.size();
-        std::string term = side.substr(s, e - s);
-        s = e + 1;
-        if (term.empty()) {
-          diag.error(DiagCode::MechanismSyntax, where + "empty term (stray '+')").at(eq_pos);
-          ok = false;
-          if (e == side.size()) break;
-          continue;
-        }
-        std::size_t k = 0;
-        while (k < term.size() && (std::isdigit(static_cast<unsigned char>(term[k])) || term[k] == '.')) ++k;
-        double coef = 1.0;
-        if (k > 0 && (!parse_number(term.substr(0, k), coef) || coef <= 0)) {
-          diag.error(DiagCode::InvalidCoefficient, where + "invalid coefficient in '" + term + "'").at(eq_pos);
-          ok = false;
-          coef = 1.0;
-        }
-        const std::string name = term.substr(k);
-        if (name == "M" || name == "m") {
-          ++third;
-        } else {
-          const std::int32_t sp = m.find(name);
-          if (sp < 0) {
-            diag.error(DiagCode::UnknownSpecies, where + "unknown species '" + name + "'").at(eq_pos);
-            ok = false;
-          } else {
-            out.push_back({static_cast<std::uint32_t>(sp), coef});
-          }
-        }
-        if (e == side.size()) break;
-      }
-    };
-    parse_side(lhs, r.reactants, third_lhs);
-    parse_side(rhs, r.products, third_rhs);
-    if (third_lhs != third_rhs || third_lhs > 1) {
-      diag.error(DiagCode::MechanismSyntax, where + "third body M must appear exactly once on each side").at(eq_pos);
-      ok = false;
-    }
-    if (!ok) continue;
-    merge(r.reactants);
-    merge(r.products);
-    r.third_body = third_lhs == 1;
-    if (r.third_body) r.efficiency.assign(m.species_count(), 1.0);
-    double order = r.third_body ? 1.0 : 0.0;
-    for (auto& [s2, nu] : r.reactants) order += nu;
-    r.forward = {A * std::pow(volume_factor, order - 1.0), b, Ea * ea_factor};
-    r.equation = eq;
-
-    // Element and charge balance from the SMILES-derived compositions.
-    std::array<double, kElementSlots> delta{};
-    double dq = 0;
-    for (auto& [s2, nu] : r.reactants) {
-      for (std::size_t z = 1; z < kElementSlots; ++z) delta[z] -= nu * m.state.species[s2].composition[z];
-      dq -= nu * m.state.species[s2].net_charge;
-    }
-    for (auto& [s2, nu] : r.products) {
-      for (std::size_t z = 1; z < kElementSlots; ++z) delta[z] += nu * m.state.species[s2].composition[z];
-      dq += nu * m.state.species[s2].net_charge;
-    }
-    bool balanced = true;
-    for (std::size_t z = 1; z < kElementSlots; ++z) {
-      if (std::fabs(delta[z]) < 1e-9) continue;
-      balanced = false;
-      char buf[48];
-      std::snprintf(buf, sizeof buf, "%+g", delta[z]);
-      diag.error(DiagCode::ElementImbalance, where + std::string(element_symbol(static_cast<std::uint8_t>(z))) +
-                                                 " is not conserved in " + eq + " (products - reactants = " + buf + ")")
-          .at(eq_pos)
-          .with_element(static_cast<std::uint8_t>(z), delta[z]);
-    }
-    if (std::fabs(dq) > 1e-9) {
-      balanced = false;
-      diag.error(DiagCode::ChargeImbalance, where + "charge is not conserved in " + eq).at(eq_pos).with_element(0, dq);
-    }
-    if (balanced) m.reactions.push_back(std::move(r));
-    if (eol == text.size()) break;
-  }
-  if (section != Section::None)
-    diag.error(DiagCode::MechanismSyntax, "missing 'end' after the last section").at(text.size());
-  if (m.names.empty()) diag.error(DiagCode::MechanismSyntax, "mechanism declares no species").at(0);
-
-  // Thermo: required for every species taking part in a reversible reaction.
-  m.thermo.resize(m.species_count());
-  std::vector<char> needs(m.species_count(), 0);
-  for (const auto& r : m.reactions) {
-    if (!r.reversible) continue;
-    for (auto& [s2, nu] : r.reactants) needs[s2] = 1;
-    for (auto& [s2, nu] : r.products) needs[s2] = 1;
-  }
-  for (std::uint32_t i = 0; i < m.species_count(); ++i) {
-    Diagnostics local;
-    m.thermo[i] = resolve_thermo(m.state, i, kTref, local);
-    if (!needs[i]) continue;
-    for (const auto& d : local.items()) {
-      if (d.code == DiagCode::NoJobackGroup) continue;          // summarised by the NoThermoData error
-      if (d.code == DiagCode::TemperatureOutOfRange) continue;  // checked against the actual run temperatures
-      (d.severity == Severity::Error ? diag.error(d.code, m.names[i] + ": " + d.message)
-                                     : diag.warn(d.code, m.names[i] + ": " + d.message))
-          .on_species(i);
+// Troe broadening factor F(T, Pr) and dF/dPr.
+double troe_F(const TroeParameters& t, double T, double Pr, double* dF_dPr) {
+  const double Fcent = std::max(t.F_cent(T), 1e-300);
+  const double lFc = std::log10(Fcent);
+  const double c = -0.4 - 0.67 * lFc;
+  const double n = 0.75 - 1.27 * lFc;
+  const double d = 0.14;
+  const double x = std::log10(std::max(Pr, 1e-300));
+  const double u = x + c;
+  const double den = n - d * u;
+  const double f = u / den;
+  const double L = lFc / (1.0 + f * f);
+  const double F = std::pow(10.0, L);
+  if (dF_dPr) {
+    if (Pr <= 1e-300) {
+      *dF_dPr = 0.0;
+    } else {
+      const double dL_df = -2.0 * f * lFc / ((1.0 + f * f) * (1.0 + f * f));
+      const double df_du = n / (den * den);
+      *dF_dPr = F * kLn10 * dL_df * df_du / (Pr * kLn10);  // du/dPr = 1/(Pr ln10), dF/dL = F ln10
     }
   }
-  if (diag.error_count() != errors_before) return std::nullopt;
-  return m;
+  return F;
 }
 
-std::optional<Mechanism> load_mechanism(const std::string& path, Diagnostics& diag) {
-  std::ifstream in(path);
-  if (!in) {
-    diag.error(DiagCode::InvalidInput, "cannot open mechanism file '" + path + "'");
-    return std::nullopt;
+}  // namespace
+
+double TroeParameters::F_cent(double T) const noexcept {
+  auto expo = [](double x) { return std::isfinite(x) ? std::exp(x) : 0.0; };
+  double f = 0.0;
+  if (std::fabs(T3) > 1e-300) f += (1.0 - a) * expo(-T / T3);
+  if (std::fabs(T1) > 1e-300) f += a * expo(-T / T1);
+  if (has_T2) f += expo(-T2 / T);
+  return f;
+}
+
+double falloff_rate_constant(const KineticReaction& r, double T, double M, double* dk_dM) {
+  const bool activated = r.kind == RateKind::ChemicallyActivated;
+  const double k0 = activated ? r.forward.k(T) : r.low_or_high.k(T);
+  const double kinf = activated ? r.low_or_high.k(T) : r.forward.k(T);
+  if (!(kinf > 0.0)) {  // no high-pressure limit: pure low-pressure behaviour
+    if (dk_dM) *dk_dM = activated ? 0.0 : k0;
+    return activated ? k0 : k0 * M;
   }
-  std::stringstream ss;
-  ss << in.rdbuf();
-  return parse_mechanism(ss.str(), diag);
+  const double Pr = k0 * std::max(M, 0.0) / kinf;
+  double dF = 0.0;
+  const double F = r.troe ? troe_F(*r.troe, T, Pr, &dF) : 1.0;
+  double k, dk_dPr;
+  if (activated) {
+    k = k0 / (1.0 + Pr) * F;
+    dk_dPr = k0 * (-F / ((1.0 + Pr) * (1.0 + Pr)) + dF / (1.0 + Pr));
+  } else {
+    k = kinf * Pr / (1.0 + Pr) * F;
+    dk_dPr = kinf * (F / ((1.0 + Pr) * (1.0 + Pr)) + Pr / (1.0 + Pr) * dF);
+  }
+  if (dk_dM) *dk_dM = dk_dPr * k0 / kinf;
+  return k;
+}
+
+double plog_rate_constant(const KineticReaction& r, double T, double P, double* dk_dP) {
+  if (dk_dP) *dk_dP = 0.0;
+  if (r.plog.empty()) return 0.0;
+  auto level_k = [&](const PlogLevel& l) {
+    double k = 0.0;
+    for (const auto& a : l.rates) k += a.k(T);
+    return std::max(k, 1e-300);
+  };
+  if (P <= r.plog.front().P_Pa) return level_k(r.plog.front());
+  if (P >= r.plog.back().P_Pa) return level_k(r.plog.back());
+  std::size_t i = 0;
+  while (i + 1 < r.plog.size() && r.plog[i + 1].P_Pa <= P) ++i;
+  const double k1 = level_k(r.plog[i]), k2 = level_k(r.plog[i + 1]);
+  const double slope = (std::log(k2) - std::log(k1)) / (std::log(r.plog[i + 1].P_Pa) - std::log(r.plog[i].P_Pa));
+  const double k = std::exp(std::log(k1) + slope * (std::log(P) - std::log(r.plog[i].P_Pa)));
+  if (dk_dP) *dk_dP = k * slope / P;
+  return k;
 }
 
 // ---- rates -------------------------------------------------------------------
 
 namespace {
-
-struct RateTerms {
-  double kf, kr, M, fwd, rev;  // q = M (kf fwd - kr rev)
-};
 
 double log_kc(const Mechanism& m, const KineticReaction& r, double T) {
   double dg = 0.0, dnu = 0.0;
@@ -402,21 +146,58 @@ double log_kc(const Mechanism& m, const KineticReaction& r, double T) {
   return -dg + dnu * std::log(kStandardPressure / (kGasConstant * T));
 }
 
-RateTerms terms(const Mechanism& m, const KineticReaction& r, double T, const double* C) {
-  RateTerms t{};
-  t.kf = r.forward.k(T);
-  t.kr = r.reversible ? t.kf * std::exp(std::min(-log_kc(m, r, T), 700.0)) : 0.0;
-  t.M = 1.0;
-  if (r.third_body) {
-    t.M = 0.0;
-    for (std::size_t i = 0; i < m.species_count(); ++i) t.M += r.efficiency[i] * C[i];
+// q = M (kf fwd - kr rev). For fall-off and PLOG, kr = ratio * kf with ratio = 1/K_c,
+// so their pressure dependence enters through dkf_dM / dkf_dP only.
+struct RateTerms {
+  double kf = 0.0, kr = 0.0, M = 1.0, fwd = 1.0, rev = 1.0;
+  double ratio = 0.0;  // kr / kf under detailed balance (0 if irreversible or explicit REV)
+  double dkf_dM = 0.0, dkf_dP = 0.0;
+};
+
+double collider(const Mechanism& m, const KineticReaction& r, const double* C) {
+  double M = 0.0;
+  for (std::size_t i = 0; i < m.species_count(); ++i) M += r.efficiency[i] * C[i];
+  return M;
+}
+
+RateTerms terms(const Mechanism& m, const KineticReaction& r, double T, const double* C, double P) {
+  RateTerms t;
+  switch (r.kind) {
+    case RateKind::Elementary:
+      t.kf = r.forward.k(T);
+      break;
+    case RateKind::ThirdBody:
+      t.kf = r.forward.k(T);
+      t.M = collider(m, r, C);
+      break;
+    case RateKind::FallOff:
+    case RateKind::ChemicallyActivated:
+      t.kf = falloff_rate_constant(r, T, collider(m, r, C), &t.dkf_dM);
+      break;
+    case RateKind::PressureLog:
+      t.kf = plog_rate_constant(r, T, P, &t.dkf_dP);
+      break;
   }
-  t.fwd = 1.0;
+  if (r.reversible) {
+    if (r.reverse) {
+      t.kr = r.reverse->k(T);
+    } else {
+      t.ratio = std::exp(std::min(-log_kc(m, r, T), 700.0));
+      t.kr = t.kf * t.ratio;
+    }
+  }
   for (auto& [s, nu] : r.reactants) t.fwd *= power(C[s], nu);
-  t.rev = 1.0;
   if (r.reversible)
     for (auto& [s, nu] : r.products) t.rev *= power(C[s], nu);
+  else
+    t.rev = 0.0;
   return t;
+}
+
+double total_pressure(const Mechanism& m, double T, const double* C) {
+  double c = 0.0;
+  for (std::size_t i = 0; i < m.species_count(); ++i) c += C[i];
+  return c * kGasConstant * T;
 }
 
 }  // namespace
@@ -426,16 +207,18 @@ double equilibrium_constant_c(const Mechanism& m, std::size_t r, double T) {
 }
 
 void rates_of_progress(const Mechanism& m, double T, const double* C, double* q) {
+  const double P = total_pressure(m, T, C);
   for (std::size_t r = 0; r < m.reactions.size(); ++r) {
-    const RateTerms t = terms(m, m.reactions[r], T, C);
+    const RateTerms t = terms(m, m.reactions[r], T, C, P);
     q[r] = t.M * (t.kf * t.fwd - t.kr * t.rev);
   }
 }
 
 void production_rates(const Mechanism& m, double T, const double* C, double* wdot) {
   std::fill(wdot, wdot + m.species_count(), 0.0);
+  const double P = total_pressure(m, T, C);
   for (const auto& r : m.reactions) {
-    const RateTerms t = terms(m, r, T, C);
+    const RateTerms t = terms(m, r, T, C, P);
     const double q = t.M * (t.kf * t.fwd - t.kr * t.rev);
     for (auto& [s, nu] : r.reactants) wdot[s] -= nu * q;
     for (auto& [s, nu] : r.products) wdot[s] += nu * q;
@@ -446,10 +229,11 @@ void production_rates_jacobian(const Mechanism& m, double T, const double* C, do
   const std::size_t S = m.species_count();
   std::fill(J, J + S * S, 0.0);
   std::vector<double> dq(S);
+  const double P = total_pressure(m, T, C);
   for (const auto& r : m.reactions) {
-    const RateTerms t = terms(m, r, T, C);
+    const RateTerms t = terms(m, r, T, C, P);
     std::fill(dq.begin(), dq.end(), 0.0);
-    // d(fwd)/dC_j and d(rev)/dC_j by the product rule over distinct species.
+    // Mass-action part, product rule over distinct species.
     for (auto& [j, nuj] : r.reactants) {
       double d = dpower(C[j], nuj);
       for (auto& [k, nuk] : r.reactants)
@@ -464,9 +248,15 @@ void production_rates_jacobian(const Mechanism& m, double T, const double* C, do
         dq[j] -= t.M * t.kr * d;
       }
     }
-    if (r.third_body) {
+    if (r.kind == RateKind::ThirdBody) {
       const double base = t.kf * t.fwd - t.kr * t.rev;
       for (std::size_t j = 0; j < S; ++j) dq[j] += r.efficiency[j] * base;
+    } else if (r.kind == RateKind::FallOff || r.kind == RateKind::ChemicallyActivated) {
+      const double base = t.dkf_dM * (t.fwd - t.ratio * t.rev);
+      for (std::size_t j = 0; j < S; ++j) dq[j] += r.efficiency[j] * base;
+    } else if (r.kind == RateKind::PressureLog) {
+      const double base = t.dkf_dP * kGasConstant * T * (t.fwd - t.ratio * t.rev);  // dP/dC_j = RT
+      for (std::size_t j = 0; j < S; ++j) dq[j] += base;
     }
     for (auto& [i, nu] : r.reactants)
       for (std::size_t j = 0; j < S; ++j) J[i * S + j] -= nu * dq[j];

@@ -74,11 +74,14 @@ OMNICHEM_API char* oc_check_reaction_json(const char* equation, double temperatu
 OMNICHEM_API char* oc_equilibrate_json(const char* const* smiles, const double* moles, size_t count, double temperature_K,
                           double pressure_Pa);
 
-/* Batch-reactor kinetics. `mechanism_text` is .ocm source; `model` is "iso-v", "iso-p",
+/* Batch-reactor kinetics. `mechanism_text` is .ocm, CHEMKIN-II or Cantera YAML source (detected
+ * from content); `thermo_text` (CHEMKIN therm.dat) and `smiles_map_text` ("NAME SMILES" lines) may
+ * be NULL. `model` is "iso-v", "iso-p",
  * "adiabatic-v" or "adiabatic-p"; species are given by mechanism name. Returns
  * {"ok", "species":[names], "samples":[{t,T,P,n:[...]}], "ignition_time", "stats", "diagnostics"}
  * with `n_samples` evenly spaced samples in (0, t_end]. */
-OMNICHEM_API char* oc_kinetics_json(const char* mechanism_text, const char* model, double temperature_K, double pressure_Pa,
+OMNICHEM_API char* oc_kinetics_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+                                    const char* model, double temperature_K, double pressure_Pa,
                        const char* const* names, const double* moles, size_t count, double t_end, size_t n_samples,
                        double rtol);
 

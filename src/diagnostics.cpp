@@ -50,6 +50,8 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::InvalidReactorSetup: return "InvalidReactorSetup";
     case DiagCode::StepSizeUnderflow: return "StepSizeUnderflow";
     case DiagCode::TooManySteps: return "TooManySteps";
+    case DiagCode::DuplicateReaction: return "DuplicateReaction";
+    case DiagCode::CompositionMismatch: return "CompositionMismatch";
   }
   return "Unknown";
 }

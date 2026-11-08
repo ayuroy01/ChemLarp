@@ -55,6 +55,16 @@ CI (`.github/workflows/ci.yml`) builds and tests on Windows (MSVC and MinGW), ma
 ./build/omnichem kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7
 ```
 
+The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
+
+```bash
+./build/omnichem kinetics data/mechanisms/h2o2/chem.inp --thermo data/mechanisms/h2o2/therm.dat --smiles data/mechanisms/h2o2/species.smi -T 1000 -t 1e-3 H2=2 O2=1 AR=7
+```
+
+```bash
+./build/omnichem kinetics data/mechanisms/h2o2.yaml -T 1000 -t 1e-3 H2=2 O2=1 AR=7
+```
+
 ```bash
 ./build/omnichem reaction '1 C + 2 O=O -> 1 O=C=O + 2 O' -T 298.15
 ```
@@ -94,11 +104,11 @@ include/omnichem/   public headers (C++ API + omnichem_c.h C ABI)
   thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
   joback.hpp          group-additivity ΔfH°/ΔfG° from the graph
   gibbs.hpp           element-potential Gibbs minimiser
-  kinetics.hpp        .ocm mechanisms, mass-action rates, batch reactors
+  kinetics.hpp        mechanisms (.ocm / CHEMKIN-II / Cantera YAML), fall-off, PLOG, batch reactors
   ode.hpp             variable-order BDF stiff integrator, LU
 src/                implementations; src/cli/main.cpp is the `omnichem` terminal tool
-tests/              dependency-free test suite (55 tests: random-SMILES round trips, Robertson, ignition invariants)
-data/mechanisms/    example mechanisms (h2o2.ocm: illustrative H2/O2 parameters)
+tests/              dependency-free test suite (65 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics)
+data/mechanisms/    example H2/O2 mechanism in .ocm, CHEMKIN-II and YAML form (illustrative parameters; regenerate with scripts/gen_h2o2_mechanism.py)
 python/omnichem/    ctypes binding
 scripts/            build.sh, ocx_pack.py
 docs/               ARCHITECTURE.md (design, provenance, status), MATH.md (SMILES→Gibbs math), OCX_SPEC.md

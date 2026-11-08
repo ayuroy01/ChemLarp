@@ -2,7 +2,8 @@
 //
 //   omnichem parse <SMILES> [--json]
 //   omnichem canon <SMILES> [--random N] [--kekule]
-//   omnichem kinetics <mechanism.ocm> [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s] [--csv file] NAME=moles ...
+//   omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi] [-m iso-v|iso-p|adiabatic-v|adiabatic-p]
+//                     [-T K] [-P bar] [-t s] [--csv file] NAME=moles ...      (mechanism: .ocm, CHEMKIN-II or Cantera YAML)
 //   omnichem reaction "<equation>" [-T kelvin] [--json]
 //   omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -44,8 +45,10 @@ int usage() {
       "usage:\n"
       "  omnichem parse <SMILES> [--json]\n"
       "  omnichem canon <SMILES> [--random N] [--kekule]\n"
-      "  omnichem kinetics <mechanism.ocm> [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
+      "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
+      "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
       "                    [--rtol x] [--csv file] NAME=moles ...\n"
+      "                    mechanism: .ocm, CHEMKIN-II (chem.inp) or Cantera YAML (detected from content)\n"
       "  omnichem reaction \"<coef> SMILES + ... -> <coef> SMILES + ...\" [-T kelvin] [--json]\n"
       "  omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]\n",
       stderr);
@@ -144,7 +147,7 @@ int cmd_canon(const std::vector<std::string>& args) {
 }
 
 int cmd_kinetics(const std::vector<std::string>& args) {
-  std::string path, csv;
+  std::string path, csv, thermo_path, smiles_path;
   ReactorSetup su;
   su.model = ReactorModel::AdiabaticConstantVolume;
   double P_bar = 1.01325;
@@ -161,6 +164,8 @@ int cmd_kinetics(const std::vector<std::string>& args) {
     else if (a == "-t") { if (!next(su.t_end)) return usage(); }
     else if (a == "--rtol") { if (!next(su.rtol)) return usage(); }
     else if (a == "--csv" && i + 1 < args.size()) csv = args[++i];
+    else if (a == "--thermo" && i + 1 < args.size()) thermo_path = args[++i];
+    else if (a == "--smiles" && i + 1 < args.size()) smiles_path = args[++i];
     else if (path.empty()) path = a;
     else {
       const auto eq = a.find('=');
@@ -172,7 +177,7 @@ int cmd_kinetics(const std::vector<std::string>& args) {
   if (path.empty() || feed.empty()) return usage();
   su.pressure_Pa = P_bar * 1e5;
   Diagnostics d;
-  auto mech = load_mechanism(path, d);
+  auto mech = load_mechanism(path, d, thermo_path, smiles_path);
   print_diagnostics(d, {});
   if (!mech) return 1;
   d.clear();

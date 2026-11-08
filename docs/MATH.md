@@ -197,6 +197,18 @@ k_r = k_f / K_c,     ln K_c = −Σ_j (ν''_jr − ν'_jr) g_j(T)  +  Δν_r ln(
 
 Because every `k_r` comes from detailed balance with the same `g_j(T)` used in §4, every reversible mechanism's long-time limit is exactly the Gibbs-minimiser equilibrium. `kinetics_relaxes_to_gibbs_equilibrium` and the ignition test check this to 10⁻⁶ and 10⁻⁴ respectively.
 
+**Pressure-dependent rate constants** (`k_f` above):
+
+```
+Fall-off:              k = k_∞ · Pr/(1+Pr) · F,     Pr = k_0 [M] / k_∞
+Chemically activated:  k = k_0 · 1/(1+Pr) · F
+Lindemann F = 1.  Troe:  log₁₀F = log₁₀F_cent / (1 + f²),   f = (log₁₀Pr + c)/(n − 0.14(log₁₀Pr + c))
+  F_cent = (1−a) e^(−T/T3) + a e^(−T/T1) + e^(−T2/T),   c = −0.4 − 0.67 log₁₀F_cent,   n = 0.75 − 1.27 log₁₀F_cent
+PLOG:  ln k = ln k_i + (ln k_{i+1} − ln k_i) · (ln P − ln P_i)/(ln P_{i+1} − ln P_i), clamped outside [P_1, P_n]
+```
+
+For fall-off and PLOG reactions, `k_r = k_f/K_c` scales with the same factor, so `q = k_f(fwd − rev/K_c)`. Their Jacobians gain `ε_j · (dk_f/d[M]) · (fwd − rev/K_c)` and `RT · (dk_f/dP) · (fwd − rev/K_c)` respectively, where `P = Σ C_i RT`. Both derivatives are analytic, including `dF/dPr` for Troe.
+
 **Jacobian** (analytic, exact):
 
 ```

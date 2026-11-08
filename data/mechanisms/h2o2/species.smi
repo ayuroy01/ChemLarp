@@ -1,0 +1,10 @@
+# NAME SMILES map for the CHEMKIN and YAML versions
+H2 [H][H]
+O2 O=O
+H [H]
+O [O]
+OH [OH]
+H2O O
+HO2 [O]O
+H2O2 OO
+AR [Ar]
