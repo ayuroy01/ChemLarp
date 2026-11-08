@@ -5,8 +5,11 @@
 
 int main() {
   int failed = 0;
-  std::setvbuf(stdout, nullptr, _IOLBF, 0);  // line-buffered: progress survives a hang or crash
+  // Flush after every line so progress survives a hang or crash. (Not setvbuf(_IOLBF, 0):
+  // the MSVC CRT rejects a zero buffer size and fast-fails the process.)
   for (const auto& c : octest::registry()) {
+    std::printf("  ....  %s\r", c.name);
+    std::fflush(stdout);
     try {
       c.fn();
       std::printf("  ok    %s\n", c.name);
@@ -14,6 +17,7 @@ int main() {
       ++failed;
       std::printf("  FAIL  %s\n        %s\n", c.name, e.what());
     }
+    std::fflush(stdout);
   }
   std::printf("\n%zu tests, %d failed\n", octest::registry().size(), failed);
   return failed == 0 ? 0 : 1;
