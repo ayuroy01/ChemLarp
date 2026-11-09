@@ -52,6 +52,12 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::TooManySteps: return "TooManySteps";
     case DiagCode::DuplicateReaction: return "DuplicateReaction";
     case DiagCode::CompositionMismatch: return "CompositionMismatch";
+    case DiagCode::NoForceFieldType: return "NoForceFieldType";
+    case DiagCode::ImplicitHydrogens: return "ImplicitHydrogens";
+    case DiagCode::EmbeddingFailed: return "EmbeddingFailed";
+    case DiagCode::InconsistentBounds: return "InconsistentBounds";
+    case DiagCode::MinimizationNotConverged: return "MinimizationNotConverged";
+    case DiagCode::StereoLost: return "StereoLost";
   }
   return "Unknown";
 }

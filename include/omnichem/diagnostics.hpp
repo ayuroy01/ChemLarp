@@ -68,6 +68,14 @@ enum class DiagCode : std::uint16_t {
   TooManySteps,
   DuplicateReaction,    // warning: same reaction twice without DUPLICATE (or DUPLICATE without a partner)
   CompositionMismatch,  // SMILES structure and thermo-card composition disagree
+
+  // 6xx — 3D structure / force fields
+  NoForceFieldType = 600,  // atom has no UFF type (e.g. metals)
+  ImplicitHydrogens,       // 3D work needs explicit hydrogens (add_explicit_hydrogens)
+  EmbeddingFailed,         // distance geometry found no acceptable coordinates
+  InconsistentBounds,      // triangle smoothing produced lower > upper
+  MinimizationNotConverged,  // warning
+  StereoLost,              // 3D structure does not reproduce the requested stereo
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

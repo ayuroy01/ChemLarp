@@ -39,6 +39,8 @@ jobs:
           "$exe" kinetics data/mechanisms/h2o2/chem.inp --thermo data/mechanisms/h2o2/therm.dat -T 1000 -t 1e-3 H2=2 O2=1 AR=7 > ck.txt
           "$exe" kinetics data/mechanisms/h2o2.yaml -T 1000 -t 1e-3 H2=2 O2=1 AR=7 > yaml.txt
           grep ignition kinetics.txt ck.txt yaml.txt
+          "$exe" embed 'C[C@@H](C(=O)O)N' --sdf ala.sdf
+          grep -c "V2000" ala.sdf
 
       - name: Python binding smoke test
         shell: bash
@@ -50,6 +52,9 @@ jobs:
           r = omnichem.kinetics('data/mechanisms/h2o2.ocm', {'H2': 2, 'O2': 1, 'AR': 7}, 1000, 1e5, t_end=1e-3)
           assert r['ignition_time'] and r['samples'][-1]['T'] > 2500
           print('ok', r['ignition_time'])
+          e = omnichem.embed('C[C@@H](C(=O)O)N')
+          assert e['stereo']['centres_ok'] == 1 and e['converged'] and len(e['coordinates']) == 13
+          print('embed ok', e['energy_kcal_mol'])
           "
 
   mingw:

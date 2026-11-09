@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
+__all__ = ["parse", "canonical", "embed", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
 
 
 class OmniChemError(RuntimeError):
@@ -84,6 +84,7 @@ _oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes
                     ctypes.c_char_p, ctypes.c_double,
                     ctypes.c_double, _c_char_pp, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_double,
                     ctypes.c_size_t, ctypes.c_double)
+_oc_embed = _sig("oc_embed_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int)
 _oc_reaction = _sig("oc_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _oc_equil = _sig("oc_equilibrate_json", ctypes.c_void_p, _c_char_pp, ctypes.POINTER(ctypes.c_double),
                  ctypes.c_size_t, ctypes.c_double, ctypes.c_double)
@@ -142,6 +143,22 @@ def canonical(smiles: str, n_random: int = 0, seed: int = 1) -> dict:
     r = _take_json(_oc_canon(smiles.encode(), n_random, seed))
     if not r["ok"]:
         raise OmniChemError(r["diagnostics"])
+    return r
+
+
+def embed(smiles: str, seed: int = 42, candidates: int = 5, minimize: bool = True) -> dict:
+    """3D structure with explicit hydrogens (distance geometry + UFF).
+
+    Returns {'canonical', 'sdf', 'xyz', 'energy_kcal_mol', 'converged', 'attempts', 'stereo',
+    'diagnostics', 'elements', 'coordinates'} where coordinates is a list of (x, y, z) in Å.
+    Raises OmniChemError if the SMILES cannot be embedded.
+    """
+    r = _take_json(_oc_embed(smiles.encode(), seed, candidates, 1 if minimize else 0))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    rows = r["xyz"].splitlines()[2:]
+    r["elements"] = [row.split()[0] for row in rows]
+    r["coordinates"] = [tuple(float(v) for v in row.split()[1:4]) for row in rows]
     return r
 
 

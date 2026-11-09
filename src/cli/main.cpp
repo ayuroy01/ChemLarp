@@ -4,6 +4,7 @@
 //   omnichem canon <SMILES> [--random N] [--kekule]
 //   omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi] [-m iso-v|iso-p|adiabatic-v|adiabatic-p]
 //                     [-T K] [-P bar] [-t s] [--csv file] NAME=moles ...      (mechanism: .ocm, CHEMKIN-II or Cantera YAML)
+//   omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
 //   omnichem reaction "<equation>" [-T kelvin] [--json]
 //   omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -28,6 +29,8 @@
 
 #include "omnichem/canonical.hpp"
 #include "omnichem/cip.hpp"
+#include "omnichem/conformer.hpp"
+#include "omnichem/uff.hpp"
 #include "omnichem/elements.hpp"
 #include "omnichem/gibbs.hpp"
 #include "omnichem/json.hpp"
@@ -45,6 +48,7 @@ int usage() {
       "usage:\n"
       "  omnichem parse <SMILES> [--json]\n"
       "  omnichem canon <SMILES> [--random N] [--kekule]\n"
+      "  omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
       "                    [--rtol x] [--csv file] NAME=moles ...\n"
@@ -251,6 +255,56 @@ int cmd_kinetics(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_embed(const std::vector<std::string>& args) {
+  std::string smiles, sdf_path, xyz_path;
+  EmbedOptions opt;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "--no-uff") opt.minimize = false;
+    else if (args[i] == "--seed" && i + 1 < args.size()) opt.seed = std::strtoull(args[++i].c_str(), nullptr, 10);
+    else if (args[i] == "--candidates" && i + 1 < args.size()) opt.candidates = std::atoi(args[++i].c_str());
+    else if (args[i] == "--sdf" && i + 1 < args.size()) sdf_path = args[++i];
+    else if (args[i] == "--xyz" && i + 1 < args.size()) xyz_path = args[++i];
+    else if (smiles.empty()) smiles = args[i];
+    else return usage();
+  }
+  ChemicalSystemState st;
+  Diagnostics d;
+  EmbedResult r;
+  const std::int32_t sp = embed_smiles(st, smiles, d, &r, opt);
+  print_diagnostics(d, smiles);
+  if (sp < 0) return 1;
+  const auto s = static_cast<std::uint32_t>(sp);
+  std::printf("%s: %u atoms (explicit H), %d attempts, distance-geometry residual %.3g\n",
+              st.species[s].canonical_smiles.c_str(), st.species[s].atom_count, r.attempts, r.dg_energy);
+  if (opt.minimize) {
+    Diagnostics q;
+    auto ff = UffForceField::build(st, s, q);
+    std::printf("UFF: %.3f kcal/mol (%s in %d iterations, max |gradient| %.1e kcal/mol/Å)\n", r.uff.energy_final,
+                r.uff.converged ? "converged" : "NOT converged", r.uff.iterations, r.uff.grad_max);
+    if (ff) {
+      std::vector<double> x;
+      for (std::uint32_t i = 0; i < st.species[s].atom_count; ++i) {
+        const std::uint32_t g = st.species[s].atom_begin + i;
+        x.insert(x.end(), {st.atoms.x[g], st.atoms.y[g], st.atoms.z[g]});
+      }
+      const auto e = ff->breakdown(x);
+      std::printf("     bond %.3f  angle %.3f  torsion %.3f  inversion %.3f  vdW %.3f\n", e.bond, e.angle, e.torsion,
+                  e.inversion, e.vdw);
+    }
+  }
+  std::printf("stereo: %zu/%zu centres, %zu/%zu double bonds reproduced in 3D\n", r.stereo_centres_ok, r.stereo_centres,
+              r.stereo_bonds_ok, r.stereo_bonds);
+  auto save = [](const std::string& path, const std::string& text) {
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+    std::printf("wrote %s\n", path.c_str());
+  };
+  if (!sdf_path.empty()) save(sdf_path, write_sdf(st, s, smiles));
+  if (!xyz_path.empty()) save(xyz_path, write_xyz(st, s, smiles));
+  if (sdf_path.empty() && xyz_path.empty()) std::printf("\n%s", write_xyz(st, s, smiles).c_str());
+  return 0;
+}
+
 int cmd_reaction(const std::vector<std::string>& args) {
   bool json = false;
   double T = kTref;
@@ -348,6 +402,7 @@ int main(int argc, char** argv) {
   if (cmd == "parse" && !args.empty()) return cmd_parse(args);
   if (cmd == "reaction" && !args.empty()) return cmd_reaction(args);
   if (cmd == "canon" && !args.empty()) return cmd_canon(args);
+  if (cmd == "embed" && !args.empty()) return cmd_embed(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

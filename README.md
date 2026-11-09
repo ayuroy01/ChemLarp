@@ -66,6 +66,10 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 ```
 
 ```bash
+./build/omnichem embed 'C[C@@H](C(=O)O)N' --sdf alanine.sdf    # 3D: distance geometry + UFF, stereo checked
+```
+
+```bash
 ./build/omnichem reaction '1 C + 2 O=O -> 1 O=C=O + 2 O' -T 298.15
 ```
 
@@ -87,6 +91,7 @@ with omnichem.System() as s:
     s.add("c1ccccc1O")
     xyz = s.atom_x()        # numpy view straight into the C++ SoA column
 omnichem.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
+omnichem.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
 omnichem.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
 ```
 
@@ -106,8 +111,11 @@ include/omnichem/   public headers (C++ API + omnichem_c.h C ABI)
   gibbs.hpp           element-potential Gibbs minimiser
   kinetics.hpp        mechanisms (.ocm / CHEMKIN-II / Cantera YAML), fall-off, PLOG, batch reactors
   ode.hpp             variable-order BDF stiff integrator, LU
+  conformer.hpp       explicit H, distance-geometry 3D embedding, stereo from 3D, SDF/XYZ
+  uff.hpp             Universal Force Field (energy, analytic gradient, minimiser)
+  optimize.hpp        L-BFGS
 src/                implementations; src/cli/main.cpp is the `omnichem` terminal tool
-tests/              dependency-free test suite (65 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics)
+tests/              dependency-free test suite (78 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics, 3D/UFF)
 data/mechanisms/    example H2/O2 mechanism in .ocm, CHEMKIN-II and YAML form (illustrative parameters; regenerate with scripts/gen_h2o2_mechanism.py)
 python/omnichem/    ctypes binding
 scripts/            build.sh, ocx_pack.py

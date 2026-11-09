@@ -13,6 +13,7 @@
 
 #include "omnichem/canonical.hpp"
 #include "omnichem/cip.hpp"
+#include "omnichem/conformer.hpp"
 #include "omnichem/diagnostics.hpp"
 #include "omnichem/gibbs.hpp"
 #include "omnichem/json.hpp"
@@ -268,6 +269,32 @@ char* oc_kinetics_json(const char* mechanism_text, const char* thermo_text, cons
     out += ",\"stats\":{\"steps\":" + std::to_string(r.stats.steps) + ",\"rejected\":" + std::to_string(r.stats.rejected) +
            ",\"newton_failures\":" + std::to_string(r.stats.newton_failures) + ",\"rhs_evals\":" +
            std::to_string(r.stats.rhs_evals) + ",\"max_order\":" + std::to_string(r.stats.max_order_used) + "}";
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minimize) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    ChemicalSystemState st;
+    Diagnostics d;
+    EmbedOptions opt;
+    opt.seed = seed;
+    if (candidates > 0) opt.candidates = candidates;
+    opt.minimize = minimize != 0;
+    EmbedResult r;
+    const std::int32_t sp = embed_smiles(st, smiles, d, &r, opt);
+    std::string out = std::string("{\"ok\":") + (sp >= 0 ? "true" : "false");
+    if (sp >= 0) {
+      const auto s = static_cast<std::uint32_t>(sp);
+      char buf[64];
+      std::snprintf(buf, sizeof buf, "%.10g", r.uff.energy_final);
+      out += ",\"canonical\":" + json_escape(st.species[s].canonical_smiles) + ",\"sdf\":" + json_escape(write_sdf(st, s, smiles)) +
+             ",\"xyz\":" + json_escape(write_xyz(st, s, smiles)) + ",\"energy_kcal_mol\":" + (opt.minimize ? std::string(buf) : "null") +
+             ",\"converged\":" + (r.uff.converged ? "true" : "false") + ",\"attempts\":" + std::to_string(r.attempts) +
+             ",\"stereo\":{\"centres\":" + std::to_string(r.stereo_centres) + ",\"centres_ok\":" + std::to_string(r.stereo_centres_ok) +
+             ",\"bonds\":" + std::to_string(r.stereo_bonds) + ",\"bonds_ok\":" + std::to_string(r.stereo_bonds_ok) + "}";
+    }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }

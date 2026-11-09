@@ -253,3 +253,52 @@ Benchmarks in the test suite:
 | Prothero–Robinson, λ = −10⁶ | max error < 10⁻⁶ in < 3000 steps (an explicit method needs ~10⁷) |
 | Robertson to t = 4·10⁵ (stiffness ratio ~10¹¹) | matches Hairer–Wanner reference values at t = 40 to 10⁻⁶; < 2000 steps |
 | Adiabatic H₂/O₂/Ar ignition, 9 species | about 600 steps, no Newton failures; U and elements conserved to 10⁻⁶ and 10⁻⁹ |
+
+---
+
+## 9. 3D structure: distance geometry and UFF (`src/conformer.cpp`, `src/uff.cpp`)
+
+**Bounds.** The bounds matrix `L_ij ≤ d_ij ≤ U_ij` is filled as follows:
+- **1-2 (bonded):** the UFF rest length ±0.01 Å.
+- **1-3:** the law of cosines with the central atom's natural angle, ±0.04 Å. Atoms in 3-, 4- and 5-membered rings use the ring angle 180°(n−2)/n.
+- **1-4:** from cis (φ = 0) to trans (φ = π). A stereo double bond pins the pair to its cis or trans distance, and pairs inside planar rings are pinned cis.
+- **Everything else:** a lower bound of 0.7 × (sum of Bondi van der Waals radii).
+
+**Triangle smoothing** (Floyd–Warshall):
+
+```
+U_ij ← min(U_ij, U_ik + U_kj)          L_ij ← max(L_ij, L_ik − U_kj, L_jk − U_ki)
+```
+
+**Embedding.** Distances are drawn at random within the bounds. The metric matrix is
+
+```
+G_ij = ½ (d_i0² + d_j0² − d_ij²),     d_i0² = (1/N) Σ_j d_ij² − (1/N²) Σ_{j<k} d_jk²
+```
+
+Its top four eigenpairs (shifted power iteration) give 4D coordinates `x_i = √λ v_i`. These are refined by minimizing
+
+```
+E = Σ_{d>U} (d²/U² − 1)² + Σ_{d<L} (2L²/(L²+d²) − 1)² + Σ_chiral (V − V_bound)² + 0.1 Σ_sp2 V² [+ Σ x_4²]
+```
+
+with chiral volume `V = (b−a)·[(c−a)×(d−a)]`. `@` requires V < 0 and `@@` requires V > 0; a lone pair is replaced by the centre.
+
+The refinement runs twice: first without the 4D penalty, so wrong-handed centres can invert through the fourth dimension, then with it. A 3D polish follows.
+
+**UFF energy** (kcal/mol, Å):
+
+```
+bond       ½ k (r − r0)²,        r0 = r_i + r_j − 0.1332 (r_i + r_j) ln n − r_i r_j (√χ_i − √χ_j)² / (χ_i r_i + χ_j r_j),
+                                 k = 664.12 Z_i Z_j / r0³
+angle      K [C0 + C1 cos θ + C2 cos 2θ],   C2 = 1/(4 sin²θ0), C1 = −4 C2 cos θ0, C0 = C2 (2 cos²θ0 + 1);  linear: K (1 + cos θ)
+           K = 664.12 Z_i Z_k / r_ik⁵ · [3 r_ij r_jk (1 − cos²θ0) − r_ik² cos θ0]
+torsion    ½ V [1 − cos(nφ0) cos(nφ)]   (sp3–sp3: n=3; sp2–sp2: n=2, V = 5√(U_jU_k)(1 + 4.18 ln n); sp2–sp3: n=6, V=1; ...),
+           V shared over the (deg_j − 1)(deg_k − 1) torsions of the bond
+inversion  K [1 − cos ω]   at sp2 C/N, K = 6 (50 for C bonded to O_2), split over the three permutations
+vdW        D_ij [(x_ij/r)¹² − 2 (x_ij/r)⁶],   D_ij = √(D_i D_j), x_ij = √(x_i x_j), all pairs beyond 1-3
+```
+
+Gradients are analytic. Torsions follow Blondel & Karplus (1996). Inversion uses dE/ds with s = sin ω = n̂·r̂_il.
+
+**Acceptance.** Each attempt runs distance geometry, then UFF (L-BFGS), then reads the stereo back from the coordinates. The kept structure is the lowest-energy one among `candidates` attempts that reproduce every stereo element. Without this, a single random start can settle in a twist-boat cyclohexane, or relax a strained start through an inverted centre.

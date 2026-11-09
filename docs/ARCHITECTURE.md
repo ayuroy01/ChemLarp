@@ -108,7 +108,10 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | C ABI + Python ctypes binding; `.ocx` v0.1 container | **done** |
 | InChI | planned (canonical SMILES now covers structure identity inside OmniChem) |
 | Allene / atropisomer / square-planar stereo (@AL, @SP, @TB, @OH) | planned |
-| Distance-geometry 3-D embedding | planned |
+| Explicit hydrogens with stereo remapping | **done** |
+| Distance-geometry 3D embedding (bounds + triangle smoothing, metric matrix in 4D, chiral/planar refinement) | **done**; stereo read back from 3D and enforced, best-of-N conformers |
+| UFF force field (bond, angle, torsion, inversion, vdW; analytic gradient) + L-BFGS | **done**; gradients exact vs finite differences, geometries vs experiment in tests |
+| SDF (V2000) and XYZ output | **done** |
 | Multiphase / condensed-phase equilibrium, activity models | planned |
 | Mechanism format `.ocm` (SMILES-bound species, CHEMKIN-style reactions, units, third-body efficiencies) | **done**, with error vector (5xx) |
 | Mass-action rates, modified Arrhenius, third bodies, detailed-balance reverse rates, analytic Jacobian | **done**; relaxes exactly to the Gibbs equilibrium (tested) |
@@ -120,7 +123,8 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Cross-format check: one mechanism as .ocm / CHEMKIN / YAML gives identical rates | **done** (`scripts/gen_h2o2_mechanism.py`, test `three_formats_give_identical_rates`) |
 | SRI fall-off, Chebyshev, FORD/RORD, NASA9 thermo, ionic species | planned (`UnsupportedReactionType` today) |
 | Sparse LU for large mechanisms (>~300 species) | planned; dense LU is O(S³) per step |
-| UFF → MMFF94 → OPLS force fields; velocity-Verlet MD | planned |
+| MMFF94 / OPLS force fields; partial charges & electrostatics; velocity-Verlet MD | planned (UFF done) |
+| ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
 | Peng–Robinson, NRTL, UNIFAC; Rachford–Rice flash; column & flowsheet solvers | planned |
 | Worker pool | planned (design above) |

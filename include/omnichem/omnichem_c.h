@@ -85,6 +85,11 @@ OMNICHEM_API char* oc_kinetics_json(const char* mechanism_text, const char* ther
                        const char* const* names, const double* moles, size_t count, double t_end, size_t n_samples,
                        double rtol);
 
+/* 3D structure: parse, add hydrogens, distance-geometry embed, UFF-minimise.
+ * {"ok", "canonical", "sdf", "xyz", "energy_kcal_mol", "converged", "attempts",
+ *  "stereo": {"centres", "centres_ok", "bonds", "bonds_ok"}, "diagnostics"} */
+OMNICHEM_API char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minimize);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus
