@@ -99,6 +99,14 @@ OMNICHEM_API char* oc_kinetics_text_json(const char* mechanism_text, const char*
                                          const char* model, double temperature_K, double pressure_Pa,
                                          const char* feed_lines, double t_end, size_t n_samples, double rtol);
 
+/* Vapour-liquid equilibrium with a cubic equation of state. `eos` is "pr" (Peng-Robinson) or "srk".
+ * Flash: `component_lines` has one "SMILES mole_fraction" per line. Returns
+ * {"ok","region","vapor_fraction","converged","iterations","components":[{smiles,name,z,x,y,K}],
+ *  "liquid":{"Z","molar_volume"},"vapor":{...},"diagnostics"}.
+ * Saturation: {"ok","name","pressure_Pa","diagnostics"}. */
+OMNICHEM_API char* oc_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos);
+OMNICHEM_API char* oc_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus

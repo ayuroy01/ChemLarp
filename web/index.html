@@ -27,6 +27,7 @@
     <a href="#reaction" data-tab="reaction">Reaction</a>
     <a href="#equilibrium" data-tab="equilibrium">Equilibrium</a>
     <a href="#kinetics" data-tab="kinetics">Kinetics</a>
+    <a href="#phases" data-tab="phases">Phases</a>
     <a href="#progress" data-tab="progress">Progress</a>
   </nav>
 
@@ -158,6 +159,39 @@ AR=7</textarea></label>
         <label class="check"><input type="checkbox" id="kin-log" checked> Log scale for mole fractions</label>
       </div>
       <canvas class="chart" id="kin-chart-x" data-height="320" hidden></canvas>
+    </section>
+
+    <!-- Phases -->
+    <section class="panel" id="phases" hidden>
+      <h1>Phases</h1>
+      <p class="hint">Vapour–liquid equilibrium from a cubic equation of state. List the mixture, one per line as <code>SMILES mole_fraction</code>, and OmniChem tests whether it splits into liquid and vapour and finds both compositions.</p>
+      <form class="stack" id="ph-form">
+        <label><span>Mixture</span><textarea id="ph-mix" rows="4" spellcheck="false">C 0.5
+CCC 0.3
+CCCCC 0.2</textarea></label>
+        <div class="row">
+          <label><span>Temperature (K)</span><input id="ph-t" type="number" value="300" min="1" step="any"></label>
+          <label><span>Pressure (bar)</span><input id="ph-p" type="number" value="30" min="0.0001" step="any"></label>
+          <label><span>Equation of state</span>
+            <select id="ph-eos"><option value="pr">Peng–Robinson</option><option value="srk">Soave–Redlich–Kwong</option></select>
+          </label>
+          <button type="submit">Flash</button>
+        </div>
+      </form>
+      <div class="examples" data-target="ph-mix">
+        <button type="button" data-smiles="C 0.5&#10;CCC 0.3&#10;CCCCC 0.2">Natural-gas liquids</button>
+        <button type="button" data-smiles="CCO 0.4&#10;O 0.6">Ethanol + water</button>
+        <button type="button" data-smiles="O=C=O 0.7&#10;C 0.3">CO₂ + methane</button>
+      </div>
+      <div class="result" id="ph-out"></div>
+      <h2 class="sub-h">Vapour pressure of a pure compound</h2>
+      <form class="row" id="vp-form">
+        <label class="grow"><span>SMILES</span><input id="vp-smiles" value="CCC" autocomplete="off" spellcheck="false"></label>
+        <label><span>Temperature (K)</span><input id="vp-t" type="number" value="300" min="1" step="any"></label>
+        <button type="submit">Vapour pressure</button>
+      </form>
+      <div class="result" id="vp-out"></div>
+      <p class="hint small">Built-in critical constants cover about 30 common compounds (light hydrocarbons, aromatics, alcohols, water, CO₂, N₂, O₂, H₂…). Peng–Robinson is typically within 1–2% for non-polar compounds; for water and alcohols expect a few percent.</p>
     </section>
 
     <!-- Progress -->

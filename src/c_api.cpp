@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "omnichem/cip.hpp"
 #include "omnichem/conformer.hpp"
 #include "omnichem/diagnostics.hpp"
+#include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
@@ -51,6 +53,50 @@ char* guarded(F&& f) noexcept {
   }
 }
 
+}  // namespace
+
+namespace {
+// Splits "a b" / "a=b" lines into (name, number) pairs; returns false on a malformed line.
+bool parse_pairs(const char* text, std::vector<std::string>& names, std::vector<double>& values, std::string& bad) {
+  std::string all = text ? text : "";
+  std::size_t start = 0;
+  while (start <= all.size()) {
+    std::size_t e = all.find('\n', start);
+    if (e == std::string::npos) e = all.size();
+    std::string line = all.substr(start, e - start);
+    start = e + 1;
+    for (char& c : line)
+      if (c == '\r' || c == '\t') c = ' ';
+    const std::size_t a = line.find_first_not_of(' ');
+    if (a == std::string::npos) { if (e == all.size()) break; continue; }
+    line = line.substr(a, line.find_last_not_of(' ') - a + 1);
+    std::size_t sep = line.find_last_of(" =");
+    if (sep == std::string::npos) { bad = line; return false; }
+    std::string name = line.substr(0, sep), num = line.substr(sep + 1);
+    while (!name.empty() && (name.back() == ' ' || name.back() == '=')) name.pop_back();
+    char* endp = nullptr;
+    const double v = std::strtod(num.c_str(), &endp);
+    if (name.empty() || num.empty() || *endp != '\0') { bad = line; return false; }
+    names.push_back(name);
+    values.push_back(v);
+    if (e == all.size()) break;
+  }
+  return true;
+}
+
+char* bad_input(const std::string& line) {
+  return dup(std::string("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":") +
+             json_escape("expected 'name amount' but got: " + line) + "}]}");
+}
+}  // namespace
+
+namespace {
+CubicEos eos_from(const char* e) { return (e && std::string(e) == "srk") ? CubicEos::SoaveRedlichKwong : CubicEos::PengRobinson; }
+std::string jnum(double v) {
+  char b[40];
+  std::snprintf(b, sizeof b, "%.12g", v);
+  return std::isfinite(v) ? b : "null";
+}
 }  // namespace
 
 extern "C" {
@@ -300,40 +346,6 @@ char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minim
   });
 }
 
-namespace {
-// Splits "a b" / "a=b" lines into (name, number) pairs; returns false on a malformed line.
-bool parse_pairs(const char* text, std::vector<std::string>& names, std::vector<double>& values, std::string& bad) {
-  std::string all = text ? text : "";
-  std::size_t start = 0;
-  while (start <= all.size()) {
-    std::size_t e = all.find('\n', start);
-    if (e == std::string::npos) e = all.size();
-    std::string line = all.substr(start, e - start);
-    start = e + 1;
-    for (char& c : line)
-      if (c == '\r' || c == '\t') c = ' ';
-    const std::size_t a = line.find_first_not_of(' ');
-    if (a == std::string::npos) { if (e == all.size()) break; continue; }
-    line = line.substr(a, line.find_last_not_of(' ') - a + 1);
-    std::size_t sep = line.find_last_of(" =");
-    if (sep == std::string::npos) { bad = line; return false; }
-    std::string name = line.substr(0, sep), num = line.substr(sep + 1);
-    while (!name.empty() && (name.back() == ' ' || name.back() == '=')) name.pop_back();
-    char* endp = nullptr;
-    const double v = std::strtod(num.c_str(), &endp);
-    if (name.empty() || num.empty() || *endp != '\0') { bad = line; return false; }
-    names.push_back(name);
-    values.push_back(v);
-    if (e == all.size()) break;
-  }
-  return true;
-}
-
-char* bad_input(const std::string& line) {
-  return dup(std::string("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":") +
-             json_escape("expected 'name amount' but got: " + line) + "}]}");
-}
-}  // namespace
 
 char* oc_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed) {
   return oc_canonical_smiles_json(smiles, n_random, seed);
@@ -364,6 +376,51 @@ char* oc_kinetics_text_json(const char* mechanism_text, const char* thermo_text,
   for (const auto& n : names) ptrs.push_back(n.c_str());
   return oc_kinetics_json(mechanism_text, thermo_text, smiles_map_text, model, temperature_K, pressure_Pa, ptrs.data(),
                           moles.data(), ptrs.size(), t_end, n_samples, rtol);
+}
+
+
+char* oc_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos) {
+  std::vector<std::string> smiles;
+  std::vector<double> z;
+  std::string bad;
+  if (!parse_pairs(component_lines, smiles, z, bad)) return bad_input(bad);
+  return guarded([&] {
+    Diagnostics d;
+    std::string out = "{\"ok\":";
+    auto mix = mixture_from_smiles(smiles, eos_from(eos), d);
+    FlashResult f;
+    if (mix) f = flash_tp(*mix, temperature_K, pressure_Pa, z, d);
+    out += (f.ok && !d.has_errors()) ? "true" : "false";
+    if (f.ok) {
+      double zs = 0;
+      for (double v : z) zs += v;
+      out += ",\"region\":" + json_escape(to_string(f.region)) + ",\"vapor_fraction\":" + jnum(f.vapor_fraction) +
+             ",\"converged\":" + (f.converged ? "true" : "false") + ",\"iterations\":" + std::to_string(f.iterations) +
+             ",\"components\":[";
+      for (std::size_t i = 0; i < smiles.size(); ++i) {
+        out += (i ? "," : "") + std::string("{\"smiles\":") + json_escape(smiles[i]) + ",\"name\":" +
+               json_escape(mix->components[i].name) + ",\"z\":" + jnum(z[i] / zs) + ",\"x\":" + jnum(f.x[i]) +
+               ",\"y\":" + jnum(f.y[i]) + ",\"K\":" + jnum(f.K[i]) + "}";
+      }
+      out += "],\"liquid\":{\"Z\":" + jnum(f.liquid.Z) + ",\"molar_volume\":" + jnum(f.liquid.molar_volume) +
+             "},\"vapor\":{\"Z\":" + jnum(f.vapor.Z) + ",\"molar_volume\":" + jnum(f.vapor.molar_volume) + "}";
+    }
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    auto mix = mixture_from_smiles({smiles}, eos_from(eos), d);
+    std::optional<double> p;
+    if (mix) p = saturation_pressure(mix->components[0], eos_from(eos), temperature_K, d);
+    std::string out = std::string("{\"ok\":") + (p ? "true" : "false");
+    if (mix) out += ",\"name\":" + json_escape(mix->components[0].name);
+    if (p) out += ",\"pressure_Pa\":" + jnum(*p);
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
 }
 
 void oc_free_string(char* s) { std::free(s); }

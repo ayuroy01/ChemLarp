@@ -5,6 +5,8 @@
 //   omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi] [-m iso-v|iso-p|adiabatic-v|adiabatic-p]
 //                     [-T K] [-P bar] [-t s] [--csv file] NAME=moles ...      (mechanism: .ocm, CHEMKIN-II or Cantera YAML)
 //   omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
+//   omnichem flash -T K -P bar [--srk] <SMILES> <fraction> ...      (vapour-liquid equilibrium)
+//   omnichem psat <SMILES> -T K [--srk]                              (vapour pressure)
 //   omnichem reaction "<equation>" [-T kelvin] [--json]
 //   omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -32,6 +34,7 @@
 #include "omnichem/conformer.hpp"
 #include "omnichem/uff.hpp"
 #include "omnichem/elements.hpp"
+#include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
@@ -49,6 +52,8 @@ int usage() {
       "  omnichem parse <SMILES> [--json]\n"
       "  omnichem canon <SMILES> [--random N] [--kekule]\n"
       "  omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
+      "  omnichem flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
+      "  omnichem psat <SMILES> -T K [--srk]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
       "                    [--rtol x] [--csv file] NAME=moles ...\n"
@@ -305,6 +310,61 @@ int cmd_embed(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_flash(const std::vector<std::string>& args) {
+  double T = 300, P_bar = 1;
+  CubicEos eos = CubicEos::PengRobinson;
+  std::vector<std::string> smiles;
+  std::vector<double> z;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "-T" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), T)) return usage(); }
+    else if (args[i] == "-P" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), P_bar)) return usage(); }
+    else if (args[i] == "--srk") eos = CubicEos::SoaveRedlichKwong;
+    else if (i + 1 < args.size()) {
+      double v;
+      if (!parse_double(args[i + 1].c_str(), v)) return usage();
+      smiles.push_back(args[i]);
+      z.push_back(v);
+      ++i;
+    } else return usage();
+  }
+  if (smiles.empty()) return usage();
+  Diagnostics d;
+  auto mix = mixture_from_smiles(smiles, eos, d);
+  FlashResult f;
+  if (mix) f = flash_tp(*mix, T, P_bar * 1e5, z, d);
+  print_diagnostics(d, {});
+  if (!f.ok) return 1;
+  std::printf("%s flash at %.2f K, %.4g bar: %s", eos == CubicEos::PengRobinson ? "Peng-Robinson" : "SRK", T, P_bar, to_string(f.region));
+  if (f.region == PhaseRegion::TwoPhase) std::printf(", vapour fraction %.5f (%d iterations)", f.vapor_fraction, f.iterations);
+  std::printf("\n\n  %-18s %-16s %10s %10s %10s %10s\n", "component", "", "feed z", "liquid x", "vapour y", "K = y/x");
+  double zs = 0;
+  for (double v : z) zs += v;
+  for (std::size_t i = 0; i < smiles.size(); ++i)
+    std::printf("  %-18s %-16s %10.5f %10.5f %10.5f %10.4g\n", smiles[i].c_str(), mix->components[i].name.c_str(), z[i] / zs, f.x[i], f.y[i], f.K[i]);
+  std::printf("\n  Z liquid %.5f   Z vapour %.5f\n", f.liquid.Z, f.vapor.Z);
+  return 0;
+}
+
+int cmd_psat(const std::vector<std::string>& args) {
+  double T = 300;
+  CubicEos eos = CubicEos::PengRobinson;
+  std::string smiles;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "-T" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), T)) return usage(); }
+    else if (args[i] == "--srk") eos = CubicEos::SoaveRedlichKwong;
+    else if (smiles.empty()) smiles = args[i];
+    else return usage();
+  }
+  Diagnostics d;
+  auto mix = mixture_from_smiles({smiles}, eos, d);
+  std::optional<double> p;
+  if (mix) p = saturation_pressure(mix->components[0], eos, T, d);
+  print_diagnostics(d, smiles);
+  if (!p) return 1;
+  std::printf("%s vapour pressure at %.2f K: %.6g bar (%.6g kPa)\n", mix->components[0].name.c_str(), T, *p / 1e5, *p / 1e3);
+  return 0;
+}
+
 int cmd_reaction(const std::vector<std::string>& args) {
   bool json = false;
   double T = kTref;
@@ -403,6 +463,8 @@ int main(int argc, char** argv) {
   if (cmd == "reaction" && !args.empty()) return cmd_reaction(args);
   if (cmd == "canon" && !args.empty()) return cmd_canon(args);
   if (cmd == "embed" && !args.empty()) return cmd_embed(args);
+  if (cmd == "flash" && !args.empty()) return cmd_flash(args);
+  if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

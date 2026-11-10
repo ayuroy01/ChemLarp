@@ -126,7 +126,10 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | MMFF94 / OPLS force fields; partial charges & electrostatics; velocity-Verlet MD | planned (UFF done) |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
-| Peng–Robinson, NRTL, UNIFAC; Rachford–Rice flash; column & flowsheet solvers | planned |
+| Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds |
+| Michelsen stability test + Rachford–Rice two-phase flash; pure-component vapour pressure | **done** |
+| NRTL / UNIFAC activity models; column & flowsheet solvers | planned |
+| Installable web app (WebAssembly, PWA, GitHub Pages) | **done**: https://ayuroy01.github.io/ChemLarp/ |
 | Worker pool | planned (design above) |
 | Node.js addon | planned (C ABI is ready for it) |
 | IUPAC naming | planned, and the hardest item on this list. It needs the full P-rules engine; there is no shortcut "hash map". |

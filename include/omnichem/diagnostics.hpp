@@ -76,6 +76,11 @@ enum class DiagCode : std::uint16_t {
   InconsistentBounds,      // triangle smoothing produced lower > upper
   MinimizationNotConverged,  // warning
   StereoLost,              // 3D structure does not reproduce the requested stereo
+
+  // 7xx — phase equilibrium / process
+  NoCriticalData = 700,    // component has no critical constants (Tc, Pc, omega)
+  SupercriticalTemperature,  // saturation pressure asked above the critical temperature
+  FlashNotConverged,       // warning: successive substitution did not converge
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

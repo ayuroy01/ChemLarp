@@ -24,6 +24,8 @@ const calls = {
   kinetics: (M, a) => callJson(M, 'oc_kinetics_text_json',
     ['string', 'string', 'string', 'string', 'number', 'number', 'string', 'number', 'number', 'number'],
     [a.mechanism, a.thermo || '', a.smiles || '', a.model, a.temperature, a.pressure, a.feed, a.tEnd, a.samples, a.rtol || 0]),
+  flash: (M, a) => callJson(M, 'oc_flash_text_json', ['string', 'number', 'number', 'string'], [a.mixture, a.temperature, a.pressure, a.eos]),
+  psat: (M, a) => callJson(M, 'oc_saturation_pressure_json', ['string', 'number', 'string'], [a.smiles, a.temperature, a.eos]),
   embed: (M, a) => callJson(M, 'oc_embed32_json', ['string', 'number', 'number', 'number'], [a.smiles, a.seed || 42, a.candidates || 5, a.minimize ? 1 : 0]),
 };
 

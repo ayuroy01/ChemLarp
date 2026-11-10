@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "embed", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
+__all__ = ["parse", "canonical", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
 
 
 class OmniChemError(RuntimeError):
@@ -85,6 +85,8 @@ _oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes
                     ctypes.c_double, _c_char_pp, ctypes.POINTER(ctypes.c_double), ctypes.c_size_t, ctypes.c_double,
                     ctypes.c_size_t, ctypes.c_double)
 _oc_embed = _sig("oc_embed_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int)
+_oc_flash = _sig("oc_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
+_oc_psat = _sig("oc_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
 _oc_reaction = _sig("oc_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _oc_equil = _sig("oc_equilibrate_json", ctypes.c_void_p, _c_char_pp, ctypes.POINTER(ctypes.c_double),
                  ctypes.c_size_t, ctypes.c_double, ctypes.c_double)
@@ -160,6 +162,23 @@ def embed(smiles: str, seed: int = 42, candidates: int = 5, minimize: bool = Tru
     r["elements"] = [row.split()[0] for row in rows]
     r["coordinates"] = [tuple(float(v) for v in row.split()[1:4]) for row in rows]
     return r
+
+
+def flash(feed: dict[str, float], temperature_K: float, pressure_Pa: float, eos: str = "pr") -> dict:
+    """Isothermal vapour-liquid flash. `feed` maps SMILES -> mole fraction; eos is "pr" or "srk"."""
+    lines = "\n".join(f"{s} {v}" for s, v in feed.items())
+    r = _take_json(_oc_flash(lines.encode(), temperature_K, pressure_Pa, eos.encode()))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    return r
+
+
+def vapor_pressure(smiles: str, temperature_K: float, eos: str = "pr") -> float:
+    """Pure-component vapour pressure in Pa from the cubic equation of state."""
+    r = _take_json(_oc_psat(smiles.encode(), temperature_K, eos.encode()))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    return r["pressure_Pa"]
 
 
 def _text_or_file(value: str | None) -> bytes | None:

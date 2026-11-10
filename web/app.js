@@ -72,9 +72,9 @@
   }
 
   // ---- tabs (hash routing) --------------------------------------------------
-  const tabs = ['molecule', 'model3d', 'reaction', 'equilibrium', 'kinetics', 'progress'];
+  const tabs = ['molecule', 'model3d', 'reaction', 'equilibrium', 'kinetics', 'phases', 'progress'];
   // Each tool runs its example the first time it is opened, so it never starts empty.
-  const autorun = { molecule: 'mol-form', model3d: 'd3-form', reaction: 'rx-form', equilibrium: 'eq-form', kinetics: 'kin-form' };
+  const autorun = { molecule: 'mol-form', model3d: 'd3-form', reaction: 'rx-form', equilibrium: 'eq-form', kinetics: 'kin-form', phases: 'ph-form' };
   const ran = new Set();
   function show() {
     const name = tabs.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'molecule';
@@ -270,6 +270,53 @@
       $('kin-scale').hidden = false;
       drawKinetics();
       if (r.diagnostics.length) out.append(diagnostics(r.diagnostics));
+    } catch (err) { fail(out, err); }
+  });
+
+  // ---- Phases ---------------------------------------------------------------
+  const regionText = { 'two-phase': 'Two phases: liquid + vapour', liquid: 'Single phase: liquid', vapor: 'Single phase: vapour', supercritical: 'Single phase: supercritical fluid' };
+  $('ph-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('ph-out');
+    busy(out, 'Flashing…');
+    try {
+      const { result: r } = await engine('flash', { mixture: $('ph-mix').value, temperature: +$('ph-t').value, pressure: +$('ph-p').value * 1e5, eos: $('ph-eos').value });
+      out.replaceChildren();
+      if (!r.ok) { out.append(el('p', { class: 'bad-line', text: 'Could not flash this mixture:' }), diagnostics(r.diagnostics)); return; }
+      const two = r.region === 'two-phase';
+      out.append(el('div', { class: 'card' },
+        el('p', {}, el('span', { class: 'region', text: regionText[r.region] || r.region })),
+        facts([
+          ['Vapour fraction', two ? num(r.vapor_fraction, 5) : r.region === 'vapor' ? '1' : '0'],
+          ['Z liquid', two || r.region === 'liquid' ? num(r.liquid.Z, 5) : '—'],
+          ['Z vapour', two || r.region !== 'liquid' ? num(r.vapor.Z, 5) : '—'],
+          ['Iterations', String(r.iterations)],
+        ])));
+      const tbody = el('tbody');
+      for (const c of r.components) tbody.append(el('tr', {}, el('td', { text: c.name }), el('td', { class: 'mono', text: c.smiles }),
+        el('td', { class: 'num', text: num(c.z, 4) }), el('td', { class: 'num', text: two ? num(c.x, 4) : '—' }),
+        el('td', { class: 'num', text: two ? num(c.y, 4) : '—' }), el('td', { class: 'num', text: two ? num(c.K, 4) : '—' })));
+      out.append(el('div', { class: 'card table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {}, el('th', { text: 'Component' }), el('th', { text: 'SMILES' }), el('th', { class: 'num', text: 'Feed' }),
+          el('th', { class: 'num', text: 'Liquid x' }), el('th', { class: 'num', text: 'Vapour y' }), el('th', { class: 'num', text: 'K = y/x' }))),
+        tbody)));
+      if (r.diagnostics.length) out.append(diagnostics(r.diagnostics));
+    } catch (err) { fail(out, err); }
+  });
+  $('vp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('vp-out');
+    busy(out, 'Solving…');
+    try {
+      const smiles = $('vp-smiles').value.trim();
+      const { result: r } = await engine('psat', { smiles, temperature: +$('vp-t').value, eos: $('ph-eos').value });
+      out.replaceChildren();
+      if (!r.ok) { out.append(diagnostics(r.diagnostics, smiles)); return; }
+      out.append(el('div', { class: 'card' }, facts([
+        ['Compound', r.name],
+        ['Vapour pressure', num(r.pressure_Pa / 1e5, 5) + ' bar'],
+        ['', num(r.pressure_Pa / 1e3, 5) + ' kPa'],
+      ])));
     } catch (err) { fail(out, err); }
   });
 

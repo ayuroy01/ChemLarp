@@ -58,6 +58,9 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::InconsistentBounds: return "InconsistentBounds";
     case DiagCode::MinimizationNotConverged: return "MinimizationNotConverged";
     case DiagCode::StereoLost: return "StereoLost";
+    case DiagCode::NoCriticalData: return "NoCriticalData";
+    case DiagCode::SupercriticalTemperature: return "SupercriticalTemperature";
+    case DiagCode::FlashNotConverged: return "FlashNotConverged";
   }
   return "Unknown";
 }
