@@ -13,7 +13,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | Capability | Public basis |
 |---|---|
 | SMILES parsing, aromaticity | OpenSMILES spec (opensmiles.org); Weininger, *JCICS* 28 (1988) 31 |
-| InChI | IUPAC/InChI Trust technical manual + open-source reference library (MIT-style license) |
+| InChI | Heller et al., *J. Cheminform.* 7 (2015) 23; InChI Technical Manual. Written from the published description; the reference software is used only to produce test strings |
 | R/S, E/Z | IUPAC 2013 recommendations P-92 (CIP rules); Hanson et al., *JCIM* 58 (2018) 1755 (CIP algorithm validation) |
 | 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
 | 2D→3D embedding | Crippen & Havel, *Distance Geometry and Molecular Conformation* (1988); Riniker & Landrum ETKDG, *JCIM* 55 (2015) 2562 |
@@ -54,7 +54,7 @@ Every stage reads and writes the same `ChemicalSystemState`, so data passes betw
 1. **Normalised view.** A plain `[H]` with a single heavy neighbour is folded into that atom's H count. Aromaticity is re-perceived from the Kekulé structure, so input notation never leaks into identity.
 2. **Ranking.** Initial atom invariants are (degree, Z, isotope, charge, H count, ring, aromatic, CIP label, atom class). They are refined iteratively by sorted (neighbour rank, bond code) multisets until stable. While ties remain, the lowest tied class is split and refinement runs again (Weininger 1989).
 3. **Writing.** DFS starts from the lowest rank, neighbours are visited in rank order, and ring closures take the lowest free digit. Tetrahedral parity is recomputed as the permutation parity between the stored reference order and the output neighbour order. `/` `\` marks come from a small constraint search, so conjugated systems (shared single bonds) stay consistent; the choice is anchored on output order only.
-4. **Stereo is part of identity.** CIP labels are rank invariants, so meso and chiral diastereomers, and the members of meso pairs, are distinguished deterministically. Stereo marks that CIP rules 1–2 show are not stereogenic are dropped, with a warning.
+4. **Stereo is part of identity.** CIP labels are rank invariants, so meso and chiral diastereomers, and the members of meso pairs, are distinguished deterministically. Stereo marks that the CIP rules show are not stereogenic are dropped, with a warning.
 
 How it is verified: the randomized writer (`SmilesWriteOptions{canonical=false}`) emits arbitrary atom orders in aromatic or Kekulé form. The test suite requires `canonical(random(x)) == canonical(x)` for 33 molecules × 40 seeds; an ad-hoc run of 14 harder molecules × 1000 seeds also passed.
 
@@ -98,7 +98,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Aromaticity perception (Hückel 4n+2 over SSSR rings and fused-pair envelopes) | **done**; Kekulé and aromatic inputs give identical state |
 | Canonical SMILES (invariant refinement + tie-breaking, stereo-aware) | **done**; 14,000-case randomized round-trip fuzz with zero mismatches |
 | Randomized SMILES writer (aromatic or Kekulé) | **done** (used as the test oracle) |
-| CIP R/S and E/Z, rules 1a + 2 (hierarchical digraph, BFS by sphere) | **done**; rules 1b, 3-5 (r/s, like/unlike, seqcis) not implemented and reported as `CipUndetermined` |
+| CIP R/S, r/s and E/Z, rules 1a-5 (hierarchical digraph, mancude duplicates, auxiliary descriptors, like/unlike) | **done**; agrees with RDKit's CIP labeller on 816/816 PubChem stereo structures and 6265/6312 enumerated stereoisomers. The differences: ring-closure digits on three-coordinate N/P centres (the two SMILES readers disagree), `[P@H]` phosphines and quinoid `c(=C)` input (not parsed). Rule-5 double bonds print E/Z, not seqCis/seqTrans; no axial or planar units |
 | Stereo error vector: conflicting `/` `\` marks, small-ring E/Z, non-tetrahedral `@` | **done** |
 | Thermo database keyed by canonical SMILES (formula fallback warns `ThermoFormulaMatch`) | **done** |
 | Composition, Hill formula, molar mass | **done** |
@@ -108,7 +108,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Ideal-gas Gibbs minimisation (element-potential Newton) | **done**, tested (K consistency, conservation, Le Chatelier, rank deficiency) |
 | C ABI + Python ctypes binding; `.ocx` v0.1 container | **done** |
 | 2D layout (ring templates by arc closure, 120° chains, E/Z by mirroring, overlap relief by subtree reflection) and SVG drawing with IUPAC-style wedges, ring-fusion H, CIP labels; 2D molfile export | **done**; every stereocentre's wedge is checked by reading the chirality back from the drawing. Bridged polycycles (morphine, adamantane) are legible but not template-quality |
-| InChI | planned (canonical SMILES now covers structure identity inside OmniChem) |
+| Standard InChI and InChIKey (normalisation, mobile H, canonical numbering, /c /h /q /p /b /t /m /s /i layers) | **done** for organic structures; 1483/1500 (98.9%) identical to PubChem on a random sample never used for tuning. Not covered: isotopic stereo, allene stereo, /f and /r layers, polymers, several charge-migration and salt rules (diazonium, N-oxides, metal complexes of macrocycles) |
 | Allene / atropisomer / square-planar stereo (@AL, @SP, @TB, @OH) | planned |
 | Explicit hydrogens with stereo remapping | **done** |
 | Distance-geometry 3D embedding (bounds + triangle smoothing, metric matrix in 4D, chiral/planar refinement) | **done**; stereo read back from 3D and enforced, best-of-N conformers |

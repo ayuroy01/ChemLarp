@@ -313,6 +313,12 @@
           h('dt', { text: 'Formula' }), h('dd', {}, formulaNode(c.formula)),
           h('dt', { text: 'Canonical SMILES' }), h('dd', {}, h('span', { class: 'identifier' }, h('span', { class: 'text', text: c.canonical }),
             h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Copy canonical SMILES', onclick: () => copy(c.canonical) }, icon('copy')))),
+          c.inchi ? [
+            h('dt', { text: 'InChI' }), h('dd', {}, h('span', { class: 'identifier' }, h('span', { class: 'text', text: c.inchi }),
+              h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Copy InChI', onclick: () => copy(c.inchi) }, icon('copy')))),
+            h('dt', { text: 'InChIKey' }), h('dd', {}, h('span', { class: 'identifier' }, h('span', { class: 'text', text: c.inchiKey }),
+              h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Copy InChIKey', onclick: () => copy(c.inchiKey) }, icon('copy')))),
+          ] : null,
           h('dt', { text: 'As entered' }), h('dd', { class: 'mono', text: input }))),
       h('div', { class: 'glass-card card' },
         h('div', { class: 'card-head' }, h('h2', { text: 'Stereochemistry' }), h('span', { class: 'meta', text: 'Cahn–Ingold–Prelog' })),
@@ -330,7 +336,8 @@
     $('compound').value = input;
     busy($('structure-out'), 'Reading structure…');
     try {
-      const [p, cn] = await Promise.all([engine('parse', { smiles: input }), engine('canonical', { smiles: input, random: 3, seed: 7 })]);
+      const [p, cn, ik] = await Promise.all([engine('parse', { smiles: input }), engine('canonical', { smiles: input, random: 3, seed: 7 }),
+        engine('inchi', { smiles: input }).catch(() => ({ result: { ok: false } }))]);
       const r = p.result;
       if (!r.ok) {
         compound = null;
@@ -345,6 +352,7 @@
         input, canonical: s.canonical_smiles, formula: s.formula, composition: s.composition, mass: s.molar_mass,
         charge: s.net_charge, heavy: atoms.element.filter((z) => z !== 1).length, bonds: s.bond_count,
         cip: cn.result.ok ? cn.result.cip : { centres: [], double_bonds: [] }, random: cn.result.ok ? cn.result.random : [],
+        inchi: ik.result.ok ? ik.result.inchi : null, inchiKey: ik.result.ok ? ik.result.key : null,
       };
       renderInspector();
       renderStructure(r, input);

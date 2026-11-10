@@ -20,6 +20,7 @@
 #include "omnichem/diagnostics.hpp"
 #include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
+#include "omnichem/inchi.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
 #include "omnichem/reaction.hpp"
@@ -380,6 +381,17 @@ char* oc_depict_json(const char* smiles, double bond_px, int flags) {
       out += "],\"stereo\":{\"centres\":" + std::to_string(dp.stereo_centres) + ",\"centres_ok\":" + std::to_string(dp.stereo_centres_ok) +
              ",\"bonds\":" + std::to_string(dp.stereo_bonds) + ",\"bonds_ok\":" + std::to_string(dp.stereo_bonds_ok) + "}";
     }
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_inchi_json(const char* smiles) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    const InchiResult r = inchi_from_smiles(smiles, d);
+    std::string out = std::string("{\"ok\":") + (r.ok ? "true" : "false");
+    if (r.ok) out += ",\"inchi\":" + json_escape(r.inchi) + ",\"key\":" + json_escape(r.key);
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }

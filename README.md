@@ -76,6 +76,7 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 ```
 
 ```bash
+./build/omnichem inchi 'C[C@@H](C(=O)O)N'                                              # InChI and InChIKey
 ./build/omnichem depict 'C[C@@H](C(=O)O)N' -o alanine.svg --mol alanine.mol --cip   # 2D drawing with wedges
 ```
 
@@ -105,6 +106,7 @@ with omnichem.System() as s:
     s.add("c1ccccc1O")
     xyz = s.atom_x()        # numpy view straight into the C++ SoA column
 omnichem.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
+omnichem.inchi("N[C@@H](C)C(=O)O")["key"]   # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
 omnichem.depict("N[C@@H](C)C(=O)O")["svg"]  # 2D drawing (SVG + molfile with wedges)
 omnichem.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
 omnichem.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
@@ -119,7 +121,8 @@ include/omnichem/   public headers (C++ API + omnichem_c.h C ABI)
   smiles.hpp          OpenSMILES parser, kekulizer, valence validator, stereo references
   rings.hpp           SSSR and Hückel aromaticity perception
   canonical.hpp       canonical and randomised SMILES writer
-  cip.hpp             CIP priorities, R/S, E/Z
+  cip.hpp             CIP priorities (rules 1a-5), R/S, r/s, E/Z
+  inchi.hpp           standard InChI and InChIKey
   reaction.hpp        equation parser, element/charge balance, ΔrG°, K
   thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
   joback.hpp          group-additivity ΔfH°/ΔfG° from the graph

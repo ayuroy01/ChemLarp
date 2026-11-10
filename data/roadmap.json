@@ -53,8 +53,13 @@
           "status": "planned"
         },
         {
-          "name": "InChI, CIP rules 1b/3-5, axial chirality",
+          "name": "InChI and InChIKey; CIP rules 1b, 3-5 (r/s)",
           "size": "M",
+          "status": "done"
+        },
+        {
+          "name": "Axial and planar chirality (allenes, atropisomers)",
+          "size": "S",
           "status": "planned"
         },
         {

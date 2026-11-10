@@ -61,6 +61,9 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::NoCriticalData: return "NoCriticalData";
     case DiagCode::SupercriticalTemperature: return "SupercriticalTemperature";
     case DiagCode::FlashNotConverged: return "FlashNotConverged";
+    case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
+    case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
+    case DiagCode::InchiUnsupported: return "InchiUnsupported";
   }
   return "Unknown";
 }

@@ -37,6 +37,7 @@
 #include "omnichem/elements.hpp"
 #include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
+#include "omnichem/inchi.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
 #include "omnichem/reaction.hpp"
@@ -55,6 +56,7 @@ int usage() {
       "  omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
       "  omnichem flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  omnichem psat <SMILES> -T K [--srk]\n"
+      "  omnichem inchi <SMILES> [--key]\n"
       "  omnichem depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
@@ -347,6 +349,24 @@ int cmd_flash(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_inchi(const std::vector<std::string>& args) {
+  std::string smiles;
+  bool key_only = false;
+  for (const auto& a : args) {
+    if (a == "--key") key_only = true;
+    else if (smiles.empty()) smiles = a;
+    else return usage();
+  }
+  if (smiles.empty()) return usage();
+  Diagnostics d;
+  const InchiResult r = inchi_from_smiles(smiles, d);
+  print_diagnostics(d, smiles);
+  if (!r.ok) return 1;
+  if (!key_only) std::printf("%s\n", r.inchi.c_str());
+  std::printf("%s\n", r.key.c_str());
+  return 0;
+}
+
 int cmd_depict(const std::vector<std::string>& args) {
   std::string smiles, svg_path, mol_path;
   DepictOptions opt;
@@ -500,6 +520,7 @@ int main(int argc, char** argv) {
   if (cmd == "flash" && !args.empty()) return cmd_flash(args);
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
+  if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

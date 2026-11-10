@@ -8,7 +8,7 @@ OUT=build/web
 rm -rf "$OUT"
 mkdir -p "$OUT/data"
 SOURCES=$(ls src/*.cpp)
-EXPORTS='["_oc_flash_text_json","_oc_saturation_pressure_json","_oc_version","_oc_parse_smiles_json","_oc_canonical_smiles32_json","_oc_check_reaction_json","_oc_equilibrate_text_json","_oc_kinetics_text_json","_oc_embed32_json","_oc_depict_json","_oc_free_string","_malloc","_free"]'
+EXPORTS='["_oc_flash_text_json","_oc_saturation_pressure_json","_oc_version","_oc_parse_smiles_json","_oc_canonical_smiles32_json","_oc_check_reaction_json","_oc_equilibrate_text_json","_oc_kinetics_text_json","_oc_embed32_json","_oc_depict_json","_oc_inchi_json","_oc_free_string","_malloc","_free"]'
 em++ -std=c++20 -O3 -fexceptions -Iinclude -DOMNICHEM_STATIC $SOURCES -o "$OUT/omnichem.js" \
   -fexceptions -sMODULARIZE=1 -sEXPORT_NAME=createOmniChem -sENVIRONMENT=web,worker \
   -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4194304 \

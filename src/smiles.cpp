@@ -161,6 +161,10 @@ void Parser::ring_closure(int r, std::size_t at) {
   const std::uint32_t a = ro.atom;
   const std::uint32_t b = static_cast<std::uint32_t>(prev_);
   Pending chosen = pending_.present ? pending_ : ro.bond;
+  // A '/' or '\\' written at the closing digit reads from the closing atom to
+  // the opening one; directions are stored in order of appearance, so flip it.
+  if (pending_.present && (chosen.flags & (kBondUp | kBondDown)))
+    chosen.flags = static_cast<std::uint8_t>(chosen.flags ^ (kBondUp | kBondDown));
   if (ro.bond.present && pending_.present && ro.bond.order != pending_.order) {
     error(DiagCode::RingBondConflict, at,
           "ring bond " + std::to_string(r) + " has conflicting bond symbols at its two ends");

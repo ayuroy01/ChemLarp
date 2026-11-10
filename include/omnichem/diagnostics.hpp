@@ -34,7 +34,7 @@ enum class DiagCode : std::uint16_t {
   KekulizationLimit,
   ConflictingBondStereo,  // two '/' '\' marks on one double-bond end put both neighbours on the same side
   StereoIgnored,          // warning: stereo mark that cannot be honoured (not stereogenic, small ring, ...)
-  CipUndetermined,        // warning: CIP rules 1-2 cannot rank the substituents (rules 3-5 not implemented)
+  CipUndetermined,        // warning: CIP rules 1-5 cannot rank the substituents (not stereogenic, or digraph too large)
 
   // 3xx — stoichiometry
   MalformedReaction = 300,
@@ -81,6 +81,11 @@ enum class DiagCode : std::uint16_t {
   NoCriticalData = 700,    // component has no critical constants (Tc, Pc, omega)
   SupercriticalTemperature,  // saturation pressure asked above the critical temperature
   FlashNotConverged,       // warning: successive substitution did not converge
+
+  // 8xx — identifiers (InChI)
+  InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does
+  InchiSymmetryLimit,            // warning: symmetry search truncated; the numbering may not be canonical
+  InchiUnsupported,              // warning: a feature the generator does not encode (e.g. isotopic stereo)
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

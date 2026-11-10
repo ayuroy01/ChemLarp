@@ -117,6 +117,10 @@ OMNICHEM_API char* oc_saturation_pressure_json(const char* smiles, double temper
 #define OC_DEPICT_NUMBERS 4
 OMNICHEM_API char* oc_depict_json(const char* smiles, double bond_px, int flags);
 
+/* Standard InChI and InChIKey of a SMILES string (clean-room generator; see inchi.hpp for limits).
+ * JSON: {"ok","inchi","key","diagnostics"}. */
+OMNICHEM_API char* oc_inchi_json(const char* smiles);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus
