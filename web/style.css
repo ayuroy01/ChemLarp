@@ -36,6 +36,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }  /* classes below set display; hidden must still win */
 html, body { margin: 0; }
 body {
   background: var(--bg);

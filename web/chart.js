@@ -23,9 +23,13 @@
     return +v.toPrecision(3) + '';
   }
 
+  // The drawn height comes from data-height (CSS pixels); the canvas's own width/height
+  // attributes are the device-pixel buffer and are rewritten on every draw.
   function setup(canvas) {
     const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth, h = canvas.clientHeight || +canvas.getAttribute('height');
+    const h = parseFloat(canvas.dataset.height) || 240;
+    canvas.style.height = h + 'px';
+    const w = canvas.clientWidth;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     const ctx = canvas.getContext('2d');
@@ -97,7 +101,7 @@
   function barChart(canvas, bars, opts = {}) {
     canvas.hidden = false;
     const rowH = 24;
-    canvas.style.height = (bars.length * rowH + 36) + 'px';
+    canvas.dataset.height = String(bars.length * rowH + 36);
     const { ctx, w, h } = setup(canvas);
     const fg = token('--fg', '#111'), muted = token('--muted', '#666'), accent = token('--accent', '#14534d');
     ctx.font = '13px ui-monospace, Menlo, monospace';

@@ -73,12 +73,19 @@
 
   // ---- tabs (hash routing) --------------------------------------------------
   const tabs = ['molecule', 'model3d', 'reaction', 'equilibrium', 'kinetics', 'progress'];
+  // Each tool runs its example the first time it is opened, so it never starts empty.
+  const autorun = { molecule: 'mol-form', model3d: 'd3-form', reaction: 'rx-form', equilibrium: 'eq-form', kinetics: 'kin-form' };
+  const ran = new Set();
   function show() {
     const name = tabs.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'molecule';
     for (const t of tabs) $(t).hidden = t !== name;
     document.querySelectorAll('.tabs a').forEach((a) => (a.dataset.tab === name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
     if (name === 'model3d' && viewer) viewer.draw();
     if (name === 'progress') loadProgress();
+    if (autorun[name] && !ran.has(name)) {
+      ran.add(name);
+      $(autorun[name]).requestSubmit();
+    }
   }
   window.addEventListener('hashchange', show);
 
@@ -320,7 +327,4 @@
   console.info('OmniChem web build', BUILD);
 
   show();
-  // Open in a working state: run the visible tool's example once.
-  const first = { molecule: 'mol-form', model3d: 'd3-form', reaction: 'rx-form', equilibrium: 'eq-form', kinetics: 'kin-form' }[location.hash.slice(1) || 'molecule'];
-  if (first) $(first).requestSubmit();
 })();
