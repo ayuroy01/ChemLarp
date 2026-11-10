@@ -10,6 +10,7 @@
 #include <cstring>
 #include <new>
 #include <string>
+#include <vector>
 
 #include "omnichem/canonical.hpp"
 #include "omnichem/cip.hpp"
@@ -297,6 +298,72 @@ char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minim
     }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
+}
+
+namespace {
+// Splits "a b" / "a=b" lines into (name, number) pairs; returns false on a malformed line.
+bool parse_pairs(const char* text, std::vector<std::string>& names, std::vector<double>& values, std::string& bad) {
+  std::string all = text ? text : "";
+  std::size_t start = 0;
+  while (start <= all.size()) {
+    std::size_t e = all.find('\n', start);
+    if (e == std::string::npos) e = all.size();
+    std::string line = all.substr(start, e - start);
+    start = e + 1;
+    for (char& c : line)
+      if (c == '\r' || c == '\t') c = ' ';
+    const std::size_t a = line.find_first_not_of(' ');
+    if (a == std::string::npos) { if (e == all.size()) break; continue; }
+    line = line.substr(a, line.find_last_not_of(' ') - a + 1);
+    std::size_t sep = line.find_last_of(" =");
+    if (sep == std::string::npos) { bad = line; return false; }
+    std::string name = line.substr(0, sep), num = line.substr(sep + 1);
+    while (!name.empty() && (name.back() == ' ' || name.back() == '=')) name.pop_back();
+    char* endp = nullptr;
+    const double v = std::strtod(num.c_str(), &endp);
+    if (name.empty() || num.empty() || *endp != '\0') { bad = line; return false; }
+    names.push_back(name);
+    values.push_back(v);
+    if (e == all.size()) break;
+  }
+  return true;
+}
+
+char* bad_input(const std::string& line) {
+  return dup(std::string("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":") +
+             json_escape("expected 'name amount' but got: " + line) + "}]}");
+}
+}  // namespace
+
+char* oc_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed) {
+  return oc_canonical_smiles_json(smiles, n_random, seed);
+}
+
+char* oc_embed32_json(const char* smiles, unsigned seed, int candidates, int minimize) {
+  return oc_embed_json(smiles, seed, candidates, minimize);
+}
+
+char* oc_equilibrate_text_json(const char* species_lines, double temperature_K, double pressure_Pa) {
+  std::vector<std::string> names;
+  std::vector<double> moles;
+  std::string bad;
+  if (!parse_pairs(species_lines, names, moles, bad)) return bad_input(bad);
+  std::vector<const char*> ptrs;
+  for (const auto& n : names) ptrs.push_back(n.c_str());
+  return oc_equilibrate_json(ptrs.data(), moles.data(), ptrs.size(), temperature_K, pressure_Pa);
+}
+
+char* oc_kinetics_text_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+                            const char* model, double temperature_K, double pressure_Pa, const char* feed_lines,
+                            double t_end, size_t n_samples, double rtol) {
+  std::vector<std::string> names;
+  std::vector<double> moles;
+  std::string bad;
+  if (!parse_pairs(feed_lines, names, moles, bad)) return bad_input(bad);
+  std::vector<const char*> ptrs;
+  for (const auto& n : names) ptrs.push_back(n.c_str());
+  return oc_kinetics_json(mechanism_text, thermo_text, smiles_map_text, model, temperature_K, pressure_Pa, ptrs.data(),
+                          moles.data(), ptrs.size(), t_end, n_samples, rtol);
 }
 
 void oc_free_string(char* s) { std::free(s); }

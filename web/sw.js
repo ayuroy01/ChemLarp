@@ -1,0 +1,36 @@
+// Offline support: cache the app shell, the WebAssembly engine and example data.
+// The build stamps a new cache name on every deploy, so updates replace old files.
+const CACHE = 'omnichem-__BUILD_ID__';
+const FILES = [
+  './', 'index.html', 'style.css', 'app.js', 'viewer.js', 'chart.js', 'engine-worker.js',
+  'omnichem.js', 'omnichem.wasm', 'manifest.webmanifest',
+  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
+  'data/roadmap.json', 'data/mechanisms/h2o2.ocm', 'data/mechanisms/h2o2.yaml',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('omnichem-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+// Network first for data that changes (roadmap), cache first for everything else.
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.endsWith('roadmap.json')) {
+    event.respondWith(fetch(event.request).then((r) => {
+      const copy = r.clone();
+      caches.open(CACHE).then((c) => c.put(event.request, copy));
+      return r;
+    }).catch(() => caches.match(event.request)));
+    return;
+  }
+  event.respondWith(caches.match(event.request).then((hit) => hit || fetch(event.request)));
+});

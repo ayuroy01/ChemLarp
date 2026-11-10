@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OmniChem</title>
+  <meta name="description" content="Chemistry workbench: structures, 3D models, reactions, equilibrium and kinetics. Runs offline in your browser.">
+  <meta name="theme-color" content="#14534d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <span class="brand-name">OmniChem</span>
+      <span class="brand-tag" id="engine-status">Loading engine…</span>
+    </div>
+    <button class="install" id="install-btn" type="button" hidden>Install app</button>
+  </header>
+
+  <nav class="tabs" aria-label="Tools">
+    <a href="#molecule" data-tab="molecule">Molecule</a>
+    <a href="#model3d" data-tab="model3d">3D model</a>
+    <a href="#reaction" data-tab="reaction">Reaction</a>
+    <a href="#equilibrium" data-tab="equilibrium">Equilibrium</a>
+    <a href="#kinetics" data-tab="kinetics">Kinetics</a>
+    <a href="#progress" data-tab="progress">Progress</a>
+  </nav>
+
+  <main>
+    <!-- Molecule -->
+    <section class="panel" id="molecule" hidden>
+      <h1>Molecule</h1>
+      <p class="hint">Type a SMILES string. OmniChem checks it, writes its canonical form and works out formula, mass and stereochemistry.</p>
+      <form class="row" id="mol-form">
+        <label class="grow"><span>SMILES</span><input id="mol-smiles" value="CC(=O)Oc1ccccc1C(=O)O" autocomplete="off" spellcheck="false"></label>
+        <button type="submit">Analyse</button>
+      </form>
+      <div class="examples" data-target="mol-smiles">
+        <button type="button" data-smiles="CC(=O)Oc1ccccc1C(=O)O">Aspirin</button>
+        <button type="button" data-smiles="Cn1cnc2c1c(=O)n(C)c(=O)n2C">Caffeine</button>
+        <button type="button" data-smiles="C[C@@H](C(=O)O)N">L-alanine</button>
+        <button type="button" data-smiles="F/C=C/F">trans-Difluoroethene</button>
+        <button type="button" data-smiles="C(C)(C)(C)(C)C">Broken: 5-bond carbon</button>
+      </div>
+      <div class="result" id="mol-out"></div>
+    </section>
+
+    <!-- 3D -->
+    <section class="panel" id="model3d" hidden>
+      <h1>3D model</h1>
+      <p class="hint">Builds 3D coordinates with all hydrogens (distance geometry), relaxes them with the UFF force field and checks that the stereochemistry matches. Drag to rotate, scroll or pinch to zoom.</p>
+      <form class="row" id="d3-form">
+        <label class="grow"><span>SMILES</span><input id="d3-smiles" value="C[C@@H](C(=O)O)N" autocomplete="off" spellcheck="false"></label>
+        <button type="submit">Build 3D</button>
+      </form>
+      <div class="examples" data-target="d3-smiles">
+        <button type="button" data-smiles="C[C@@H](C(=O)O)N">L-alanine</button>
+        <button type="button" data-smiles="C1CCCCC1">Cyclohexane</button>
+        <button type="button" data-smiles="Cn1cnc2c1c(=O)n(C)c(=O)n2C">Caffeine</button>
+        <button type="button" data-smiles="O=C1CC[C@H]2[C@@H]3CC=C4C[C@@H](O)CC[C@]4(C)[C@H]3CC[C@]12C">Testosterone</button>
+      </div>
+      <div class="viewer-wrap">
+        <canvas id="viewer" aria-label="3D molecule viewer"></canvas>
+        <div class="viewer-empty" id="viewer-empty">Build a structure to see it here.</div>
+      </div>
+      <div class="row tools">
+        <label class="check"><input type="checkbox" id="d3-labels"> Atom labels</label>
+        <button type="button" class="secondary" id="d3-sdf" disabled>Download SDF</button>
+        <button type="button" class="secondary" id="d3-xyz" disabled>Download XYZ</button>
+      </div>
+      <div class="result" id="d3-out"></div>
+    </section>
+
+    <!-- Reaction -->
+    <section class="panel" id="reaction" hidden>
+      <h1>Reaction</h1>
+      <p class="hint">Write a reaction with SMILES and coefficients separated by spaces. OmniChem checks that every element and charge balances and gives ΔH°, ΔS°, ΔG° and K.</p>
+      <form class="stack" id="rx-form">
+        <label><span>Equation</span><input id="rx-eq" value="1 C + 2 O=O -> 1 O=C=O + 2 O" autocomplete="off" spellcheck="false"></label>
+        <div class="row">
+          <label><span>Temperature (K)</span><input id="rx-t" type="number" value="298.15" min="1" step="any"></label>
+          <button type="submit">Check reaction</button>
+        </div>
+      </form>
+      <div class="examples" data-target="rx-eq">
+        <button type="button" data-smiles="1 C + 2 O=O -> 1 O=C=O + 2 O">Methane combustion</button>
+        <button type="button" data-smiles="[C-]#[O+] + O -> O=C=O + [H][H]">Water-gas shift</button>
+        <button type="button" data-smiles="C + O=O -> O=C=O + O">Unbalanced</button>
+      </div>
+      <div class="result" id="rx-out"></div>
+    </section>
+
+    <!-- Equilibrium -->
+    <section class="panel" id="equilibrium" hidden>
+      <h1>Equilibrium</h1>
+      <p class="hint">Lists the gas-phase species that may form, one per line as <code>SMILES moles</code>. OmniChem minimises the Gibbs energy at the given temperature and pressure.</p>
+      <form class="stack" id="eq-form">
+        <label><span>Species and starting moles</span><textarea id="eq-species" rows="7" spellcheck="false">C 1
+O=O 2
+O=C=O 0
+O 0
+[C-]#[O+] 0
+[H][H] 0
+[OH] 0</textarea></label>
+        <div class="row">
+          <label><span>Temperature (K)</span><input id="eq-t" type="number" value="2500" min="1" step="any"></label>
+          <label><span>Pressure (bar)</span><input id="eq-p" type="number" value="1" min="0.0001" step="any"></label>
+          <button type="submit">Find equilibrium</button>
+        </div>
+      </form>
+      <div class="result" id="eq-out"></div>
+      <canvas class="chart" id="eq-chart" height="260" hidden></canvas>
+    </section>
+
+    <!-- Kinetics -->
+    <section class="panel" id="kinetics" hidden>
+      <h1>Kinetics</h1>
+      <p class="hint">Runs a batch reactor with a reaction mechanism. Use the built-in hydrogen–oxygen example or load your own (.ocm, CHEMKIN chem.inp or Cantera YAML).</p>
+      <form class="stack" id="kin-form">
+        <div class="row">
+          <label class="grow"><span>Mechanism</span>
+            <select id="kin-mech">
+              <option value="data/mechanisms/h2o2.ocm">Hydrogen–oxygen (example, 9 species)</option>
+              <option value="data/mechanisms/h2o2.yaml">Hydrogen–oxygen, Cantera YAML</option>
+              <option value="custom">My own file…</option>
+            </select>
+          </label>
+          <label><span>Reactor</span>
+            <select id="kin-model">
+              <option value="adiabatic-v">Adiabatic, constant volume</option>
+              <option value="adiabatic-p">Adiabatic, constant pressure</option>
+              <option value="iso-v">Isothermal, constant volume</option>
+              <option value="iso-p">Isothermal, constant pressure</option>
+            </select>
+          </label>
+        </div>
+        <div class="custom-mech" id="kin-custom" hidden>
+          <label><span>Mechanism file</span><input type="file" id="kin-file" accept=".ocm,.inp,.dat,.yaml,.yml,.txt"></label>
+          <label><span>Thermo file (CHEMKIN only, optional)</span><input type="file" id="kin-thermo" accept=".dat,.txt,.thermo"></label>
+        </div>
+        <label><span>Starting moles, one per line as <code>NAME=moles</code></span><textarea id="kin-feed" rows="3" spellcheck="false">H2=2
+O2=1
+AR=7</textarea></label>
+        <div class="row">
+          <label><span>Temperature (K)</span><input id="kin-t" type="number" value="1000" min="1" step="any"></label>
+          <label><span>Pressure (bar)</span><input id="kin-p" type="number" value="1" min="0.0001" step="any"></label>
+          <label><span>Time (ms)</span><input id="kin-time" type="number" value="1" min="0.000001" step="any"></label>
+          <button type="submit">Run</button>
+        </div>
+      </form>
+      <div class="result" id="kin-out"></div>
+      <canvas class="chart" id="kin-chart-t" height="240" hidden></canvas>
+      <div class="row tools" id="kin-scale" hidden>
+        <label class="check"><input type="checkbox" id="kin-log" checked> Log scale for mole fractions</label>
+      </div>
+      <canvas class="chart" id="kin-chart-x" height="300" hidden></canvas>
+    </section>
+
+    <!-- Progress -->
+    <section class="panel" id="progress" hidden>
+      <h1>Progress</h1>
+      <p class="hint">How much of the OmniChem roadmap is built, weighted by module size (S = 1, M = 2.5, L = 5).</p>
+      <div class="result" id="prog-out"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>OmniChem <span id="version">—</span> · Apache-2.0 · runs entirely in your browser, offline once installed</span>
+    <a href="https://github.com/ayuroy01/ChemLarp" target="_blank" rel="noopener">Source on GitHub</a>
+  </footer>
+
+  <script src="viewer.js"></script>
+  <script src="chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

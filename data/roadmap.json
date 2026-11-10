@@ -1,0 +1,75 @@
+{
+  "title": "OmniChem Core roadmap",
+  "updated": "2026-11-10",
+  "weights": {"S": 1, "M": 2.5, "L": 5},
+  "areas": [
+    {
+      "name": "Core engine",
+      "replaces": "foundation",
+      "modules": [
+        {"name": "SMILES parser, valence checks, error vectors", "size": "M", "status": "done"},
+        {"name": "Thermochemistry and Gibbs equilibrium", "size": "M", "status": "done"},
+        {"name": "Canonical SMILES and CIP R/S, E/Z", "size": "M", "status": "done"}
+      ]
+    },
+    {
+      "name": "Drawing and identity",
+      "replaces": "ChemDraw",
+      "modules": [
+        {"name": "2D layout and SVG drawing", "size": "M", "status": "planned"},
+        {"name": "Structure editor", "size": "L", "status": "planned"},
+        {"name": "Readers for MOL/SDF, PDB, CML", "size": "S", "status": "planned"},
+        {"name": "Substructure search (SMARTS) and fingerprints", "size": "M", "status": "planned"},
+        {"name": "InChI, CIP rules 1b/3-5, axial chirality", "size": "M", "status": "planned"},
+        {"name": "IUPAC naming", "size": "L", "status": "planned"}
+      ]
+    },
+    {
+      "name": "Process simulation",
+      "replaces": "Aspen Plus / HYSYS",
+      "modules": [
+        {"name": "Equations of state and activity models", "size": "M", "status": "planned"},
+        {"name": "Vapor-liquid flash", "size": "S", "status": "planned"},
+        {"name": "Unit operations (mixers, exchangers, reactors)", "size": "M", "status": "planned"},
+        {"name": "Distillation columns", "size": "M", "status": "planned"},
+        {"name": "Flowsheet solver", "size": "M", "status": "planned"},
+        {"name": "Pure-component property database", "size": "M", "status": "planned"}
+      ]
+    },
+    {
+      "name": "Molecular modelling",
+      "replaces": "Schrödinger",
+      "modules": [
+        {"name": "3D embedding and UFF force field", "size": "M", "status": "done"},
+        {"name": "MMFF94, partial charges, electrostatics", "size": "M", "status": "planned"},
+        {"name": "Molecular dynamics", "size": "M", "status": "planned"},
+        {"name": "Protein handling (PDB, residues, protonation)", "size": "M", "status": "planned"},
+        {"name": "Docking", "size": "M", "status": "planned"},
+        {"name": "Free-energy perturbation (FEP/MBAR)", "size": "M", "status": "planned"},
+        {"name": "Quantum chemistry (Hartree-Fock, DFT)", "size": "L", "status": "planned"}
+      ]
+    },
+    {
+      "name": "Kinetics and virtual lab",
+      "replaces": "Labster",
+      "modules": [
+        {"name": "Stiff kinetics and batch reactors", "size": "M", "status": "done"},
+        {"name": "Fall-off, PLOG, CHEMKIN and Cantera import", "size": "M", "status": "done"},
+        {"name": "Solution chemistry (pH, ions, solubility)", "size": "M", "status": "planned"},
+        {"name": "Interactive lab simulations and safety rules", "size": "M", "status": "planned"}
+      ]
+    },
+    {
+      "name": "App and platform",
+      "replaces": "ease of use",
+      "modules": [
+        {"name": "Windows, macOS, Linux builds with CI", "size": "S", "status": "done"},
+        {"name": "Installable web app (all OSes, offline)", "size": "M", "status": "in_progress"},
+        {"name": "Native installers (.apk, .exe, .dmg)", "size": "S", "status": "planned"},
+        {"name": "Multithreading and sparse solvers", "size": "S", "status": "planned"},
+        {"name": "Packages (pip, Homebrew, winget, Node)", "size": "S", "status": "planned"},
+        {"name": "Validation against reference data", "size": "M", "status": "planned"}
+      ]
+    }
+  ]
+}

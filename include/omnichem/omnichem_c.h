@@ -90,6 +90,15 @@ OMNICHEM_API char* oc_kinetics_json(const char* mechanism_text, const char* ther
  *  "stereo": {"centres", "centres_ok", "bonds", "bonds_ok"}, "diagnostics"} */
 OMNICHEM_API char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minimize);
 
+/* String-only variants for JavaScript / WebAssembly callers (no pointer arrays).
+ * `species_lines`: one "SMILES moles" pair per line.  `feed_lines`: "NAME=moles" or "NAME moles" per line. */
+OMNICHEM_API char* oc_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed);
+OMNICHEM_API char* oc_embed32_json(const char* smiles, unsigned seed, int candidates, int minimize);
+OMNICHEM_API char* oc_equilibrate_text_json(const char* species_lines, double temperature_K, double pressure_Pa);
+OMNICHEM_API char* oc_kinetics_text_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+                                         const char* model, double temperature_K, double pressure_Pa,
+                                         const char* feed_lines, double t_end, size_t n_samples, double rtol);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus

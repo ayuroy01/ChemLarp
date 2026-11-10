@@ -2,6 +2,16 @@
 
 OmniChem Core is a terminal-native chemistry engine written in C++20. It covers the path from SMILES to molecular graph to thermochemistry to Gibbs-minimized equilibrium. Every stage shares one zero-copy structure-of-arrays state, and every error is collected into a single vector.
 
+## Use it in your browser (any OS, installable)
+
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+
+- **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
+- **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
+- **iPhone / iPad (Safari):** Share → **Add to Home Screen**.
+
+Build it yourself with the Emscripten SDK: `scripts/build_web.sh`, then serve `build/web` with any static file server.
+
 ## Build
 
 Supported platforms: **Windows** (Visual Studio 2022 / MSVC, clang-cl, or MSYS2 MinGW-w64), **macOS** (Apple clang, Xcode 15+), and **Linux** (GCC 11+ / Clang 15+). The only requirements are a C++20 compiler and CMake 3.20+. There are no other dependencies.
