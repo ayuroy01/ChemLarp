@@ -151,6 +151,7 @@
     const p = properties(c);
     const stereoCount = c.cip.centres.length + c.cip.double_bonds.length;
     body.replaceChildren(
+      h('div', { class: 'thumb', id: 'insp-drawing', role: 'img', 'aria-label': 'Structure drawing' }),
       h('div', {}, formulaNode(c.formula, 'formula')),
       h('dl', { class: 'props' },
         h('dt', { text: 'Molecular Weight' }), h('dd', {}, fixed(c.mass, 4), h('span', { class: 'unit', text: 'g/mol' })),
@@ -175,6 +176,7 @@
         h('button', { class: 'btn', type: 'button', onclick: () => { location.hash = 'model3d'; } , text: '3D Model' }),
         h('button', { class: 'btn', type: 'button', onclick: () => { location.hash = 'structure'; }, text: 'Structure' })),
     );
+    paintThumb(c);
   }
 
   function vapourPressureSection(c) {
@@ -187,7 +189,11 @@
       try {
         const { result: r } = await engine('psat', { smiles: c.canonical, temperature: +T.value, eos: 'pr' });
         if (compound !== c) return;
-        result.textContent = r.ok ? `${fmt(r.pressure_Pa / 1e5, 5)} bar  (${fmt(r.pressure_Pa / 1e3, 5)} kPa)` : (r.diagnostics[0] ? r.diagnostics[0].message : 'Not available');
+        const d0 = r.diagnostics[0];
+        result.textContent = r.ok ? `${fmt(r.pressure_Pa / 1e5, 5)} bar  (${fmt(r.pressure_Pa / 1e3, 5)} kPa)`
+          : d0 && d0.code === 'NoCriticalData' ? 'Not in the critical-property database yet.'
+          : d0 && d0.code === 'SupercriticalTemperature' ? 'Above the critical temperature: no vapour pressure.'
+          : d0 ? d0.message : 'Not available';
       } catch (err) { result.textContent = err.message; }
     }
     queueMicrotask(run);
@@ -197,6 +203,93 @@
         h('span', { class: 'unit-input', style: 'flex:1' }, T, h('span', { class: 'unit', text: 'K' })),
         h('button', { class: 'btn', type: 'submit', text: 'Compute' })),
       result);
+  }
+
+  // ---- 2D drawing ----------------------------------------------------------------------
+  const drawOpts = Object.assign({ color: true, cip: false, numbers: false }, store.get('draw', {}));
+  const drawFlags = () => (drawOpts.color ? 1 : 0) | (drawOpts.cip ? 2 : 0) | (drawOpts.numbers ? 4 : 0);
+  const depictCache = new Map();
+  async function depiction(c, flags = drawFlags(), bond = 30) {
+    const key = `${c.canonical}|${flags}|${bond}`;
+    if (!depictCache.has(key)) {
+      if (depictCache.size > 40) depictCache.clear();
+      depictCache.set(key, engine('depict', { smiles: c.input, bond, flags }).then((x) => x.result));
+    }
+    return depictCache.get(key);
+  }
+  // Standalone SVG for files: black ink instead of currentColor.
+  const standaloneSvg = (svg) => '<?xml version="1.0" encoding="UTF-8"?>\n' + svg.replace(/currentColor/g, '#000000');
+  function savePng(r, name) {
+    const scale = 4;
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([standaloneSvg(r.svg)], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = Math.ceil(r.width * scale);
+      cv.height = Math.ceil(r.height * scale);
+      const g = cv.getContext('2d');
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, cv.width, cv.height);
+      g.drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob((blob) => {
+        const a = h('a', { href: URL.createObjectURL(blob), download: name });
+        document.body.append(a);
+        a.click();
+        a.remove();
+      }, 'image/png');
+    };
+    img.src = url;
+  }
+  async function paintThumb(c) {
+    const host = $('insp-drawing');
+    if (!host) return;
+    try {
+      const r = await depiction(c, drawOpts.color ? 1 : 0);
+      if (compound !== c || !r.ok) return;
+      host.innerHTML = r.svg;  // engine-generated SVG; labels are element symbols and the title is escaped
+    } catch { /* the thumbnail is optional */ }
+  }
+  function drawingCard(c) {
+    const host = h('div', { class: 'drawing', role: 'img', 'aria-label': `Structure of ${c.formula}` }, h('div', { class: 'spinner' }));
+    const note = h('span', { class: 'meta' });
+    let current = null;
+    async function paint() {
+      try {
+        const r = await depiction(c, drawFlags(), 36);
+        if (compound !== c) return;
+        current = r;
+        if (!r.ok) { host.replaceChildren(...diagnostics(r.diagnostics)); return; }
+        host.innerHTML = r.svg;
+        const st = r.stereo;
+        note.textContent = st.centres + st.bonds ? `Stereo shown: ${st.centres_ok}/${st.centres} centres · ${st.bonds_ok}/${st.bonds} double bonds` : 'No stereo elements';
+      } catch (err) { host.replaceChildren(h('p', { class: 'muted', text: err.message })); }
+    }
+    const toggle = (label, key) => h('button', {
+      class: 'chip', type: 'button', 'aria-pressed': String(drawOpts[key]), text: label,
+      onclick: (e) => {
+        drawOpts[key] = !drawOpts[key];
+        e.currentTarget.setAttribute('aria-pressed', String(drawOpts[key]));
+        store.set('draw', drawOpts);
+        paint();
+        if (key === 'color') paintThumb(c);
+      },
+    });
+    const base = (c.formula || 'structure').replace(/[^A-Za-z0-9+-]/g, '');
+    const exp = (label, fn) => h('button', { class: 'chip', type: 'button', text: label, onclick: () => current && current.ok && fn(current) });
+    paint();
+    return h('div', { class: 'glass-card card' },
+      h('div', { class: 'card-head' }, h('h2', { text: 'Structure' }), note),
+      host,
+      h('div', { class: 'drawing-bar' },
+        h('div', { class: 'samples', role: 'group', 'aria-label': 'Drawing options' },
+          toggle('Colour', 'color'), toggle('Stereo labels', 'cip'), toggle('Atom numbers', 'numbers')),
+        h('div', { class: 'samples', role: 'group', 'aria-label': 'Export' },
+          h('span', { class: 'samples-label', text: 'Export' }),
+          exp('SVG', (r) => download(base + '.svg', standaloneSvg(r.svg), 'image/svg+xml')),
+          exp('PNG', (r) => savePng(r, base + '.png')),
+          exp('MOL', (r) => download(base + '.mol', r.molfile, 'chemical/x-mdl-molfile')),
+          exp('Copy SVG', (r) => copy(standaloneSvg(r.svg))))));
   }
 
   function renderStructure(r, input) {
@@ -213,6 +306,7 @@
     ];
     out.replaceChildren(
       status('ok', 'Valid structure', `${c.heavy} heavy atoms · ${c.bonds} bonds`),
+      drawingCard(c),
       h('div', { class: 'glass-card card' },
         h('div', { class: 'card-head' }, h('h2', { text: 'Identifiers' })),
         h('dl', { class: 'props' },

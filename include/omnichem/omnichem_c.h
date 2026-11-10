@@ -107,6 +107,16 @@ OMNICHEM_API char* oc_kinetics_text_json(const char* mechanism_text, const char*
 OMNICHEM_API char* oc_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos);
 OMNICHEM_API char* oc_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos);
 
+/* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: OC_DEPICT_* bits.
+ * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
+ *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.
+ * atom is the 0-based atom index in the input, or -1 for a hydrogen drawn to carry a wedge;
+ * stereo is 0, 1 (wedge, narrow end at a) or 6 (hash). */
+#define OC_DEPICT_COLOR 1
+#define OC_DEPICT_CIP 2
+#define OC_DEPICT_NUMBERS 4
+OMNICHEM_API char* oc_depict_json(const char* smiles, double bond_px, int flags);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus

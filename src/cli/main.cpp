@@ -32,6 +32,7 @@
 #include "omnichem/canonical.hpp"
 #include "omnichem/cip.hpp"
 #include "omnichem/conformer.hpp"
+#include "omnichem/depict.hpp"
 #include "omnichem/uff.hpp"
 #include "omnichem/elements.hpp"
 #include "omnichem/eos.hpp"
@@ -54,6 +55,7 @@ int usage() {
       "  omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
       "  omnichem flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  omnichem psat <SMILES> -T K [--srk]\n"
+      "  omnichem depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
       "                    [--rtol x] [--csv file] NAME=moles ...\n"
@@ -345,6 +347,38 @@ int cmd_flash(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_depict(const std::vector<std::string>& args) {
+  std::string smiles, svg_path, mol_path;
+  DepictOptions opt;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "-o" && i + 1 < args.size()) svg_path = args[++i];
+    else if (args[i] == "--mol" && i + 1 < args.size()) mol_path = args[++i];
+    else if (args[i] == "--cip") opt.cip_labels = true;
+    else if (args[i] == "--numbers") opt.atom_numbers = true;
+    else if (args[i] == "--mono") opt.color = false;
+    else if (args[i] == "--bond" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), opt.bond_length)) return usage(); }
+    else if (smiles.empty()) smiles = args[i];
+    else return usage();
+  }
+  if (smiles.empty()) return usage();
+  Diagnostics d;
+  const Depiction dp = depict_smiles(smiles, d, opt);
+  print_diagnostics(d, smiles);
+  if (!dp.ok) return 1;
+  auto save = [](const std::string& path, const std::string& text) {
+    std::ofstream f(path, std::ios::binary);
+    f << text;
+    return static_cast<bool>(f);
+  };
+  if (svg_path.empty()) std::fputs((dp.svg + "\n").c_str(), stdout);
+  else if (!save(svg_path, dp.svg)) { std::fprintf(stderr, "cannot write %s\n", svg_path.c_str()); return 1; }
+  if (!mol_path.empty() && !save(mol_path, dp.molfile)) { std::fprintf(stderr, "cannot write %s\n", mol_path.c_str()); return 1; }
+  if (!svg_path.empty())
+    std::fprintf(stderr, "%s: %.0fx%.0f px, stereo %zu/%zu centres, %zu/%zu double bonds\n", svg_path.c_str(), dp.width, dp.height,
+                 dp.stereo_centres_ok, dp.stereo_centres, dp.stereo_bonds_ok, dp.stereo_bonds);
+  return 0;
+}
+
 int cmd_psat(const std::vector<std::string>& args) {
   double T = 300;
   CubicEos eos = CubicEos::PengRobinson;
@@ -465,6 +499,7 @@ int main(int argc, char** argv) {
   if (cmd == "embed" && !args.empty()) return cmd_embed(args);
   if (cmd == "flash" && !args.empty()) return cmd_flash(args);
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
+  if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

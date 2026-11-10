@@ -4,7 +4,7 @@ OmniChem Core is a terminal-native chemistry engine written in C++20. It covers 
 
 ## Use it in your browser (any OS, installable)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
 
 - **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
 - **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
@@ -76,6 +76,10 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 ```
 
 ```bash
+./build/omnichem depict 'C[C@@H](C(=O)O)N' -o alanine.svg --mol alanine.mol --cip   # 2D drawing with wedges
+```
+
+```bash
 ./build/omnichem embed 'C[C@@H](C(=O)O)N' --sdf alanine.sdf    # 3D: distance geometry + UFF, stereo checked
 ```
 
@@ -101,6 +105,7 @@ with omnichem.System() as s:
     s.add("c1ccccc1O")
     xyz = s.atom_x()        # numpy view straight into the C++ SoA column
 omnichem.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
+omnichem.depict("N[C@@H](C)C(=O)O")["svg"]  # 2D drawing (SVG + molfile with wedges)
 omnichem.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
 omnichem.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
 ```
@@ -121,11 +126,12 @@ include/omnichem/   public headers (C++ API + omnichem_c.h C ABI)
   gibbs.hpp           element-potential Gibbs minimiser
   kinetics.hpp        mechanisms (.ocm / CHEMKIN-II / Cantera YAML), fall-off, PLOG, batch reactors
   ode.hpp             variable-order BDF stiff integrator, LU
+  depict.hpp          2D layout, wedges, SVG drawing, 2D molfile
   conformer.hpp       explicit H, distance-geometry 3D embedding, stereo from 3D, SDF/XYZ
   uff.hpp             Universal Force Field (energy, analytic gradient, minimiser)
   optimize.hpp        L-BFGS
 src/                implementations; src/cli/main.cpp is the `omnichem` terminal tool
-tests/              dependency-free test suite (78 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics, 3D/UFF)
+tests/              dependency-free test suite (93 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics, 2D drawing, 3D/UFF)
 data/mechanisms/    example H2/O2 mechanism in .ocm, CHEMKIN-II and YAML form (illustrative parameters; regenerate with scripts/gen_h2o2_mechanism.py)
 python/omnichem/    ctypes binding
 scripts/            build.sh, ocx_pack.py

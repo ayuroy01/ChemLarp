@@ -15,6 +15,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | SMILES parsing, aromaticity | OpenSMILES spec (opensmiles.org); Weininger, *JCICS* 28 (1988) 31 |
 | InChI | IUPAC/InChI Trust technical manual + open-source reference library (MIT-style license) |
 | R/S, E/Z | IUPAC 2013 recommendations P-92 (CIP rules); Hanson et al., *JCIM* 58 (2018) 1755 (CIP algorithm validation) |
+| 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
 | 2D→3D embedding | Crippen & Havel, *Distance Geometry and Molecular Conformation* (1988); Riniker & Landrum ETKDG, *JCIM* 55 (2015) 2562 |
 | Force fields | MMFF94: Halgren, *J. Comput. Chem.* 17 (1996), 5 parts; UFF: Rappé et al., *JACS* 114 (1992) 10024; OPLS-AA: Jorgensen et al., *JACS* 118 (1996) 11225 |
 | MD integrators | Verlet (1967); Swope et al. velocity Verlet, *JCP* 76 (1982) 637 |
@@ -106,6 +107,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Joback ΔfH°/ΔfG° from graph | **done**; ethanol, propane, acetone, benzene, and acetic acid fall within the tolerances shown in tests |
 | Ideal-gas Gibbs minimisation (element-potential Newton) | **done**, tested (K consistency, conservation, Le Chatelier, rank deficiency) |
 | C ABI + Python ctypes binding; `.ocx` v0.1 container | **done** |
+| 2D layout (ring templates by arc closure, 120° chains, E/Z by mirroring, overlap relief by subtree reflection) and SVG drawing with IUPAC-style wedges, ring-fusion H, CIP labels; 2D molfile export | **done**; every stereocentre's wedge is checked by reading the chirality back from the drawing. Bridged polycycles (morphine, adamantane) are legible but not template-quality |
 | InChI | planned (canonical SMILES now covers structure identity inside OmniChem) |
 | Allene / atropisomer / square-planar stereo (@AL, @SP, @TB, @OH) | planned |
 | Explicit hydrogens with stereo remapping | **done** |

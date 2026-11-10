@@ -16,6 +16,7 @@
 #include "omnichem/canonical.hpp"
 #include "omnichem/cip.hpp"
 #include "omnichem/conformer.hpp"
+#include "omnichem/depict.hpp"
 #include "omnichem/diagnostics.hpp"
 #include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
@@ -346,6 +347,42 @@ char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minim
   });
 }
 
+
+char* oc_depict_json(const char* smiles, double bond_px, int flags) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    DepictOptions opt;
+    if (bond_px > 0) opt.bond_length = bond_px;
+    opt.color = (flags & OC_DEPICT_COLOR) != 0;
+    opt.cip_labels = (flags & OC_DEPICT_CIP) != 0;
+    opt.atom_numbers = (flags & OC_DEPICT_NUMBERS) != 0;
+    ChemicalSystemState st;
+    const std::int32_t sp = parse_smiles(st, smiles, d);
+    Depiction dp;
+    if (sp >= 0 && !d.has_errors()) dp = depict(st, static_cast<std::uint32_t>(sp), d, opt);
+    std::string out = std::string("{\"ok\":") + (dp.ok ? "true" : "false");
+    if (dp.ok) {
+      const std::uint32_t begin = st.species[static_cast<std::uint32_t>(sp)].atom_begin;
+      out += ",\"svg\":" + json_escape(dp.svg) + ",\"molfile\":" + json_escape(dp.molfile) + ",\"width\":" + jnum(dp.width) +
+             ",\"height\":" + jnum(dp.height) + ",\"atoms\":[";
+      for (std::size_t i = 0; i < dp.atoms.size(); ++i) {
+        const auto& a = dp.atoms[i];
+        out += std::string(i ? "," : "") + "{\"atom\":" + std::to_string(a.atom < 0 ? -1 : a.atom - static_cast<std::int32_t>(begin)) +
+               ",\"x\":" + jnum(a.x) + ",\"y\":" + jnum(a.y) + ",\"label\":" + json_escape(a.label) + "}";
+      }
+      out += "],\"bonds\":[";
+      for (std::size_t i = 0; i < dp.bonds.size(); ++i) {
+        const auto& b = dp.bonds[i];
+        out += std::string(i ? "," : "") + "{\"a\":" + std::to_string(b.a) + ",\"b\":" + std::to_string(b.b) +
+               ",\"order\":" + std::to_string(b.order) + ",\"stereo\":" + std::to_string(static_cast<int>(b.stereo)) + "}";
+      }
+      out += "],\"stereo\":{\"centres\":" + std::to_string(dp.stereo_centres) + ",\"centres_ok\":" + std::to_string(dp.stereo_centres_ok) +
+             ",\"bonds\":" + std::to_string(dp.stereo_bonds) + ",\"bonds_ok\":" + std::to_string(dp.stereo_bonds_ok) + "}";
+    }
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
 
 char* oc_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed) {
   return oc_canonical_smiles_json(smiles, n_random, seed);
