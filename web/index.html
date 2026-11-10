@@ -4,208 +4,313 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>OmniChem</title>
-  <meta name="description" content="Chemistry workbench: structures, 3D models, reactions, equilibrium and kinetics. Runs offline in your browser.">
-  <meta name="theme-color" content="#14534d">
+  <meta name="description" content="Chemistry workbench: structure properties, 3D models, reactions, equilibrium, kinetics and phase behaviour. Runs offline on your device.">
+  <meta name="theme-color" content="#eef2f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0d11" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img src="icons/icon.svg" alt="" width="28" height="28">
-      <span class="brand-name">OmniChem</span>
-      <span class="brand-tag" id="engine-status">Loading engine…</span>
-    </div>
-    <button class="install" id="install-btn" type="button" hidden>Install app</button>
-  </header>
+  <!-- Line icons (24px grid, 1.6 stroke), drawn once and reused. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-structure" viewBox="0 0 24 24"><path d="M12 3.5 19.4 7.75v8.5L12 20.5l-7.4-4.25v-8.5Z"/><circle cx="12" cy="12" r="3.4"/></symbol>
+    <symbol id="i-3d" viewBox="0 0 24 24"><path d="M12 3.5 19.5 7.7v8.6L12 20.5l-7.5-4.2V7.7Z"/><path d="M4.5 7.7 12 12l7.5-4.3M12 12v8.5"/></symbol>
+    <symbol id="i-reaction" viewBox="0 0 24 24"><path d="M3.5 9h13m-3.5-3.5L16.5 9 13 12.5M20.5 15h-13m3.5 3.5L7.5 15l3.5-3.5"/></symbol>
+    <symbol id="i-equilibrium" viewBox="0 0 24 24"><path d="M12 4v16M5 8h14M7.5 8 4.5 14.5a3 3 0 0 0 6 0Zm9 0-3 6.5a3 3 0 0 0 6 0ZM8 20h8"/></symbol>
+    <symbol id="i-kinetics" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.8 2.2M9.5 3h5"/></symbol>
+    <symbol id="i-phases" viewBox="0 0 24 24"><path d="M6 3.5h12M7.5 3.5v6.2L4.2 17a2.4 2.4 0 0 0 2.2 3.5h11.2a2.4 2.4 0 0 0 2.2-3.5l-3.3-7.3V3.5"/><path d="M5.6 14h12.8"/><circle cx="10" cy="17.3" r=".7"/><circle cx="14" cy="16.6" r=".7"/></symbol>
+    <symbol id="i-roadmap" viewBox="0 0 24 24"><path d="M4 20V5m0 0h11l-1.8 3.2L15 11.5H4"/><path d="M4 20h16"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.9A2.4 2.4 0 0 0 13.1 4.5H6.9A2.4 2.4 0 0 0 4.5 6.9v6.2a2.4 2.4 0 0 0 2.4 2.4h1.6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
+    <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3Z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+    <symbol id="i-install" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M12 8v7m-3-3 3 3 3-3"/></symbol>
+  </svg>
 
-  <nav class="tabs" aria-label="Tools">
-    <a href="#molecule" data-tab="molecule">Molecule</a>
-    <a href="#model3d" data-tab="model3d">3D model</a>
-    <a href="#reaction" data-tab="reaction">Reaction</a>
-    <a href="#equilibrium" data-tab="equilibrium">Equilibrium</a>
-    <a href="#kinetics" data-tab="kinetics">Kinetics</a>
-    <a href="#phases" data-tab="phases">Phases</a>
-    <a href="#progress" data-tab="progress">Progress</a>
-  </nav>
-
-  <main>
-    <!-- Molecule -->
-    <section class="panel" id="molecule" hidden>
-      <h1>Molecule</h1>
-      <p class="hint">Type a SMILES string. OmniChem checks it, writes its canonical form and works out formula, mass and stereochemistry.</p>
-      <form class="row" id="mol-form">
-        <label class="grow"><span>SMILES</span><input id="mol-smiles" value="CC(=O)Oc1ccccc1C(=O)O" autocomplete="off" spellcheck="false"></label>
-        <button type="submit">Analyse</button>
-      </form>
-      <div class="examples" data-target="mol-smiles">
-        <button type="button" data-smiles="CC(=O)Oc1ccccc1C(=O)O">Aspirin</button>
-        <button type="button" data-smiles="Cn1cnc2c1c(=O)n(C)c(=O)n2C">Caffeine</button>
-        <button type="button" data-smiles="C[C@@H](C(=O)O)N">L-alanine</button>
-        <button type="button" data-smiles="F/C=C/F">trans-Difluoroethene</button>
-        <button type="button" data-smiles="C(C)(C)(C)(C)C">Broken: 5-bond carbon</button>
-      </div>
-      <div class="result" id="mol-out"></div>
-    </section>
-
-    <!-- 3D -->
-    <section class="panel" id="model3d" hidden>
-      <h1>3D model</h1>
-      <p class="hint">Builds 3D coordinates with all hydrogens (distance geometry), relaxes them with the UFF force field and checks that the stereochemistry matches. Drag to rotate, scroll or pinch to zoom.</p>
-      <form class="row" id="d3-form">
-        <label class="grow"><span>SMILES</span><input id="d3-smiles" value="C[C@@H](C(=O)O)N" autocomplete="off" spellcheck="false"></label>
-        <button type="submit">Build 3D</button>
-      </form>
-      <div class="examples" data-target="d3-smiles">
-        <button type="button" data-smiles="C[C@@H](C(=O)O)N">L-alanine</button>
-        <button type="button" data-smiles="C1CCCCC1">Cyclohexane</button>
-        <button type="button" data-smiles="Cn1cnc2c1c(=O)n(C)c(=O)n2C">Caffeine</button>
-        <button type="button" data-smiles="O=C1CC[C@H]2[C@@H]3CC=C4C[C@@H](O)CC[C@]4(C)[C@H]3CC[C@]12C">Testosterone</button>
-      </div>
-      <div class="viewer-wrap">
-        <canvas id="viewer" aria-label="3D molecule viewer"></canvas>
-        <div class="viewer-empty" id="viewer-empty">Build a structure to see it here.</div>
-      </div>
-      <div class="row tools">
-        <label class="check"><input type="checkbox" id="d3-labels"> Atom labels</label>
-        <button type="button" class="secondary" id="d3-sdf" disabled>Download SDF</button>
-        <button type="button" class="secondary" id="d3-xyz" disabled>Download XYZ</button>
-      </div>
-      <div class="result" id="d3-out"></div>
-    </section>
-
-    <!-- Reaction -->
-    <section class="panel" id="reaction" hidden>
-      <h1>Reaction</h1>
-      <p class="hint">Write a reaction with SMILES and coefficients separated by spaces. OmniChem checks that every element and charge balances and gives ΔH°, ΔS°, ΔG° and K.</p>
-      <form class="stack" id="rx-form">
-        <label><span>Equation</span><input id="rx-eq" value="1 C + 2 O=O -> 1 O=C=O + 2 O" autocomplete="off" spellcheck="false"></label>
-        <div class="row">
-          <label><span>Temperature (K)</span><input id="rx-t" type="number" value="298.15" min="1" step="any"></label>
-          <button type="submit">Check reaction</button>
+  <div class="app">
+    <!-- Sidebar (source list) -->
+    <aside class="sidebar glass" aria-label="Tools">
+      <div class="brand">
+        <img src="icons/icon.svg" alt="" width="30" height="30">
+        <div>
+          <div class="brand-name">OmniChem</div>
+          <div class="brand-sub" id="engine-status">Starting engine…</div>
         </div>
-      </form>
-      <div class="examples" data-target="rx-eq">
-        <button type="button" data-smiles="1 C + 2 O=O -> 1 O=C=O + 2 O">Methane combustion</button>
-        <button type="button" data-smiles="[C-]#[O+] + O -> O=C=O + [H][H]">Water-gas shift</button>
-        <button type="button" data-smiles="C + O=O -> O=C=O + O">Unbalanced</button>
       </div>
-      <div class="result" id="rx-out"></div>
-    </section>
+      <nav class="tool-list">
+        <div class="list-heading">Compound</div>
+        <a href="#structure" data-tool="structure" data-key="1"><svg><use href="#i-structure"/></svg><span>Structure</span><kbd>⌘1</kbd></a>
+        <a href="#model3d" data-tool="model3d" data-key="2"><svg><use href="#i-3d"/></svg><span>3D Model</span><kbd>⌘2</kbd></a>
+        <div class="list-heading">Thermodynamics</div>
+        <a href="#reaction" data-tool="reaction" data-key="3"><svg><use href="#i-reaction"/></svg><span>Reaction</span><kbd>⌘3</kbd></a>
+        <a href="#equilibrium" data-tool="equilibrium" data-key="4"><svg><use href="#i-equilibrium"/></svg><span>Equilibrium</span><kbd>⌘4</kbd></a>
+        <a href="#phases" data-tool="phases" data-key="5"><svg><use href="#i-phases"/></svg><span>Phase Behaviour</span><kbd>⌘5</kbd></a>
+        <div class="list-heading">Kinetics</div>
+        <a href="#kinetics" data-tool="kinetics" data-key="6"><svg><use href="#i-kinetics"/></svg><span>Batch Reactor</span><kbd>⌘6</kbd></a>
+      </nav>
+      <div class="recents">
+        <div class="list-heading">Recent compounds</div>
+        <ul id="recent-list"></ul>
+      </div>
+      <div class="sidebar-foot">
+        <a href="#roadmap" data-tool="roadmap" class="foot-link"><svg><use href="#i-roadmap"/></svg><span>Roadmap</span><span class="foot-pct" id="roadmap-pct"></span></a>
+        <button type="button" class="foot-link" id="install-btn" hidden><svg><use href="#i-install"/></svg><span>Install OmniChem</span></button>
+      </div>
+    </aside>
 
-    <!-- Equilibrium -->
-    <section class="panel" id="equilibrium" hidden>
-      <h1>Equilibrium</h1>
-      <p class="hint">Lists the gas-phase species that may form, one per line as <code>SMILES moles</code>. OmniChem minimises the Gibbs energy at the given temperature and pressure.</p>
-      <form class="stack" id="eq-form">
-        <label><span>Species and starting moles</span><textarea id="eq-species" rows="7" spellcheck="false">C 1
+    <!-- Compound toolbar -->
+    <header class="toolbar glass">
+      <form class="compound-field" id="compound-form" autocomplete="off">
+        <label for="compound" class="field-label">Compound</label>
+        <input id="compound" spellcheck="false" placeholder="Enter SMILES, e.g. CC(=O)Oc1ccccc1C(=O)O" aria-describedby="compound-hint">
+        <button type="submit" class="btn btn-primary">Open</button>
+      </form>
+      <span id="compound-hint" class="sr-only">Press Command K to focus. The compound you open is used by every tool.</span>
+      <div class="toolbar-actions">
+        <button type="button" class="icon-btn" id="copy-smiles" title="Copy canonical SMILES" aria-label="Copy canonical SMILES"><svg><use href="#i-copy"/></svg></button>
+        <button type="button" class="icon-btn" id="toggle-inspector" title="Show or hide properties" aria-label="Show or hide properties" aria-pressed="true"><svg><use href="#i-inspector"/></svg></button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="content" id="content">
+
+      <!-- Structure -->
+      <section class="view" id="structure" hidden>
+        <header class="view-head">
+          <h1>Structure</h1>
+          <p>Validation, identifiers and stereochemistry for the open compound.</p>
+        </header>
+        <div class="samples" role="group" aria-label="Sample compounds">
+          <span class="samples-label">Samples</span>
+          <button type="button" class="chip" data-compound="CC(=O)Oc1ccccc1C(=O)O">Aspirin</button>
+          <button type="button" class="chip" data-compound="Cn1cnc2c1c(=O)n(C)c(=O)n2C">Caffeine</button>
+          <button type="button" class="chip" data-compound="CC(C)Cc1ccc(cc1)[C@@H](C)C(=O)O">(S)-Ibuprofen</button>
+          <button type="button" class="chip" data-compound="O=C1CC[C@H]2[C@@H]3CC=C4C[C@@H](O)CC[C@]4(C)[C@H]3CC[C@]12C">Testosterone</button>
+          <button type="button" class="chip" data-compound="F/C=C/F">(E)-1,2-Difluoroethene</button>
+        </div>
+        <div class="stack" id="structure-out"></div>
+      </section>
+
+      <!-- 3D -->
+      <section class="view" id="model3d" hidden>
+        <header class="view-head">
+          <h1>3D Model</h1>
+          <p>Distance-geometry embedding refined with the Universal Force Field. Drag to rotate, scroll or pinch to zoom.</p>
+        </header>
+        <div class="viewport glass-dark">
+          <canvas id="viewer" aria-label="3D model of the open compound"></canvas>
+          <div class="viewport-empty" id="viewer-empty"><div class="spinner" aria-hidden="true"></div><span>Building 3D model…</span></div>
+          <div class="viewport-bar glass">
+            <div class="segmented" role="radiogroup" aria-label="Display">
+              <button type="button" role="radio" aria-checked="true" data-style="ballstick">Ball &amp; Stick</button>
+              <button type="button" role="radio" aria-checked="false" data-style="labels">Labels</button>
+            </div>
+            <button type="button" class="icon-btn" id="d3-reset" title="Reset view" aria-label="Reset view"><svg><use href="#i-reset"/></svg></button>
+            <button type="button" class="icon-btn" id="d3-sdf" title="Export SDF" aria-label="Export SDF" disabled><svg><use href="#i-download"/></svg></button>
+          </div>
+        </div>
+        <div class="stack" id="d3-out"></div>
+      </section>
+
+      <!-- Reaction -->
+      <section class="view" id="reaction" hidden>
+        <header class="view-head">
+          <h1>Reaction</h1>
+          <p>Stoichiometry check and standard reaction thermodynamics. Write species as SMILES with coefficients, separated by spaces.</p>
+        </header>
+        <form class="panel glass-card" id="rx-form">
+          <div class="field">
+            <label for="rx-eq">Equation</label>
+            <input id="rx-eq" class="mono" spellcheck="false" value="1 C + 2 O=O -> 1 O=C=O + 2 O">
+          </div>
+          <div class="field-row">
+            <div class="field narrow">
+              <label for="rx-t">Temperature</label>
+              <div class="unit-input"><input id="rx-t" type="number" value="298.15" min="1" step="any"><span>K</span></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Calculate</button>
+          </div>
+          <div class="samples compact">
+            <span class="samples-label">Examples</span>
+            <button type="button" class="chip" data-fill="rx-eq" data-value="1 C + 2 O=O -> 1 O=C=O + 2 O">Methane combustion</button>
+            <button type="button" class="chip" data-fill="rx-eq" data-value="[C-]#[O+] + O -> O=C=O + [H][H]">Water–gas shift</button>
+            <button type="button" class="chip" data-fill="rx-eq" data-value="C + O=O -> O=C=O + O">Unbalanced</button>
+          </div>
+        </form>
+        <div class="stack" id="rx-out"></div>
+      </section>
+
+      <!-- Equilibrium -->
+      <section class="view" id="equilibrium" hidden>
+        <header class="view-head">
+          <h1>Equilibrium</h1>
+          <p>Gibbs energy minimisation for an ideal-gas mixture. List every species that may form, one per line as <code>SMILES moles</code>.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="eq-form">
+            <div class="field">
+              <label for="eq-species">Species and initial amounts</label>
+              <textarea id="eq-species" class="mono" rows="8" spellcheck="false">C 1
 O=O 2
 O=C=O 0
 O 0
 [C-]#[O+] 0
 [H][H] 0
-[OH] 0</textarea></label>
-        <div class="row">
-          <label><span>Temperature (K)</span><input id="eq-t" type="number" value="2500" min="1" step="any"></label>
-          <label><span>Pressure (bar)</span><input id="eq-p" type="number" value="1" min="0.0001" step="any"></label>
-          <button type="submit">Find equilibrium</button>
+[OH] 0</textarea>
+            </div>
+            <div class="field-row">
+              <div class="field narrow"><label for="eq-t">Temperature</label><div class="unit-input"><input id="eq-t" type="number" value="2500" min="1" step="any"><span>K</span></div></div>
+              <div class="field narrow"><label for="eq-p">Pressure</label><div class="unit-input"><input id="eq-p" type="number" value="1" min="0.0001" step="any"><span>bar</span></div></div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn" data-add-compound="eq-species" data-amount="0">Add open compound</button>
+              <button type="submit" class="btn btn-primary">Solve</button>
+            </div>
+          </form>
+          <div class="stack" id="eq-out"></div>
         </div>
-      </form>
-      <div class="result" id="eq-out"></div>
-      <canvas class="chart" id="eq-chart" data-height="260" hidden></canvas>
-    </section>
+      </section>
 
-    <!-- Kinetics -->
-    <section class="panel" id="kinetics" hidden>
-      <h1>Kinetics</h1>
-      <p class="hint">Runs a batch reactor with a reaction mechanism. Use the built-in hydrogen–oxygen example or load your own (.ocm, CHEMKIN chem.inp or Cantera YAML).</p>
-      <form class="stack" id="kin-form">
-        <div class="row">
-          <label class="grow"><span>Mechanism</span>
-            <select id="kin-mech">
-              <option value="data/mechanisms/h2o2.ocm">Hydrogen–oxygen (example, 9 species)</option>
-              <option value="data/mechanisms/h2o2.yaml">Hydrogen–oxygen, Cantera YAML</option>
-              <option value="custom">My own file…</option>
-            </select>
-          </label>
-          <label><span>Reactor</span>
-            <select id="kin-model">
-              <option value="adiabatic-v">Adiabatic, constant volume</option>
-              <option value="adiabatic-p">Adiabatic, constant pressure</option>
-              <option value="iso-v">Isothermal, constant volume</option>
-              <option value="iso-p">Isothermal, constant pressure</option>
-            </select>
-          </label>
-        </div>
-        <div class="custom-mech" id="kin-custom" hidden>
-          <label><span>Mechanism file</span><input type="file" id="kin-file" accept=".ocm,.inp,.dat,.yaml,.yml,.txt"></label>
-          <label><span>Thermo file (CHEMKIN only, optional)</span><input type="file" id="kin-thermo" accept=".dat,.txt,.thermo"></label>
-        </div>
-        <label><span>Starting moles, one per line as <code>NAME=moles</code></span><textarea id="kin-feed" rows="3" spellcheck="false">H2=2
-O2=1
-AR=7</textarea></label>
-        <div class="row">
-          <label><span>Temperature (K)</span><input id="kin-t" type="number" value="1000" min="1" step="any"></label>
-          <label><span>Pressure (bar)</span><input id="kin-p" type="number" value="1" min="0.0001" step="any"></label>
-          <label><span>Time (ms)</span><input id="kin-time" type="number" value="1" min="0.000001" step="any"></label>
-          <button type="submit">Run</button>
-        </div>
-      </form>
-      <div class="result" id="kin-out"></div>
-      <canvas class="chart" id="kin-chart-t" data-height="240" hidden></canvas>
-      <div class="row tools" id="kin-scale" hidden>
-        <label class="check"><input type="checkbox" id="kin-log" checked> Log scale for mole fractions</label>
-      </div>
-      <canvas class="chart" id="kin-chart-x" data-height="320" hidden></canvas>
-    </section>
-
-    <!-- Phases -->
-    <section class="panel" id="phases" hidden>
-      <h1>Phases</h1>
-      <p class="hint">Vapour–liquid equilibrium from a cubic equation of state. List the mixture, one per line as <code>SMILES mole_fraction</code>, and OmniChem tests whether it splits into liquid and vapour and finds both compositions.</p>
-      <form class="stack" id="ph-form">
-        <label><span>Mixture</span><textarea id="ph-mix" rows="4" spellcheck="false">C 0.5
+      <!-- Phase behaviour -->
+      <section class="view" id="phases" hidden>
+        <header class="view-head">
+          <h1>Phase Behaviour</h1>
+          <p>Vapour–liquid equilibrium from a cubic equation of state, with a stability test before the flash.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="ph-form">
+            <div class="field">
+              <label for="ph-mix">Mixture, one per line as <code>SMILES mole_fraction</code></label>
+              <textarea id="ph-mix" class="mono" rows="5" spellcheck="false">C 0.5
 CCC 0.3
-CCCCC 0.2</textarea></label>
-        <div class="row">
-          <label><span>Temperature (K)</span><input id="ph-t" type="number" value="300" min="1" step="any"></label>
-          <label><span>Pressure (bar)</span><input id="ph-p" type="number" value="30" min="0.0001" step="any"></label>
-          <label><span>Equation of state</span>
-            <select id="ph-eos"><option value="pr">Peng–Robinson</option><option value="srk">Soave–Redlich–Kwong</option></select>
-          </label>
-          <button type="submit">Flash</button>
+CCCCC 0.2</textarea>
+            </div>
+            <div class="field-row">
+              <div class="field narrow"><label for="ph-t">Temperature</label><div class="unit-input"><input id="ph-t" type="number" value="300" min="1" step="any"><span>K</span></div></div>
+              <div class="field narrow"><label for="ph-p">Pressure</label><div class="unit-input"><input id="ph-p" type="number" value="30" min="0.0001" step="any"><span>bar</span></div></div>
+            </div>
+            <div class="field">
+              <label>Equation of state</label>
+              <div class="segmented" role="radiogroup" aria-label="Equation of state" id="ph-eos">
+                <button type="button" role="radio" aria-checked="true" data-eos="pr">Peng–Robinson</button>
+                <button type="button" role="radio" aria-checked="false" data-eos="srk">Soave–Redlich–Kwong</button>
+              </div>
+            </div>
+            <div class="samples compact">
+              <span class="samples-label">Examples</span>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="C 0.5&#10;CCC 0.3&#10;CCCCC 0.2">Gas condensate</button>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="CCO 0.4&#10;O 0.6">Ethanol + water</button>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="O=C=O 0.7&#10;C 0.3">CO₂ + methane</button>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn" data-add-compound="ph-mix" data-amount="0.1">Add open compound</button>
+              <button type="submit" class="btn btn-primary">Flash</button>
+            </div>
+          </form>
+          <div class="stack" id="ph-out"></div>
         </div>
-      </form>
-      <div class="examples" data-target="ph-mix">
-        <button type="button" data-smiles="C 0.5&#10;CCC 0.3&#10;CCCCC 0.2">Natural-gas liquids</button>
-        <button type="button" data-smiles="CCO 0.4&#10;O 0.6">Ethanol + water</button>
-        <button type="button" data-smiles="O=C=O 0.7&#10;C 0.3">CO₂ + methane</button>
+      </section>
+
+      <!-- Kinetics -->
+      <section class="view" id="kinetics" hidden>
+        <header class="view-head">
+          <h1>Batch Reactor</h1>
+          <p>Stiff kinetics of a reaction mechanism. Use the hydrogen–oxygen example or open your own .ocm, CHEMKIN or Cantera YAML file.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="kin-form">
+            <div class="field">
+              <label for="kin-mech">Mechanism</label>
+              <select id="kin-mech">
+                <option value="data/mechanisms/h2o2.ocm">Hydrogen–oxygen · 9 species, 23 reactions</option>
+                <option value="data/mechanisms/h2o2.yaml">Hydrogen–oxygen · Cantera YAML</option>
+                <option value="custom">Open a file…</option>
+              </select>
+            </div>
+            <div class="custom-files" id="kin-custom" hidden>
+              <div class="field"><label for="kin-file">Mechanism file</label><input type="file" id="kin-file" accept=".ocm,.inp,.dat,.yaml,.yml,.txt"></div>
+              <div class="field"><label for="kin-thermo">Thermo file (CHEMKIN, optional)</label><input type="file" id="kin-thermo" accept=".dat,.txt,.thermo"></div>
+            </div>
+            <div class="field">
+              <label for="kin-model">Reactor</label>
+              <select id="kin-model">
+                <option value="adiabatic-v">Adiabatic · constant volume</option>
+                <option value="adiabatic-p">Adiabatic · constant pressure</option>
+                <option value="iso-v">Isothermal · constant volume</option>
+                <option value="iso-p">Isothermal · constant pressure</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="kin-feed">Initial composition, <code>NAME=moles</code></label>
+              <textarea id="kin-feed" class="mono" rows="3" spellcheck="false">H2=2
+O2=1
+AR=7</textarea>
+            </div>
+            <div class="field-row">
+              <div class="field narrow"><label for="kin-t">Temperature</label><div class="unit-input"><input id="kin-t" type="number" value="1000" min="1" step="any"><span>K</span></div></div>
+              <div class="field narrow"><label for="kin-p">Pressure</label><div class="unit-input"><input id="kin-p" type="number" value="1" min="0.0001" step="any"><span>bar</span></div></div>
+              <div class="field narrow"><label for="kin-time">End time</label><div class="unit-input"><input id="kin-time" type="number" value="1" min="0.000001" step="any"><span>ms</span></div></div>
+            </div>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Run</button></div>
+          </form>
+          <div class="stack" id="kin-out"></div>
+        </div>
+        <div class="stack" id="kin-charts" hidden>
+          <div class="glass-card chart-card">
+            <div class="card-head"><h2>Temperature</h2></div>
+            <canvas class="chart" id="kin-chart-t" data-height="230"></canvas>
+          </div>
+          <div class="glass-card chart-card">
+            <div class="card-head">
+              <h2>Mole fractions</h2>
+              <div class="segmented small" role="radiogroup" aria-label="Scale" id="kin-scale">
+                <button type="button" role="radio" aria-checked="true" data-log="1">Log</button>
+                <button type="button" role="radio" aria-checked="false" data-log="0">Linear</button>
+              </div>
+            </div>
+            <canvas class="chart" id="kin-chart-x" data-height="320"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Roadmap -->
+      <section class="view" id="roadmap" hidden>
+        <header class="view-head">
+          <h1>Roadmap</h1>
+          <p>How much of OmniChem is built, weighted by module size (S = 1, M = 2.5, L = 5).</p>
+        </header>
+        <div class="stack" id="roadmap-out"></div>
+      </section>
+    </main>
+
+    <!-- Inspector -->
+    <aside class="inspector glass" id="inspector" aria-label="Chemical properties">
+      <div class="inspector-head">Chemical Properties</div>
+      <div id="inspector-body" class="inspector-body">
+        <p class="muted">Open a compound to see its properties.</p>
       </div>
-      <div class="result" id="ph-out"></div>
-      <h2 class="sub-h">Vapour pressure of a pure compound</h2>
-      <form class="row" id="vp-form">
-        <label class="grow"><span>SMILES</span><input id="vp-smiles" value="CCC" autocomplete="off" spellcheck="false"></label>
-        <label><span>Temperature (K)</span><input id="vp-t" type="number" value="300" min="1" step="any"></label>
-        <button type="submit">Vapour pressure</button>
-      </form>
-      <div class="result" id="vp-out"></div>
-      <p class="hint small">Built-in critical constants cover about 30 common compounds (light hydrocarbons, aromatics, alcohols, water, CO₂, N₂, O₂, H₂…). Peng–Robinson is typically within 1–2% for non-polar compounds; for water and alcohols expect a few percent.</p>
-    </section>
+    </aside>
 
-    <!-- Progress -->
-    <section class="panel" id="progress" hidden>
-      <h1>Progress</h1>
-      <p class="hint">How much of the OmniChem roadmap is built, weighted by module size (S = 1, M = 2.5, L = 5).</p>
-      <div class="result" id="prog-out"></div>
-    </section>
-  </main>
+    <!-- Phone tab bar -->
+    <nav class="tabbar glass" aria-label="Tools">
+      <a href="#structure" data-tool="structure"><svg><use href="#i-structure"/></svg><span>Structure</span></a>
+      <a href="#model3d" data-tool="model3d"><svg><use href="#i-3d"/></svg><span>3D</span></a>
+      <a href="#reaction" data-tool="reaction"><svg><use href="#i-reaction"/></svg><span>Reaction</span></a>
+      <a href="#equilibrium" data-tool="equilibrium" aria-label="Equilibrium"><svg><use href="#i-equilibrium"/></svg><span>Equil.</span></a>
+      <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>
+      <a href="#kinetics" data-tool="kinetics"><svg><use href="#i-kinetics"/></svg><span>Kinetics</span></a>
+      <a href="#roadmap" data-tool="roadmap"><svg><use href="#i-roadmap"/></svg><span>Roadmap</span></a>
+    </nav>
+  </div>
 
-  <footer class="foot">
-    <span>OmniChem <span id="version">—</span> · Apache-2.0 · runs entirely in your browser, offline once installed</span>
-    <a href="https://github.com/ayuroy01/ChemLarp" target="_blank" rel="noopener">Source on GitHub</a>
-  </footer>
+  <div class="toast glass" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="viewer.js"></script>
   <script src="chart.js"></script>

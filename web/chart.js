@@ -42,7 +42,7 @@
   function lineChart(canvas, series, opts = {}) {
     canvas.hidden = false;
     const { ctx, w, h } = setup(canvas);
-    const fg = token('--fg', '#111'), muted = token('--muted', '#666'), line = token('--line', '#ddd');
+    const fg = token('--ink', '#111'), muted = token('--ink-3', '#666'), line = token('--hairline', '#ddd');
     const tf = (y) => (opts.logY ? Math.log10(Math.max(y, 1e-12)) : y);
     const xs = series.flatMap((s) => s.points.map((p) => p[0]));
     const ys = series.flatMap((s) => s.points.map((p) => tf(p[1])));
@@ -103,7 +103,7 @@
     const rowH = 24;
     canvas.dataset.height = String(bars.length * rowH + 36);
     const { ctx, w, h } = setup(canvas);
-    const fg = token('--fg', '#111'), muted = token('--muted', '#666'), accent = token('--accent', '#14534d');
+    const fg = token('--ink', '#111'), muted = token('--ink-3', '#666'), accent = token('--accent', '#14534d');
     ctx.font = '13px ui-monospace, Menlo, monospace';
     const left = 16 + Math.max(...bars.map((b) => ctx.measureText(b.label).width));
     const right = 70, max = Math.max(...bars.map((b) => b.value), 1e-12);
