@@ -13,6 +13,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | Capability | Public basis |
 |---|---|
 | SMILES parsing, aromaticity | OpenSMILES spec (opensmiles.org); Weininger, *JCICS* 28 (1988) 31 |
+| MOL/SDF, PDB, CML | BIOVIA CTfile Formats (2020); wwPDB Atomic Coordinate Entry Format 3.3; Murray-Rust & Rzepa, *JCICS* 39 (1999) 928 (CML); Cordero et al., *Dalton Trans.* (2008) 2832 (covalent radii) |
 | InChI | Heller et al., *J. Cheminform.* 7 (2015) 23; InChI Technical Manual. Written from the published description; the reference software is used only to produce test strings |
 | R/S, E/Z | IUPAC 2013 recommendations P-92 (CIP rules); Hanson et al., *JCIM* 58 (2018) 1755 (CIP algorithm validation) |
 | 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
@@ -113,7 +114,8 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Explicit hydrogens with stereo remapping | **done** |
 | Distance-geometry 3D embedding (bounds + triangle smoothing, metric matrix in 4D, chiral/planar refinement) | **done**; stereo read back from 3D and enforced, best-of-N conformers |
 | UFF force field (bond, angle, torsion, inversion, vdW; analytic gradient) + L-BFGS | **done**; gradients exact vs finite differences, geometries vs experiment in tests |
-| SDF (V2000) and XYZ output | **done** |
+| SDF (V2000) and XYZ output | **done**; writers mark open double bonds "either" and give the valence field where MDL implicit-H rules would differ |
+| Readers: MOL V2000/V3000, SDF (data items), PDB (CONECT, LINK, amino-acid templates, first model/altloc), CML | **done**; stereo from wedges (2D) or coordinates (3D). Same structure as RDKit reading the same files: 999/999 PubChem 2D, 858/866 PubChem 3D and 1457/1468 of our own 3D files by canonical SMILES (the rest: same InChIKey, or cage/imine stereo outside the CIP model); crambin and ubiquitin identical InChIKey. Not read: query features, R-groups, S-group expansion, enhanced stereo, nucleic-acid bond orders, XYZ |
 | Multiphase / condensed-phase equilibrium, activity models | planned |
 | Mechanism format `.ocm` (SMILES-bound species, CHEMKIN-style reactions, units, third-body efficiencies) | **done**, with error vector (5xx) |
 | Mass-action rates, modified Arrhenius, third bodies, detailed-balance reverse rates, analytic Jacobian | **done**; relaxes exactly to the Gibbs equilibrium (tested) |

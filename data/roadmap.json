@@ -1,6 +1,6 @@
 {
   "title": "OmniChem Core roadmap",
-  "updated": "2026-11-10",
+  "updated": "2026-11-11",
   "weights": {
     "S": 1,
     "M": 2.5,
@@ -45,7 +45,7 @@
         {
           "name": "Readers for MOL/SDF, PDB, CML",
           "size": "S",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Substructure search (SMARTS) and fingerprints",

@@ -21,6 +21,7 @@
 #include "omnichem/eos.hpp"
 #include "omnichem/gibbs.hpp"
 #include "omnichem/inchi.hpp"
+#include "omnichem/molio.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
 #include "omnichem/reaction.hpp"
@@ -393,6 +394,43 @@ char* oc_inchi_json(const char* smiles) {
     std::string out = std::string("{\"ok\":") + (r.ok ? "true" : "false");
     if (r.ok) out += ",\"inchi\":" + json_escape(r.inchi) + ",\"key\":" + json_escape(r.key);
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_read_molecules_json(const char* text, const char* format, int keep_hydrogens, int max_records) {
+  if (!text) return nullptr;
+  return guarded([&] {
+    const std::string f = format ? format : "";
+    ReadOptions opt;
+    opt.keep_hydrogens = keep_hydrogens != 0;
+    opt.max_records = max_records > 0 ? static_cast<std::size_t>(max_records) : 0;
+    if (f == "mol" || f == "sdf") opt.format = MolFormat::Molfile;
+    else if (f == "pdb") opt.format = MolFormat::Pdb;
+    else if (f == "cml") opt.format = MolFormat::Cml;
+    else opt.format = detect_format(text, f);
+    ChemicalSystemState st;
+    Diagnostics d;
+    const auto records = read_molecules(st, text, d, opt);
+    bool any = false;
+    std::string recs = "[";
+    for (const MolRecord& r : records) {
+      if (recs.size() > 1) recs += ',';
+      recs += std::string("{\"ok\":") + (r.species >= 0 ? "true" : "false") + ",\"line\":" + std::to_string(r.line) +
+              ",\"title\":" + json_escape(r.title) + ",\"dimensions\":" + std::to_string(r.dimensions);
+      if (r.species >= 0) {
+        any = true;
+        const Species& s = st.species[static_cast<std::size_t>(r.species)];
+        recs += ",\"smiles\":" + json_escape(s.canonical_smiles) + ",\"formula\":" + json_escape(s.formula) +
+                ",\"molar_mass\":" + jnum(s.molar_mass) + ",\"atoms\":" + std::to_string(s.atom_count);
+      }
+      recs += ",\"properties\":[";
+      for (std::size_t k = 0; k < r.properties.size(); ++k)
+        recs += (k ? "," : "") + std::string("[") + json_escape(r.properties[k].first) + "," + json_escape(r.properties[k].second) + "]";
+      recs += "]}";
+    }
+    recs += "]";
+    return std::string("{\"ok\":") + (any ? "true" : "false") + ",\"format\":" + json_escape(to_string(opt.format)) +
+           ",\"records\":" + recs + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }
 

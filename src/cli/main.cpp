@@ -40,6 +40,7 @@
 #include "omnichem/inchi.hpp"
 #include "omnichem/json.hpp"
 #include "omnichem/kinetics.hpp"
+#include "omnichem/molio.hpp"
 #include "omnichem/reaction.hpp"
 #include "omnichem/smiles.hpp"
 #include "omnichem/thermo.hpp"
@@ -57,6 +58,7 @@ int usage() {
       "  omnichem flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  omnichem psat <SMILES> -T K [--srk]\n"
       "  omnichem inchi <SMILES> [--key]\n"
+      "  omnichem read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
       "  omnichem depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
@@ -367,6 +369,47 @@ int cmd_inchi(const std::vector<std::string>& args) {
   return 0;
 }
 
+// Prints one line per record: canonical SMILES, a tab and the title (a SMILES file).
+int cmd_read(const std::vector<std::string>& args) {
+  std::string path;
+  ReadOptions opt;
+  bool with_inchi = false;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "--keep-h") opt.keep_hydrogens = true;
+    else if (args[i] == "--inchi") with_inchi = true;
+    else if (args[i] == "--format" && i + 1 < args.size()) {
+      const std::string f = args[++i];
+      if (f == "mol" || f == "sdf") opt.format = MolFormat::Molfile;
+      else if (f == "pdb") opt.format = MolFormat::Pdb;
+      else if (f == "cml") opt.format = MolFormat::Cml;
+      else return usage();
+    } else if (path.empty()) path = args[i];
+    else return usage();
+  }
+  if (path.empty()) return usage();
+  std::ifstream in(path, std::ios::binary);
+  if (!in) { std::fprintf(stderr, "cannot read %s\n", path.c_str()); return 1; }
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  if (opt.format == MolFormat::Auto) opt.format = detect_format(text, path);
+  ChemicalSystemState st;
+  Diagnostics d;
+  const auto records = read_molecules(st, text, d, opt);
+  print_diagnostics(d, {});
+  int failed = 0;
+  for (const MolRecord& r : records) {
+    if (r.species < 0) { ++failed; std::printf("*\t%s\n", r.title.c_str()); continue; }
+    const Species& s = st.species[static_cast<std::size_t>(r.species)];
+    std::printf("%s\t%s", s.canonical_smiles.c_str(), r.title.c_str());
+    if (with_inchi) {
+      Diagnostics di;
+      const InchiResult ir = inchi(st, static_cast<std::uint32_t>(r.species), &di);
+      std::printf("\t%s", ir.ok ? ir.key.c_str() : "*");
+    }
+    std::printf("\n");
+  }
+  return failed || records.empty() ? 1 : 0;
+}
+
 int cmd_depict(const std::vector<std::string>& args) {
   std::string smiles, svg_path, mol_path;
   DepictOptions opt;
@@ -521,6 +564,7 @@ int main(int argc, char** argv) {
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
+  if (cmd == "read" && !args.empty()) return cmd_read(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

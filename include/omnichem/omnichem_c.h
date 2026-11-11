@@ -121,6 +121,12 @@ OMNICHEM_API char* oc_depict_json(const char* smiles, double bond_px, int flags)
  * JSON: {"ok","inchi","key","diagnostics"}. */
 OMNICHEM_API char* oc_inchi_json(const char* smiles);
 
+/* Reads a MOL/SDF, PDB or CML file (see molio.hpp). `format` is "mol", "sdf", "pdb", "cml", a file name
+ * whose extension decides, or "" to detect from the content. max_records 0 = all.
+ * JSON: {"ok","format","records":[{"ok","line","title","smiles","formula","molar_mass","atoms","dimensions",
+ *        "properties":[[name,value],...]}],"diagnostics"}. "ok" is true when at least one record was read. */
+OMNICHEM_API char* oc_read_molecules_json(const char* text, const char* format, int keep_hydrogens, int max_records);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus

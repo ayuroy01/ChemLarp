@@ -12,6 +12,7 @@
 
 #include "omnichem/canonical.hpp"
 #include "omnichem/elements.hpp"
+#include "omnichem/molio.hpp"
 #include "omnichem/rings.hpp"
 #include "omnichem/smiles.hpp"
 
@@ -679,10 +680,16 @@ std::string write_sdf(const ChemicalSystemState& st, std::uint32_t sp, const std
   std::snprintf(buf, sizeof buf, "%3u%3u  0  0%3d  0  0  0  0  0999 V2000\n", s.atom_count, s.bond_count, chiral ? 1 : 0);
   out += buf;
   std::vector<std::pair<std::uint32_t, int>> charges, isotopes;
+  std::vector<int> order_sum(s.atom_count, 0);
+  for (std::uint32_t b = s.bond_begin; b < s.bond_begin + s.bond_count; ++b) {
+    order_sum[st.bonds.begin[b] - s.atom_begin] += st.bonds.order[b];
+    order_sum[st.bonds.end[b] - s.atom_begin] += st.bonds.order[b];
+  }
   for (std::uint32_t i = 0; i < s.atom_count; ++i) {
     const std::uint32_t g = s.atom_begin + i;
-    std::snprintf(buf, sizeof buf, "%10.4f%10.4f%10.4f %-3.3s 0  0  0  0  0  0  0  0  0  0  0  0\n", st.atoms.x[g],
-                  st.atoms.y[g], st.atoms.z[g], std::string(element_symbol(st.atoms.element[g])).c_str());
+    const int vvv = mdl_valence_field(st.atoms.element[g], st.atoms.formal_charge[g], order_sum[i], st.atoms.implicit_h[g]);
+    std::snprintf(buf, sizeof buf, "%10.4f%10.4f%10.4f %-3.3s 0  0  0  0  0%3d  0  0  0  0  0  0\n", st.atoms.x[g],
+                  st.atoms.y[g], st.atoms.z[g], std::string(element_symbol(st.atoms.element[g])).c_str(), vvv);
     out += buf;
     if (st.atoms.formal_charge[g] != 0) charges.push_back({i + 1, st.atoms.formal_charge[g]});
     if (st.atoms.isotope[g] != 0) isotopes.push_back({i + 1, st.atoms.isotope[g]});

@@ -64,6 +64,11 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
     case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
     case DiagCode::InchiUnsupported: return "InchiUnsupported";
+    case DiagCode::UnknownFileFormat: return "UnknownFileFormat";
+    case DiagCode::MalformedRecord: return "MalformedRecord";
+    case DiagCode::UnsupportedFileFeature: return "UnsupportedFileFeature";
+    case DiagCode::BondOrdersGuessed: return "BondOrdersGuessed";
+    case DiagCode::FileContentIgnored: return "FileContentIgnored";
   }
   return "Unknown";
 }

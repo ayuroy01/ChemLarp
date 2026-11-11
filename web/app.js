@@ -362,6 +362,43 @@
     } catch (err) { fail($('structure-out'), err); }
   }
 
+  // ---- structure files (MOL/SDF, PDB, CML) ---------------------------------------------
+  async function openFile(file) {
+    if (!file) return;
+    if (file.size > 25e6) { toast('File is larger than 25 MB'); return; }
+    location.hash = 'structure';
+    const out = $('structure-out');
+    busy(out, `Reading ${file.name}…`);
+    try {
+      const text = await file.text();
+      const r = (await engine('read', { text, format: file.name, max: 500 })).result;
+      const good = r.ok ? r.records.filter((x) => x.ok) : [];
+      const warnings = r.diagnostics.filter((d) => d.severity === 'warning').length;
+      if (good.length === 1 && r.records.length === 1) {
+        await openCompound(good[0].smiles);
+        if (warnings) toast(`${file.name}: ${warnings} warning(s) — see the file's notes below`);
+        if (warnings) out.append(...diagnostics(r.diagnostics));
+        return;
+      }
+      if (!good.length) {
+        out.replaceChildren(status('bad', `Nothing could be read from ${file.name}`, r.format === 'auto' ? 'Not a MOL, SDF, PDB or CML file' : `${r.format} file`),
+          ...diagnostics(r.diagnostics));
+        return;
+      }
+      const failed = r.records.length - good.length;
+      out.replaceChildren(
+        status(failed ? 'warn' : 'ok', `${r.records.length} records in ${file.name}`, failed ? `${failed} could not be read` : 'Choose one to open'),
+        h('div', { class: 'glass-card card' },
+          h('div', { class: 'card-head' }, h('h2', { text: 'Records' }), h('span', { class: 'meta', text: r.records.length >= 500 ? 'First 500 shown' : r.format.toUpperCase() })),
+          h('div', { class: 'record-list' }, r.records.map((x, i) => x.ok
+            ? h('button', { type: 'button', class: 'record', onclick: () => openCompound(x.smiles), title: x.smiles },
+              h('span', { class: 'r-title', text: x.title || `Record ${i + 1}` }), h('span', { class: 'r-formula' }, formulaNode(x.formula)),
+              h('span', { class: 'r-smiles', text: x.smiles }))
+            : h('div', { class: 'record bad' }, h('span', { class: 'r-title', text: x.title || `Record ${i + 1}` }), h('span', { class: 'muted', text: `line ${x.line}: could not be read` }))))),
+        ...diagnostics(r.diagnostics));
+    } catch (err) { fail(out, err); }
+  }
+
   // ---- recents --------------------------------------------------------------------------
   function remember_(c) {
     const list = store.get('recents', []).filter((x) => x.canonical !== c.canonical);
@@ -617,6 +654,18 @@
 
   // ---- wiring -------------------------------------------------------------------------------
   $('compound-form').addEventListener('submit', (e) => { e.preventDefault(); openCompound($('compound').value); });
+  $('open-file').addEventListener('click', () => $('file-input').click());
+  $('file-input').addEventListener('change', (e) => { openFile(e.target.files[0]); e.target.value = ''; });
+  document.addEventListener('dragover', (e) => {
+    if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); }
+  });
+  document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dropping'); });
+  document.addEventListener('drop', (e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    document.body.classList.remove('dropping');
+    openFile(e.dataTransfer.files[0]);
+  });
   document.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-compound]');
     if (chip) { openCompound(chip.dataset.compound); return; }

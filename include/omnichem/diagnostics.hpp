@@ -86,6 +86,13 @@ enum class DiagCode : std::uint16_t {
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does
   InchiSymmetryLimit,            // warning: symmetry search truncated; the numbering may not be canonical
   InchiUnsupported,              // warning: a feature the generator does not encode (e.g. isotopic stereo)
+
+  // 9xx — structure files (MOL/SDF, PDB, CML)
+  UnknownFileFormat = 900,  // content is not a recognised structure file
+  MalformedRecord,          // a line or element that cannot be read
+  UnsupportedFileFeature,   // query atoms/bonds, atom lists, R-groups, ...
+  BondOrdersGuessed,        // warning: the file has no bond orders for some atoms (PDB)
+  FileContentIgnored,       // warning: content read but not used (S-groups, extra models, alternate locations)
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

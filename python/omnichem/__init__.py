@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
 
 
 class OmniChemError(RuntimeError):
@@ -86,6 +86,7 @@ _oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes
                     ctypes.c_size_t, ctypes.c_double)
 _oc_embed = _sig("oc_embed_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int)
 _oc_inchi = _sig("oc_inchi_json", ctypes.c_void_p, ctypes.c_char_p)
+_oc_read = _sig("oc_read_molecules_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _oc_depict = _sig("oc_depict_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _oc_flash = _sig("oc_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
 _oc_psat = _sig("oc_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -189,6 +190,30 @@ def inchi(smiles: str) -> dict:
     if not r["ok"]:
         raise OmniChemError(r["diagnostics"])
     return r
+
+
+def read_molecules(source, format: str = "", keep_hydrogens: bool = False, max_records: int = 0) -> list[dict]:
+    """Records of a MOL/SDF, PDB or CML file.
+
+    `source` is the file's text, or a path (str or os.PathLike) to read. `format` is "mol", "sdf", "pdb",
+    "cml" or "" (from the file extension, else the content). Each record is a dict with 'ok', 'title',
+    'smiles' (canonical), 'formula', 'molar_mass', 'atoms', 'dimensions', 'line' and 'properties'
+    (SDF data items as a dict). Raises OmniChemError when no record could be read.
+    """
+    import os
+
+    text = source
+    if isinstance(source, os.PathLike) or (isinstance(source, str) and "\n" not in source and os.path.isfile(source)):
+        path = os.fspath(source)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        format = format or path
+    r = _take_json(_oc_read(text.encode(), format.encode(), int(keep_hydrogens), max_records))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    for rec in r["records"]:
+        rec["properties"] = dict(rec["properties"])
+    return r["records"]
 
 
 def flash(feed: dict[str, float], temperature_K: float, pressure_Pa: float, eos: str = "pr") -> dict:

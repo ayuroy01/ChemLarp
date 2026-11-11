@@ -27,6 +27,7 @@ const calls = {
   flash: (M, a) => callJson(M, 'oc_flash_text_json', ['string', 'number', 'number', 'string'], [a.mixture, a.temperature, a.pressure, a.eos]),
   psat: (M, a) => callJson(M, 'oc_saturation_pressure_json', ['string', 'number', 'string'], [a.smiles, a.temperature, a.eos]),
   inchi: (M, a) => callJson(M, 'oc_inchi_json', ['string'], [a.smiles]),
+  read: (M, a) => callJson(M, 'oc_read_molecules_json', ['string', 'string', 'number', 'number'], [a.text, a.format || '', a.keepH ? 1 : 0, a.max || 0]),
   depict: (M, a) => callJson(M, 'oc_depict_json', ['string', 'number', 'number'], [a.smiles, a.bond || 30, a.flags == null ? 1 : a.flags]),
   embed: (M, a) => callJson(M, 'oc_embed32_json', ['string', 'number', 'number', 'number'], [a.smiles, a.seed || 42, a.candidates || 5, a.minimize ? 1 : 0]),
 };

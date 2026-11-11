@@ -12,6 +12,7 @@
 
 #include "omnichem/cip.hpp"
 #include "omnichem/elements.hpp"
+#include "omnichem/molio.hpp"
 #include "omnichem/rings.hpp"
 #include "omnichem/smiles.hpp"
 
@@ -1262,20 +1263,89 @@ Depiction depict(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics& d
     std::snprintf(buf, sizeof buf, "%3zu%3zu  0  0%3d  0  0  0  0  0999 V2000\n", N, bonds.size(), centres.empty() ? 0 : 1);
     out += buf;
     std::vector<std::pair<std::size_t, int>> charges, isotopes;
+    std::vector<int> order_sum(N, 0), drawn_hydrogens(N, 0);
+    for (const DBond& b : bonds) {
+      order_sum[b.a] += b.order;
+      order_sum[b.b] += b.order;
+      if (atom_id[b.a] < 0) ++drawn_hydrogens[b.b];
+      if (atom_id[b.b] < 0) ++drawn_hydrogens[b.a];
+    }
     for (std::size_t i = 0; i < N; ++i) {
       std::uint8_t z = 1;
+      int vvv = 0;
       if (atom_id[i] >= 0) {
         const auto ga = static_cast<std::size_t>(atom_id[i]);
         z = st.atoms.element[ga];
         if (st.atoms.formal_charge[ga]) charges.push_back({i + 1, st.atoms.formal_charge[ga]});
         if (st.atoms.isotope[ga]) isotopes.push_back({i + 1, st.atoms.isotope[ga]});
+        vvv = mdl_valence_field(z, st.atoms.formal_charge[ga], order_sum[i],
+                                std::max(0, static_cast<int>(st.atoms.implicit_h[ga]) - drawn_hydrogens[i]));
       }
-      std::snprintf(buf, sizeof buf, "%10.4f%10.4f%10.4f %-3.3s 0  0  0  0  0  0  0  0  0  0  0  0\n", P[i].x * 1.5, P[i].y * 1.5, 0.0,
-                    std::string(element_symbol(z)).c_str());
+      std::snprintf(buf, sizeof buf, "%10.4f%10.4f%10.4f %-3.3s 0  0  0  0  0%3d  0  0  0  0  0  0\n", P[i].x * 1.5, P[i].y * 1.5, 0.0,
+                    std::string(element_symbol(z)).c_str(), vvv);
       out += buf;
     }
-    for (const DBond& b : bonds) {
-      std::snprintf(buf, sizeof buf, "%3u%3u%3u%3u\n", b.a + 1, b.b + 1, static_cast<unsigned>(b.order), static_cast<unsigned>(b.stereo));
+    // A drawn double bond fixes E/Z for any reader, so a stereogenic double bond
+    // whose configuration the input leaves open is written as "either" (3).
+    auto open_double_bond = [&](const DBond& b) {
+      if (b.order != 2 || b.global < 0) return false;
+      const auto gb = static_cast<std::uint32_t>(b.global);
+      if (st.bonds.flags[gb] & kBondAromatic) return false;
+      for (const auto& d : st.double_bonds)
+        if (d.bond == gb) return false;
+      const std::uint32_t u = st.bonds.begin[gb], v = st.bonds.end[gb];
+      if (st.bonds.flags[gb] & kBondInRing) {  // E/Z only in rings of 8 or more
+        std::vector<std::pair<std::uint32_t, int>> queue{{u, 0}};
+        std::vector<std::uint32_t> seen{u};
+        for (std::size_t h = 0; h < queue.size(); ++h) {
+          const auto [x, d] = queue[h];
+          if (d >= 6) continue;
+          const auto nb = st.adjacency.neighbors(x);
+          const auto bs = st.adjacency.bonds_of(x);
+          for (std::size_t k = 0; k < nb.size(); ++k) {
+            if (bs[k] == gb || std::find(seen.begin(), seen.end(), nb[k]) != seen.end()) continue;
+            if (nb[k] == v) return false;
+            seen.push_back(nb[k]);
+            queue.push_back({nb[k], d + 1});
+          }
+        }
+      }
+      auto other = [&](std::uint32_t x, std::uint32_t not_this) -> std::int64_t {
+        for (std::uint32_t n : st.adjacency.neighbors(x))
+          if (n != not_this) return n;
+        return -1;
+      };
+      return other(u, v) >= 0 && other(v, u) >= 0;
+    };
+    // The CIP labeller only ranks double bonds listed in the state, so test the
+    // candidates on a copy that lists them.
+    std::vector<char> either(bonds.size(), 0);
+    {
+      std::vector<std::size_t> cand;
+      for (std::size_t k = 0; k < bonds.size(); ++k)
+        if (open_double_bond(bonds[k])) cand.push_back(k);
+      if (!cand.empty()) {
+        ChemicalSystemState probe = st;
+        for (std::size_t k : cand) {
+          const auto gb = static_cast<std::uint32_t>(bonds[k].global);
+          const std::uint32_t u = st.bonds.begin[gb], v = st.bonds.end[gb];
+          DoubleBondStereo t;
+          t.bond = gb;
+          for (std::uint32_t n : st.adjacency.neighbors(u)) if (n != v) { t.ref_begin = n; break; }
+          for (std::uint32_t n : st.adjacency.neighbors(v)) if (n != u) { t.ref_end = n; break; }
+          probe.double_bonds.push_back(t);
+        }
+        for (std::size_t k : cand) {
+          const auto gb = static_cast<std::uint32_t>(bonds[k].global);
+          for (const auto& t : probe.double_bonds)
+            if (t.bond == gb && cip_label(probe, t) != CipLabel::None) either[k] = 1;
+        }
+      }
+    }
+    for (std::size_t k = 0; k < bonds.size(); ++k) {
+      const DBond& b = bonds[k];
+      const unsigned stereo = either[k] ? 3u : static_cast<unsigned>(b.stereo);
+      std::snprintf(buf, sizeof buf, "%3u%3u%3u%3u\n", b.a + 1, b.b + 1, static_cast<unsigned>(b.order), stereo);
       out += buf;
     }
     auto emit = [&](const char* tag, const std::vector<std::pair<std::size_t, int>>& v) {

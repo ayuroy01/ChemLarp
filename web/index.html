@@ -24,6 +24,7 @@
     <symbol id="i-kinetics" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.8 2.2M9.5 3h5"/></symbol>
     <symbol id="i-phases" viewBox="0 0 24 24"><path d="M6 3.5h12M7.5 3.5v6.2L4.2 17a2.4 2.4 0 0 0 2.2 3.5h11.2a2.4 2.4 0 0 0 2.2-3.5l-3.3-7.3V3.5"/><path d="M5.6 14h12.8"/><circle cx="10" cy="17.3" r=".7"/><circle cx="14" cy="16.6" r=".7"/></symbol>
     <symbol id="i-roadmap" viewBox="0 0 24 24"><path d="M4 20V5m0 0h11l-1.8 3.2L15 11.5H4"/><path d="M4 20h16"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M12 11v5m-2.3-2.3L12 11l2.3 2.7"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.9A2.4 2.4 0 0 0 13.1 4.5H6.9A2.4 2.4 0 0 0 4.5 6.9v6.2a2.4 2.4 0 0 0 2.4 2.4h1.6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
     <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
@@ -73,6 +74,8 @@
       </form>
       <span id="compound-hint" class="sr-only">Press Command K to focus. The compound you open is used by every tool.</span>
       <div class="toolbar-actions">
+        <button type="button" class="icon-btn" id="open-file" title="Open a structure file (MOL, SDF, PDB, CML) — or drop one on the window" aria-label="Open a structure file"><svg><use href="#i-open"/></svg></button>
+        <input type="file" id="file-input" accept=".mol,.sdf,.sd,.mdl,.pdb,.ent,.cml,.xml,chemical/x-mdl-molfile,chemical/x-mdl-sdfile,chemical/x-pdb,chemical/x-cml" hidden>
         <button type="button" class="icon-btn" id="copy-smiles" title="Copy canonical SMILES" aria-label="Copy canonical SMILES"><svg><use href="#i-copy"/></svg></button>
         <button type="button" class="icon-btn" id="toggle-inspector" title="Show or hide properties" aria-label="Show or hide properties" aria-pressed="true"><svg><use href="#i-inspector"/></svg></button>
       </div>
