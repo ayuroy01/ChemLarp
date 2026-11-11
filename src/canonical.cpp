@@ -102,7 +102,8 @@ void refine(const ChemicalSystemState& st, const View& v, std::vector<long long>
   }
 }
 
-std::vector<long long> compute_ranks(const ChemicalSystemState& st, const View& v, const std::vector<int>& stereo_inv) {
+// Atom invariants refined to a stable partition; ties are not broken.
+std::vector<long long> initial_ranks(const ChemicalSystemState& st, const View& v, const std::vector<int>& stereo_inv) {
   const std::size_t n = v.atoms.size();
   std::vector<std::array<long long, 9>> init(n);
   for (std::size_t i = 0; i < n; ++i) {
@@ -119,16 +120,32 @@ std::vector<long long> compute_ranks(const ChemicalSystemState& st, const View& 
   }
   auto rank = dense_rank(init);
   refine(st, v, rank);
-  while (distinct(rank) < n) {
-    std::vector<std::size_t> count(n, 0);
-    for (long long r : rank) ++count[static_cast<std::size_t>(r)];
-    long long tied = 0;
-    while (count[static_cast<std::size_t>(tied)] < 2) ++tied;
+  return rank;
+}
+
+// The lowest rank shared by two or more atoms (-1 when all ranks differ).
+long long lowest_tie(const std::vector<long long>& rank) {
+  std::vector<std::size_t> count(rank.size(), 0);
+  for (long long r : rank) ++count[static_cast<std::size_t>(r)];
+  for (std::size_t r = 0; r < count.size(); ++r)
+    if (count[r] > 1) return static_cast<long long>(r);
+  return -1;
+}
+
+// Gives atom `chosen` a rank of its own just below the rest of its class.
+std::vector<long long> split(const std::vector<long long>& rank, std::size_t chosen) {
+  std::vector<long long> r = rank;
+  for (auto& x : r) x *= 2;
+  r[chosen] -= 1;
+  return dense_rank(r);
+}
+
+std::vector<long long> compute_ranks(const ChemicalSystemState& st, const View& v, const std::vector<int>& stereo_inv) {
+  auto rank = initial_ranks(st, v, stereo_inv);
+  for (long long tied; (tied = lowest_tie(rank)) >= 0;) {
     std::size_t chosen = 0;
     while (rank[chosen] != tied) ++chosen;
-    for (auto& r : rank) r *= 2;
-    rank[chosen] -= 1;
-    rank = dense_rank(rank);
+    rank = split(rank, chosen);
     refine(st, v, rank);
   }
   return rank;
@@ -156,7 +173,7 @@ class Writer {
         inv[static_cast<std::size_t>(d.u)] += 8 * static_cast<int>(db_label_[d.bond]);
         inv[static_cast<std::size_t>(d.v)] += 8 * static_cast<int>(db_label_[d.bond]);
       }
-      rank_ = compute_ranks(st_, v_, inv);
+      rank_ = stereo_ranks(inv);
     } else {
       rank_.resize(n);
       std::iota(rank_.begin(), rank_.end(), 0);
@@ -206,6 +223,112 @@ class Writer {
     for (const Edge& e : v_.adj[static_cast<std::size_t>(x)])
       if (e.to == y) return e.bond;
     return -1;
+  }
+
+  // Parity of each stereo element relative to the current ranks: 1 or 2 once
+  // the neighbours that decide it have distinct ranks, else 0. It describes the
+  // molecule, not the input order, so it can refine ranks like any invariant.
+  std::vector<int> parity_invariants(const std::vector<long long>& rank, bool* undecided = nullptr) const {
+    std::vector<int> out(rank.size(), 0);
+    if (undecided) *undecided = false;
+    auto key = [&](int tok) -> long long { return tok == kTokH ? -2 : tok == kTokLP ? -1 : rank[static_cast<std::size_t>(tok)]; };
+    for (const Tetra& t : tetra_) {
+      std::array<long long, 4> k{};
+      for (std::size_t i = 0; i < 4; ++i) k[i] = key(t.refs[i]);
+      int inversions = 0;
+      bool tie = false;
+      for (std::size_t i = 0; i < 4; ++i)
+        for (std::size_t j = i + 1; j < 4; ++j) {
+          tie = tie || k[i] == k[j];
+          inversions += k[i] > k[j];
+        }
+      if (tie) {
+        if (undecided) *undecided = true;
+        continue;
+      }
+      const bool cw = t.parity == Chirality::Clockwise;
+      out[static_cast<std::size_t>(t.loc)] = ((inversions & 1) != 0) != cw ? 2 : 1;
+    }
+    for (const ActiveDb& d : dbs_) {
+      // Is the stored reference the lowest-ranked substituent on its end? (-1 if undecided)
+      auto ref_is_lowest = [&](int end, int partner, int ref) -> int {
+        std::vector<long long> keys;
+        for (const Edge& e : v_.adj[static_cast<std::size_t>(end)])
+          if (e.to != partner) keys.push_back(rank[static_cast<std::size_t>(e.to)]);
+        if (v_.h[static_cast<std::size_t>(end)] > 0) keys.push_back(-2);
+        std::sort(keys.begin(), keys.end());
+        if (keys.size() == 2 && keys[0] == keys[1]) return -1;
+        const long long rk = ref < 0 ? -2 : rank[static_cast<std::size_t>(ref)];
+        return rk == keys.front() ? 1 : 0;
+      };
+      const int a = ref_is_lowest(d.u, d.v, d.ra), b = ref_is_lowest(d.v, d.u, d.rb);
+      if (a < 0 || b < 0) {
+        if (undecided) *undecided = true;
+        continue;
+      }
+      const bool cis = d.cis != (a == 0) != (b == 0);
+      out[static_cast<std::size_t>(d.u)] += cis ? 4 : 8;
+      out[static_cast<std::size_t>(d.v)] += cis ? 4 : 8;
+    }
+    return out;
+  }
+
+  // Refines with the parity invariants until the partition is stable.
+  void settle(std::vector<long long>& rank) const {
+    for (;;) {
+      refine(st_, v_, rank);
+      const std::vector<int> p = parity_invariants(rank);
+      std::vector<std::pair<long long, int>> keys(rank.size());
+      for (std::size_t i = 0; i < rank.size(); ++i) keys[i] = {rank[i], p[i]};
+      auto next = dense_rank(keys);
+      if (distinct(next) == distinct(rank)) return;
+      rank = std::move(next);
+    }
+  }
+
+  // Canonical ranks. Without stereo, ties between symmetric atoms are broken by
+  // index, which cannot change the string. With stereo it can (mirror-image
+  // spellings of an achiral molecule pick opposite branches), so each candidate
+  // of the tied class is tried and the one whose stereo parities, read in rank
+  // order, are largest is kept. This depends only on the molecule.
+  std::vector<long long> stereo_ranks(const std::vector<int>& cip_inv) const {
+    if (tetra_.empty() && dbs_.empty()) return compute_ranks(st_, v_, cip_inv);
+    auto rank = initial_ranks(st_, v_, cip_inv);
+    settle(rank);
+    std::size_t budget = 4096;  // candidate evaluations before falling back to index order
+    for (long long tied; (tied = lowest_tie(rank)) >= 0;) {
+      // Once every stereo element is decided by distinct ranks, later splits only
+      // refine and cannot reorder any element's neighbours: break ties by index.
+      bool undecided = false;
+      parity_invariants(rank, &undecided);
+      if (!undecided) {
+        std::size_t chosen = 0;
+        while (rank[chosen] != tied) ++chosen;
+        rank = split(rank, chosen);
+        refine(st_, v_, rank);
+        continue;
+      }
+      std::vector<long long> best;
+      std::vector<std::pair<long long, int>> best_sig;
+      for (std::size_t c = 0; c < rank.size(); ++c) {
+        if (rank[c] != tied) continue;
+        auto r = split(rank, c);
+        settle(r);
+        if (budget == 0) { best = std::move(r); break; }
+        --budget;
+        const std::vector<int> p = parity_invariants(r);
+        std::vector<std::pair<long long, int>> sig(r.size());
+        for (std::size_t i = 0; i < r.size(); ++i) sig[i] = {r[i], p[i]};
+        std::sort(sig.begin(), sig.end());
+        if (best.empty() || std::lexicographical_compare(best_sig.begin(), best_sig.end(), sig.begin(), sig.end(),
+                                                         [](const auto& x, const auto& y) { return x.second < y.second; })) {
+          best = std::move(r);
+          best_sig = std::move(sig);
+        }
+      }
+      rank = std::move(best);
+    }
+    return rank;
   }
 
   void collect_stereo(std::uint32_t species_index) {

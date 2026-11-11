@@ -222,3 +222,35 @@ TEST(thermo_lookup_uses_canonical_structure) {
   CHECK(t.has_value());
   CHECK(d.contains(DiagCode::ThermoFormulaMatch));
 }
+
+// Achiral molecules with ring cis/trans stereo: mirror-image spellings are the
+// same molecule and must give one string; cis and trans must stay apart. The
+// pairs were checked against RDKit's InChIKey (equal within a pair, different
+// between cis and trans). Before the stereo-aware tie-breaking, each pair gave
+// two strings.
+TEST(canonical_achiral_ring_stereo) {
+  expect_same({"C[C@H]1CC[C@@H](O)CC1", "C[C@@H]1CC[C@H](O)CC1", "O[C@H]1CC[C@@H](C)CC1"});
+  expect_same({"C[C@H]1CC[C@H](O)CC1", "C[C@@H]1CC[C@@H](O)CC1"});
+  CHECK(canon("C[C@H]1CC[C@@H](O)CC1") != canon("C[C@H]1CC[C@H](O)CC1"));
+  expect_same({"COc1ccc(cc1)S(=O)(=O)N[C@H]1CC[C@H](CC1)OC", "COc1ccc(cc1)S(=O)(=O)N[C@@H]1CC[C@@H](CC1)OC"});
+  expect_same({"C[C@H]1C[C@@H](C)C1", "C[C@@H]1C[C@H](C)C1"});  // cis-1,3-dimethylcyclobutane
+  // A chiral molecule's mirror image is a different string.
+  CHECK(canon("C[C@H]1CCC[C@@H](O)C1") != canon("C[C@@H]1CCC[C@H](O)C1"));
+  // An inositol and its mirror image (achiral: same InChIKey in RDKit).
+  expect_same({"O[C@H]1[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O", "O[C@@H]1[C@@H](O)[C@H](O)[C@@H](O)[C@H](O)[C@H]1O"});
+  // Random atom orders of these must all agree too.
+  for (const char* s : {"C[C@H]1CC[C@@H](O)CC1", "C[C@H]1CC[C@H](N)CC1", "O[C@H]1[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O"}) {
+    ChemicalSystemState st;
+    Diagnostics d;
+    const std::int32_t sp = parse_smiles(st, s, d);
+    CHECK(sp >= 0);
+    const std::string ref = st.species[static_cast<std::size_t>(sp)].canonical_smiles;
+    for (std::uint64_t seed = 1; seed <= 30; ++seed) {
+      SmilesWriteOptions o;
+      o.canonical = false;
+      o.random_seed = seed;
+      const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
+      if (canon(rnd) != ref) throw octest::Failure(std::string(s) + ": " + rnd + " -> " + canon(rnd) + ", expected " + ref);
+    }
+  }
+}

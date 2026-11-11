@@ -29,11 +29,11 @@
 // most toolkits.
 //
 // Validation (RDKit 2026.09 reading the same files, structures compared by
-// OmniChem canonical SMILES): PubChem 2D SDF 999/999; PubChem 3D SDF 858/866;
-// OmniChem 2D molfiles 1498/1499 and 3D SDF 1457/1468 (1500 random PubChem
-// compounds). The differences are the same molecule by InChIKey, stereo on
-// cage atoms (adamantane) or =NH imines that the CIP model does not keep,
-// hypervalent halogen normalisation, and one distorted 3D input. PDB: crambin
+// OmniChem canonical SMILES): PubChem 2D SDF 999/999; PubChem 3D SDF 865/866;
+// OmniChem 2D molfiles 1498/1499 and 3D SDF 1465/1468 (1500 random PubChem
+// compounds). The differences are stereo on cage atoms (adamantane) or =NH
+// imines that the CIP model does not keep, hypervalent halogen normalisation,
+// and one distorted 3D input. PDB: crambin
 // (1CRN) and ubiquitin (1UBQ) give RDKit's InChIKey; 4HHB, which RDKit rejects,
 // reads through the residue templates.
 //
