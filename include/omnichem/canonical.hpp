@@ -17,15 +17,13 @@
 // 3. Writing: depth-first from the lowest-ranked atom, neighbours visited in
 //    rank order, ring closures assigned the lowest free digit. Tetrahedral
 //    parity and '/' '\' marks are recomputed for the output neighbour order.
-//    Only stereo elements with a defined CIP descriptor are written.
+//    Stereo elements with a CIP descriptor are written, and so are ring
+//    para-stereocentres (see stereogenic_centres).
 //
 // Known limitations: tie-breaking is canonical whenever the remaining tied
 // atoms are symmetry-equivalent, which refinement guarantees for ordinary
-// molecules but not for some highly regular graphs (cages). Centres without a
-// CIP descriptor are not written, so ring stereo the CIP rules leave
-// undescribed (e.g. the outer centres of 1,3,5-trisubstituted cyclohexanes) is
-// lost and such molecules can canonicalise by spelling. E/Z marks in some
-// partly aromatic macrocycles (chlorins) also depend on the spelling.
+// molecules but not for some highly regular graphs (cages). E/Z marks in some
+// partly aromatic macrocycles (chlorins) depend on the spelling.
 
 #include <cstdint>
 #include <string>
@@ -47,6 +45,15 @@ std::string write_smiles(const ChemicalSystemState& state, std::uint32_t species
                          Diagnostics* diag = nullptr);
 
 std::string canonical_smiles(const ChemicalSystemState& state, std::uint32_t species, Diagnostics& diag);
+
+// Which entries of state.tetrahedral (all species; others 0) are stereogenic in
+// `species` and are written: centres with a CIP descriptor, and ring
+// para-stereocentres that CIP leaves undescribed — two symmetry-equivalent ring
+// branches, two other different substituents, and one ring through the
+// centre, both equivalent branches and another such centre; cage bridgeheads
+// (three ring bonds) excluded. This is graph-based (potential) stereo: a mark
+// that is redundant for one particular isomer is kept and written canonically. (the outer carbons of 1,3,5-trimethylcyclohexane).
+std::vector<char> stereogenic_centres(const ChemicalSystemState& state, std::uint32_t species);
 
 // Canonical rank per species atom (index = global atom - atom_begin); folded hydrogens get UINT32_MAX.
 std::vector<std::uint32_t> canonical_ranks(const ChemicalSystemState& state, std::uint32_t species);

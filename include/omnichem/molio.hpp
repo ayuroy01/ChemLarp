@@ -20,8 +20,8 @@
 // configuration from the coordinates. 2D records: centres come from wedge (1,
 // V3000 CFG=1) and hash (6, CFG=3) bonds at their narrow end; double bonds from
 // the drawing unless marked "either" (V2000 stereo 3, a wavy bond on a
-// neighbour, CFG=2). Candidates that the CIP rules do not find stereogenic are
-// dropped, as with SMILES input. Double bonds in rings smaller than 8 and
+// neighbour, CFG=2). Candidates that are not stereogenic (no CIP descriptor and
+// no ring para-stereo, see canonical.hpp) are dropped, as with SMILES input. Double bonds in rings smaller than 8 and
 // cumulated double bonds (allenes, azides) carry no E/Z. In 3D a centre's
 // single hydrogen is placed opposite its heavy neighbours rather than taken
 // from the file, so a badly placed H cannot invert it; nearly planar centres get

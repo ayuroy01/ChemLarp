@@ -11,6 +11,7 @@
 
 #include "omnichem/cip.hpp"
 #include "omnichem/elements.hpp"
+#include "omnichem/rings.hpp"
 
 namespace omnichem {
 namespace {
@@ -149,6 +150,96 @@ std::vector<long long> compute_ranks(const ChemicalSystemState& st, const View& 
     refine(st, v, rank);
   }
   return rank;
+}
+
+// Para-stereo test (ring cis/trans without a CIP descriptor): exactly two of the
+// centre's four references are symmetry-equivalent, both are ring neighbours,
+// and the other two differ from them and from each other. `cls` are stereo-free
+// symmetry classes of the view's atoms.
+bool para_pattern(const ChemicalSystemState& st, const View& v, const std::vector<long long>& cls, const TetrahedralStereo& t,
+                  std::array<std::uint32_t, 2>* tied = nullptr) {
+  std::array<long long, 4> key{};
+  for (std::size_t k = 0; k < 4; ++k) {
+    const std::uint32_t r = t.refs[k];
+    if (r == kImplicitHRef) key[k] = -2;
+    else if (r == kLonePairRef) key[k] = -3;
+    else {
+      const int l = v.local[r - v.base];
+      key[k] = l < 0 ? -2 : cls[static_cast<std::size_t>(l)];
+    }
+  }
+  int pairs = 0;
+  std::size_t pa = 0, pb = 0;
+  for (std::size_t i = 0; i < 4; ++i)
+    for (std::size_t j = i + 1; j < 4; ++j)
+      if (key[i] == key[j]) { ++pairs; pa = i; pb = j; }
+  if (pairs != 1 || key[pa] < 0) return false;
+  for (std::size_t k : {pa, pb}) {
+    const std::uint32_t r = t.refs[k];
+    bool ring_bond = false;
+    const auto nb = st.adjacency.neighbors(t.atom);
+    const auto bs = st.adjacency.bonds_of(t.atom);
+    for (std::size_t q = 0; q < nb.size(); ++q)
+      if (nb[q] == r) ring_bond = (st.bonds.flags[bs[q]] & kBondInRing) != 0;
+    if (!ring_bond) return false;
+  }
+  if (tied) *tied = {t.refs[pa], t.refs[pb]};
+  return true;
+}
+
+// Centres kept in `species`: CIP-stereogenic, or para-stereogenic (para_pattern
+// and one ring through the centre, its equivalent branches and another
+// candidate centre).
+std::vector<char> stereogenic_centres(const ChemicalSystemState& st, std::uint32_t sp, const View& v,
+                                      std::vector<CipLabel>* labels = nullptr) {
+  std::vector<std::size_t> idx;
+  for (std::size_t k = 0; k < st.tetrahedral.size(); ++k)
+    if (st.atoms.species[st.tetrahedral[k].atom] == sp) idx.push_back(k);
+  std::vector<char> keep(idx.size(), 0), para(idx.size(), 0);
+  std::vector<std::array<std::uint32_t, 2>> tied(idx.size());
+  std::vector<CipLabel> lab(idx.size(), CipLabel::None);
+  bool any_para = false;
+  std::vector<long long> cls;
+  for (std::size_t i = 0; i < idx.size(); ++i) {
+    lab[i] = cip_label(st, st.tetrahedral[idx[i]]);
+    if (lab[i] != CipLabel::None) { keep[i] = 1; continue; }
+    if (!(st.atoms.flags[st.tetrahedral[idx[i]].atom] & kAtomInRing)) continue;
+    {  // cage bridgeheads (three ring bonds) carry no independent configuration
+      int ring_bonds = 0;
+      for (std::uint32_t b : st.adjacency.bonds_of(st.tetrahedral[idx[i]].atom)) ring_bonds += (st.bonds.flags[b] & kBondInRing) ? 1 : 0;
+      if (ring_bonds == 3) continue;
+    }
+    if (cls.empty()) cls = initial_ranks(st, v, std::vector<int>(v.atoms.size(), 0));
+    para[i] = para_pattern(st, v, cls, st.tetrahedral[idx[i]], &tied[i]) ? 1 : 0;
+    any_para = any_para || para[i];
+  }
+  if (any_para) {
+    const std::vector<Ring> rings = find_relevant_rings(st, sp);
+    // One ring must run through the centre, both equivalent branches and the
+    // other centre; otherwise flipping the centre is a symmetry of its ring
+    // (spiro atoms next to a symmetric ring, cage bridgeheads).
+    auto share_ring = [&](std::size_t i, std::uint32_t other) {
+      auto has = [](const Ring& r, std::uint32_t a) { return std::find(r.atoms.begin(), r.atoms.end(), a) != r.atoms.end(); };
+      for (const Ring& r : rings)
+        if (has(r, st.tetrahedral[idx[i]].atom) && has(r, tied[i][0]) && has(r, tied[i][1]) && has(r, other)) return true;
+      return false;
+    };
+    for (std::size_t i = 0; i < idx.size(); ++i) {
+      if (!para[i]) continue;
+      for (std::size_t j = 0; j < idx.size() && !keep[i]; ++j)
+        if (j != i && (para[j] || lab[j] != CipLabel::None) &&
+            share_ring(i, st.tetrahedral[idx[j]].atom))
+          keep[i] = 1;
+    }
+  }
+  std::vector<char> out(st.tetrahedral.size(), 0);
+  for (std::size_t i = 0; i < idx.size(); ++i) out[idx[i]] = keep[i];
+  if (labels) labels->assign(st.tetrahedral.size(), CipLabel::None);
+  for (std::size_t i = 0; i < idx.size(); ++i) {
+    out[idx[i]] = keep[i];
+    if (labels) (*labels)[idx[i]] = lab[i];
+  }
+  return out;
 }
 
 struct ActiveDb {
@@ -333,19 +424,24 @@ class Writer {
 
   void collect_stereo(std::uint32_t species_index) {
     if (!opt_.stereo) return;
-    for (const auto& t : st_.tetrahedral) {
+    std::vector<CipLabel> labels;
+    const std::vector<char> keep = stereogenic_centres(st_, species_index, v_, &labels);
+    for (std::size_t k = 0; k < st_.tetrahedral.size(); ++k) {
+      const auto& t = st_.tetrahedral[k];
       if (st_.atoms.species[t.atom] != species_index) continue;
-      const CipLabel l = cip_label(st_, t, opt_.canonical ? diag_ : nullptr);
-      if (l == CipLabel::None) {
-        if (diag_ && opt_.canonical)
+      const CipLabel l = labels[k];
+      if (!keep[k]) {
+        if (diag_ && opt_.canonical) {
+          cip_label(st_, t, diag_);  // reports why CIP finds no descriptor
           diag_->warn(DiagCode::StereoIgnored, "chirality mark on a non-stereogenic centre dropped from canonical SMILES")
               .on_atom(t.atom);
+        }
         continue;
       }
       const int loc = v_.local[t.atom - v_.base];
       centre_label_.push_back({loc, l});
       std::array<int, 4> refs{};
-      for (int k = 0; k < 4; ++k) refs[static_cast<std::size_t>(k)] = to_token(t.refs[static_cast<std::size_t>(k)]);
+      for (std::size_t q = 0; q < 4; ++q) refs[q] = to_token(t.refs[q]);
       tetra_.push_back({loc, refs, t.parity});
     }
     for (const auto& d : st_.double_bonds) {
@@ -623,6 +719,11 @@ std::string write_smiles(const ChemicalSystemState& st, std::uint32_t sp, const 
 
 std::string canonical_smiles(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics& diag) {
   return write_smiles(st, sp, SmilesWriteOptions{}, &diag);
+}
+
+std::vector<char> stereogenic_centres(const ChemicalSystemState& st, std::uint32_t sp) {
+  const View v = build_view(st, st.species[sp]);
+  return stereogenic_centres(st, sp, v);
 }
 
 std::vector<std::uint32_t> canonical_ranks(const ChemicalSystemState& st, std::uint32_t sp) {

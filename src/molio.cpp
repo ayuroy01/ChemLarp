@@ -424,8 +424,9 @@ void Builder::add_stereo(std::uint32_t sp, int dims) {
   for (int round = 0; round < 4; ++round) {
     bool changed = false;
     std::vector<TetrahedralStereo> keep_t(st_.tetrahedral.begin(), st_.tetrahedral.begin() + static_cast<std::ptrdiff_t>(tetra_begin));
+    const std::vector<char> stereogenic = stereogenic_centres(st_, sp);  // CIP or ring para-stereo
     for (std::size_t k = tetra_begin; k < st_.tetrahedral.size(); ++k) {
-      if (cip_label(st_, st_.tetrahedral[k]) != CipLabel::None) keep_t.push_back(st_.tetrahedral[k]);
+      if (stereogenic[k]) keep_t.push_back(st_.tetrahedral[k]);
       else changed = true;
     }
     std::vector<DoubleBondStereo> keep_d(st_.double_bonds.begin(), st_.double_bonds.begin() + static_cast<std::ptrdiff_t>(db_begin));
@@ -439,7 +440,6 @@ void Builder::add_stereo(std::uint32_t sp, int dims) {
   }
   for (std::size_t k = tetra_begin; k < st_.tetrahedral.size(); ++k)
     st_.atoms.chirality[st_.tetrahedral[k].atom] = static_cast<std::int8_t>(st_.tetrahedral[k].parity);
-  (void)sp;
 }
 
 std::int32_t build_species(ChemicalSystemState& st, const RawMol& m, bool keep_h, Diagnostics& diag) {

@@ -254,3 +254,40 @@ TEST(canonical_achiral_ring_stereo) {
     }
   }
 }
+
+// Ring para-stereo: centres without a CIP descriptor that still decide cis/trans
+// (the outer carbons of 1,3,5-trisubstituted cyclohexanes). Isomer counts per
+// constitution equal RDKit's EnumerateStereoisomers, and every spelling of an
+// isomer gives one string.
+TEST(canonical_ring_para_stereo) {
+  auto isomers = [](std::initializer_list<const char*> all) {
+    std::set<std::string> out;
+    for (const char* s : all) out.insert(canon(s));
+    return out.size();
+  };
+  // 1,3,5-trimethylcyclohexane: the two isomers, each in several spellings
+  // (grouped by RDKit's InChIKey: ...FBJIGQNJSA-N and ...AYMMMOKOSA-N).
+  expect_same({"C[C@H]1C[C@@H](C)C[C@H](C)C1", "C[C@@H]1C[C@H](C)C[C@@H](C)C1", "[C@H]1(C)C[C@@H](C)C[C@H](C)C1",
+               "C[C@H]1C[C@H](C)C[C@@H](C)C1", "C[C@@H]1C[C@@H](C)C[C@H](C)C1", "C[C@H]1C[C@H](C)C[C@H](C)C1"});
+  expect_same({"C[C@H]1C[C@@H](C)C[C@@H](C)C1", "C[C@@H]1C[C@H](C)C[C@H](C)C1"});
+  CHECK_EQ(isomers({"C[C@H]1C[C@@H](C)C[C@H](C)C1", "C[C@H]1C[C@@H](C)C[C@@H](C)C1"}), std::size_t{2});
+  CHECK(canon("C[C@H]1C[C@@H](C)C[C@H](C)C1").find('@') != std::string::npos);  // stereo is kept, not dropped
+  // A lone mark on a centre with nothing to be cis or trans to is still dropped.
+  CHECK_EQ(canon("C[C@H]1CCCCC1"), std::string("CC1CCCCC1"));
+  // Spiro ketal on trans-4,5-dimethyl-1,3-dioxolane: both spiro spellings are the same molecule.
+  expect_same({"C[C@H]1O[C@]2(C=CCCC2)O[C@@H]1C", "C[C@H]1O[C@@]2(C=CCCC2)O[C@@H]1C"});
+  // ... while on the cis (meso) ring the spiro centre gives two isomers.
+  CHECK(canon("C[C@H]1O[C@]2(C=CCCC2)O[C@H]1C") != canon("C[C@H]1O[C@@]2(C=CCCC2)O[C@H]1C"));
+  // Random atom orders of the cis,cis,trans isomer.
+  ChemicalSystemState st;
+  Diagnostics d;
+  const std::int32_t sp = parse_smiles(st, "C[C@H]1C[C@H](C)C[C@@H](C)C1", d);
+  const std::string ref = st.species[static_cast<std::size_t>(sp)].canonical_smiles;
+  for (std::uint64_t seed = 1; seed <= 30; ++seed) {
+    SmilesWriteOptions o;
+    o.canonical = false;
+    o.random_seed = seed;
+    const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
+    if (canon(rnd) != ref) throw octest::Failure(rnd + " -> " + canon(rnd) + ", expected " + ref);
+  }
+}
