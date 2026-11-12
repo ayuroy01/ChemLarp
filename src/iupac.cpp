@@ -125,8 +125,8 @@ bool descriptor_bracket(const std::string& s, std::size_t open) {
   for (std::size_t i = open + 1; i < close; ++i) {
     const char c = s[i];
     if (c >= 'a' && c <= 'z') {
-      if (++run > 1) return false;
-    } else if ((c >= '0' && c <= '9') || c == ',' || c == '.' || c == '-') {
+      if (++run > 4) return false;
+    } else if ((c >= '0' && c <= '9') || c == ',' || c == '.' || c == '-' || c == '\'' || c == ':' || c == '^' || c == '{' || c == '}') {
       run = 0;
     } else {
       return false;
@@ -647,6 +647,8 @@ class Namer {
   std::vector<std::string> locants(const Cand& c, const std::vector<int>& o) const;
   bool perfect_matching(std::vector<int> atoms) const;
   bool von_baeyer(RingSys& R);
+  bool von_baeyer_poly(RingSys& R);
+  std::vector<std::pair<std::string, int>> ring_multiple_bonds(const Cand& c, const std::vector<int>& o) const;
   bool spiro_system(RingSys& R);
   bool hantzsch_widman(RingSys& R, bool& mancude);
   bool fusion_bicycle(RingSys& R);
@@ -1403,6 +1405,12 @@ bool Namer::rings() {
       if (R.orders.empty() && R.nrings == 1 && !hantzsch_widman(R, generic_mancude)) return false;
       if (R.orders.empty() && R.nrings == 2 && fusion_bicycle(R)) generic_mancude = true;
       if (R.orders.empty() && R.nrings >= 3 && fusion_polycycle(R)) generic_mancude = true;
+      if (R.orders.empty() && R.nrings >= 2 && von_baeyer_poly(R)) {
+        const int id = static_cast<int>(rs_.size());
+        for (int a : atoms) ringsys_[a] = id;
+        rs_.push_back(std::move(R));
+        continue;
+      }
       if (R.orders.empty())
         return fail(std::string(R.nrings == 1 ? "monocycle" : "ring system") + " of " + std::to_string(atoms.size()) +
                     " atoms without a supported parent name (fused, bridged, spiro, partially hydrogenated or uncommon heterocycle)");
@@ -3371,6 +3379,298 @@ bool Namer::fusion_polycycle(RingSys& R) {
   return true;
 }
 
+// Polycyclic von Baeyer systems (P-23.2.5): main ring with the most atoms, the largest main bridge
+// dividing it as evenly as possible, then secondary bridges (independent before dependent, larger
+// first) with superscript locants as low as possible. Used for bridged systems and for fused
+// systems that have no fusion name here.
+bool Namer::von_baeyer_poly(RingSys& R) {
+  const std::vector<int>& V = R.atoms;
+  const int n = static_cast<int>(V.size());
+  if (n > 40 || R.nrings > 8) return fail("ring system too large for von Baeyer nomenclature");
+  std::map<int, int> idx;
+  for (int i = 0; i < n; ++i) idx[V[i]] = i;
+  std::vector<std::vector<int>> adj(n);
+  int nbonds = 0;
+  for (int i = 0; i < n; ++i) {
+    const int a = V[i];
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k) {
+      auto it = idx.find(at_[a].nb[k]);
+      if (ringbond_[a][k] && it != idx.end()) adj[i].push_back(it->second), ++nbonds;
+    }
+  }
+  nbonds /= 2;
+  // no spiro junctions: the ring graph must stay connected when any one atom is removed
+  for (int cut = 0; cut < n; ++cut) {
+    std::vector<char> seen(n, 0);
+    std::vector<int> st = {cut == 0 ? 1 : 0};
+    seen[st[0]] = 1;
+    int cnt = 1;
+    while (!st.empty()) {
+      const int a = st.back();
+      st.pop_back();
+      for (int b : adj[a])
+        if (b != cut && !seen[b]) seen[b] = 1, ++cnt, st.push_back(b);
+    }
+    if (cnt != n - 1) return fail("spiro junction in a polycyclic ring system at " + sym(V[cut]));
+  }
+  // all simple cycles (each once: smallest atom first, second smaller than last)
+  std::vector<std::vector<int>> cycles;
+  {
+    std::vector<int> path;
+    std::vector<char> on(n, 0);
+    long steps = 0;
+    auto dfs = [&](auto&& self, int start, int a) -> void {
+      if (++steps > 2000000 || cycles.size() > 20000) return;
+      for (int b : adj[a]) {
+        if (b == start && path.size() >= 3 && path[1] < path.back()) cycles.push_back(path);
+        if (b <= start || on[b]) continue;
+        on[b] = 1;
+        path.push_back(b);
+        self(self, start, b);
+        path.pop_back();
+        on[b] = 0;
+      }
+    };
+    for (int s0 = 0; s0 < n; ++s0) {
+      path = {s0};
+      on[s0] = 1;
+      dfs(dfs, s0, s0);
+      on[s0] = 0;
+    }
+    if (steps > 2000000 || cycles.size() > 20000) return fail("ring system too complex for von Baeyer nomenclature");
+  }
+  std::size_t maxring = 0;
+  for (const auto& c : cycles) maxring = std::max(maxring, c.size());
+  struct Main {
+    std::vector<int> ring, bridge;  // bridge atoms from ring[pu] to ring[pv]
+    int pu = 0, pv = 0;
+  };
+  std::vector<Main> mains;
+  int best_bridge = -1, best_split = 1 << 20;
+  for (const auto& C : cycles) {
+    if (C.size() != maxring) continue;
+    const int m = static_cast<int>(C.size());
+    std::vector<int> pos(n, -1);
+    for (int i = 0; i < m; ++i) pos[C[i]] = i;
+    auto consider = [&](int pu, int pv, const std::vector<int>& bridge) {
+      if (pu > pv) return;
+      if (pu == pv) return;
+      const int inner = pv - pu - 1, outer = m - 2 - inner;
+      const int len = static_cast<int>(bridge.size()), split = std::abs(inner - outer);
+      if (len < best_bridge || (len == best_bridge && split > best_split)) return;
+      if (len > best_bridge || split < best_split) {
+        best_bridge = len;
+        best_split = split;
+        mains.clear();
+      }
+      mains.push_back({C, bridge, pu, pv});
+    };
+    for (int i = 0; i < m; ++i) {
+      const int u = C[i];
+      for (int b : adj[u]) {
+        if (pos[b] >= 0) {  // chord: a bridge of no atoms
+          const int d = std::abs(pos[b] - i);
+          if (d != 1 && d != m - 1) consider(i, pos[b], {});
+          continue;
+        }
+        // paths through atoms outside the ring back to it
+        std::vector<int> path = {b};
+        std::vector<char> on(n, 0);
+        on[b] = 1;
+        auto walk = [&](auto&& self, int a) -> void {
+          for (int x : adj[a]) {
+            if (pos[x] >= 0) {
+              if (x != u || path.size() > 1) {
+                if (x != u) consider(i, pos[x], path);
+              }
+              continue;
+            }
+            if (on[x]) continue;
+            on[x] = 1;
+            path.push_back(x);
+            self(self, x);
+            path.pop_back();
+            on[x] = 0;
+          }
+        };
+        walk(walk, b);
+      }
+    }
+  }
+  if (mains.empty()) return fail("no main bridge in a polycyclic ring system");
+
+  struct Sec {  // a secondary bridge: dependent?, atoms, superscript locants
+    int dependent, len, lo, hi;
+  };
+  struct Result {
+    std::vector<int> o;
+    std::string desc;
+    std::vector<int> supers;
+  };
+  std::vector<Result> results;
+  long branches = 0;
+  auto bond_id = [&](int a, int b) { return std::min(a, b) * n + std::max(a, b); };
+  // Secondary bridges. First the remaining structure is cut into bridges (independent ones before
+  // dependent, larger before smaller); then the bridge atoms are numbered, each bridge in turn from
+  // the one on the highest-numbered bridgehead down, starting at the end nearer that bridgehead.
+  auto extend = [&](std::vector<int> o, std::set<int> used, std::string desc, int main_size) -> void {
+    if (++branches > 200000) return;
+    struct Bridge {
+      std::vector<int> path;
+      int u, v;
+      bool dependent;
+    };
+    std::vector<Bridge> bridges;
+    std::vector<char> assigned(n, 0), in_main(n, 0);
+    for (int a : o) assigned[a] = in_main[a] = 1;
+    for (;;) {
+      std::vector<Bridge> cands;
+      for (int u = 0; u < n; ++u) {
+        if (!assigned[u]) continue;
+        for (int b : adj[u]) {
+          if (used.count(bond_id(u, b))) continue;
+          if (assigned[b]) {
+            if (u < b) cands.push_back({{}, u, b, !(in_main[u] && in_main[b])});
+            continue;
+          }
+          std::vector<int> path = {b};
+          std::vector<char> on(n, 0);
+          on[b] = 1;
+          auto walk = [&](auto&& w, int a) -> void {
+            for (int x : adj[a]) {
+              if (assigned[x]) {
+                if (x != u && u < x && !used.count(bond_id(a, x))) cands.push_back({path, u, x, !(in_main[u] && in_main[x])});
+                continue;
+              }
+              if (on[x]) continue;
+              on[x] = 1;
+              path.push_back(x);
+              w(w, x);
+              path.pop_back();
+              on[x] = 0;
+            }
+          };
+          walk(walk, b);
+        }
+      }
+      if (cands.empty()) break;
+      const Bridge* pick = nullptr;
+      for (const auto& c : cands)
+        if (!pick || std::make_pair(!c.dependent, c.path.size()) > std::make_pair(!pick->dependent, pick->path.size())) pick = &c;
+      Bridge b = *pick;
+      used.insert(bond_id(b.u, b.path.empty() ? b.v : b.path.front()));
+      for (std::size_t i = 0; i + 1 < b.path.size(); ++i) used.insert(bond_id(b.path[i], b.path[i + 1]));
+      if (!b.path.empty()) used.insert(bond_id(b.path.back(), b.v));
+      for (int a : b.path) assigned[a] = 1;
+      bridges.push_back(b);
+    }
+    if (static_cast<int>(used.size()) != nbonds) return;
+    std::vector<int> where(n, -1);
+    for (std::size_t i = 0; i < o.size(); ++i) where[o[i]] = static_cast<int>(i);
+    std::vector<char> done(bridges.size(), 0);
+    std::vector<Sec> secs;
+    for (std::size_t round = 0; round < bridges.size(); ++round) {
+      int best = -1;
+      std::pair<int, int> top = {-1, -1};
+      for (std::size_t i = 0; i < bridges.size(); ++i) {
+        const Bridge& b = bridges[i];
+        if (done[i] || where[b.u] < 0 || where[b.v] < 0) continue;
+        // independent bridges are numbered before dependent ones
+        bool waits = false;
+        if (b.dependent)
+          for (std::size_t k = 0; k < bridges.size(); ++k) waits |= !done[k] && !bridges[k].dependent;
+        if (waits) continue;
+        const std::pair<int, int> key = {std::max(where[b.u], where[b.v]), std::min(where[b.u], where[b.v])};
+        if (key > top) top = key, best = static_cast<int>(i);
+      }
+      if (best < 0) return;
+      Bridge& b = bridges[static_cast<std::size_t>(best)];
+      done[static_cast<std::size_t>(best)] = 1;
+      std::vector<int> p = b.path;
+      if (where[b.v] > where[b.u]) std::reverse(p.begin(), p.end());
+      for (int a : p) {
+        where[a] = static_cast<int>(o.size());
+        o.push_back(a);
+      }
+      secs.push_back({b.dependent ? 1 : 0, static_cast<int>(b.path.size()), top.second + 1, top.first + 1});
+    }
+    if (static_cast<int>(o.size()) != n) return;
+    (void)main_size;
+    // cited: independent before dependent, larger first, then lower superscripts
+    std::sort(secs.begin(), secs.end(), [](const Sec& a, const Sec& b) {
+      return std::make_tuple(a.dependent, -a.len, a.lo, a.hi) < std::make_tuple(b.dependent, -b.len, b.lo, b.hi);
+    });
+    std::vector<int> supers;
+    for (const Sec& x : secs) {
+      desc += "." + std::to_string(x.len) + "^{" + std::to_string(x.lo) + "," + std::to_string(x.hi) + "}";
+      supers.push_back(x.lo);
+      supers.push_back(x.hi);
+    }
+    results.push_back({o, desc, supers});
+  };
+  for (const Main& M : mains) {
+    const int m = static_cast<int>(M.ring.size());
+    std::vector<int> seg1(M.ring.begin() + M.pu + 1, M.ring.begin() + M.pv), seg2;
+    for (int i = M.pv + 1; i < M.pu + m; ++i) seg2.push_back(M.ring[i % m]);
+    const int hu = M.ring[M.pu], hv = M.ring[M.pv];
+    // seg1 runs hu -> hv, seg2 runs hv -> hu, the bridge hu -> hv
+    for (int flip = 0; flip < 2; ++flip)
+      for (int which = 0; which < 2; ++which) {
+        std::vector<int> A = which ? seg2 : seg1, B = which ? seg1 : seg2, C = M.bridge;
+        int h1 = hu, h2 = hv;
+        if (which) std::swap(h1, h2);  // seg2 runs hv -> hu: start at hv
+        if (A.size() < B.size()) continue;
+        if (which) std::reverse(C.begin(), C.end());
+        if (flip) {  // start from the other main bridgehead
+          std::reverse(A.begin(), A.end());
+          std::reverse(B.begin(), B.end());
+          std::reverse(C.begin(), C.end());
+          std::swap(h1, h2);
+        }
+        std::vector<int> o = {h1};
+        o.insert(o.end(), A.begin(), A.end());
+        o.push_back(h2);
+        o.insert(o.end(), B.begin(), B.end());
+        o.insert(o.end(), C.begin(), C.end());
+        std::set<int> used;
+        for (int i = 0; i < m; ++i) used.insert(bond_id(M.ring[i], M.ring[(i + 1) % m]));
+        if (C.empty()) used.insert(bond_id(h1, h2));
+        else {
+          used.insert(bond_id(h1, C.front()));
+          for (std::size_t i = 0; i + 1 < C.size(); ++i) used.insert(bond_id(C[i], C[i + 1]));
+          used.insert(bond_id(C.back(), h2));
+        }
+        const std::string desc = std::to_string(A.size()) + "." + std::to_string(B.size()) + "." + std::to_string(C.size());
+        extend(o, used, desc, static_cast<int>(o.size()));
+      }
+  }
+  if (branches > 200000) return fail("ring system too complex for von Baeyer nomenclature");
+  if (results.empty()) return fail("ring system that could not be described by von Baeyer nomenclature");
+  auto skey = [](std::vector<int> s) {
+    std::sort(s.begin(), s.end());
+    return s;
+  };
+  std::vector<int> best = skey(results[0].supers);
+  for (const auto& r : results) best = std::min(best, skey(r.supers));
+  static const char* cyc[] = {"", "", "bicyclo", "tricyclo", "tetracyclo", "pentacyclo", "hexacyclo", "heptacyclo", "octacyclo"};
+  std::set<std::vector<int>> seen;
+  for (const auto& r : results) {
+    if (skey(r.supers) != best) continue;
+    std::vector<int> o;
+    for (int i : r.o) o.push_back(V[i]);
+    if (!seen.insert(o).second) continue;
+    R.orders.push_back(o);
+    R.names.push_back(std::string(cyc[R.nrings]) + "[" + r.desc + "]");
+  }
+  R.kind = PKind::VonBaeyer;
+  R.unsat = 0;
+  for (int x : V)
+    for (std::size_t k = 0; k < at_[x].nb.size(); ++k)
+      if (ringbond_[x][k] && at_[x].nb[k] > x && at_[x].bo[k] > 1 && idx.count(at_[x].nb[k])) ++R.unsat;
+  return true;
+}
+
 // Whether the ring-bond graph on `atoms` has a perfect matching (backtracking; ring systems are small).
 bool Namer::perfect_matching(std::vector<int> atoms) const {
   if (atoms.empty()) return true;
@@ -3496,9 +3796,14 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
   }
   if (sp.mode == Mode::Yl || sp.mode == Mode::Ylidene || sp.mode == Mode::Oyl) suf.push_back(L[sp.root]);
   if (sp.mode == Mode::Carbonyl) suf.push_back(L[sp.link]);
+  if (c.kind == PKind::VonBaeyer)
+    for (const auto& [loc, bo2] : ring_multiple_bonds(c, o)) {
+      un.push_back(loc);
+      if (bo2 == 2) ene.push_back(loc);
+    }
   if (c.kind == PKind::Chain || c.kind == PKind::Carbocycle || c.kind == PKind::VonBaeyer) {
     const std::size_t m = o.size();
-    const std::size_t lim = c.kind == PKind::Carbocycle ? m : m - 1;
+    const std::size_t lim = c.kind == PKind::VonBaeyer ? 0 : c.kind == PKind::Carbocycle ? m : m - 1;
     int counted = 0;
     for (std::size_t i = 0; i < lim; ++i) {
       const int b = order(o[i], o[(i + 1) % m]);
@@ -3509,7 +3814,7 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
       if (b == 2) ene.push_back(L[o[i]]);
     }
     if (c.kind == PKind::VonBaeyer || (c.kind == PKind::Carbocycle && rs_[c.rsys].nhetero > 0)) {
-      if (c.kind == PKind::VonBaeyer && counted != rs_[c.rsys].unsat) valid = false;  // would need a compound locant
+      (void)counted;
       std::vector<std::string> het, by_kind;
       for (int z : {8, 16, 7})
         for (int x : o)
@@ -3578,6 +3883,24 @@ std::string Namer::lambda_name(std::string name, const Cand& c, const std::vecto
   return name;
 }
 
+// Multiple bonds of a von Baeyer or spiro system: locant of the lower-numbered atom, with the other
+// atom in parentheses when the two are not numbered consecutively ("2(7)", P-31.1.4.2.4).
+std::vector<std::pair<std::string, int>> Namer::ring_multiple_bonds(const Cand& c, const std::vector<int>& o) const {
+  std::vector<std::pair<std::string, int>> out;
+  std::map<int, int> pos;
+  for (std::size_t i = 0; i < o.size(); ++i) pos[o[i]] = static_cast<int>(i) + 1;
+  (void)c;
+  for (int a : o)
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k) {
+      const int b = at_[a].nb[k];
+      auto it = pos.find(b);
+      if (!ringbond_[a][k] || at_[a].bo[k] < 2 || it == pos.end() || pos[a] > it->second) continue;
+      const int i = pos[a], j = it->second;
+      out.push_back({j == i + 1 ? std::to_string(i) : std::to_string(i) + "(" + std::to_string(j) + ")", at_[a].bo[k]});
+    }
+  return out;
+}
+
 std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_unsat, bool& saturated) const {
   saturated = true;
   if (c.kind == PKind::Benzene) return "benzene";
@@ -3592,13 +3915,15 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
     return s;
   }
   const std::size_t m = o.size();
-  const std::size_t lim = c.kind == PKind::Carbocycle ? m : m - 1;
+  const std::size_t lim = c.kind == PKind::VonBaeyer ? 0 : c.kind == PKind::Carbocycle ? m : m - 1;
   std::vector<std::string> enes, ynes;
   for (std::size_t i = 0; i < lim; ++i) {
     const int b = order(o[i], o[(i + 1) % m]);
     if (b == 2) enes.push_back(std::to_string(i + 1));
     if (b == 3) ynes.push_back(std::to_string(i + 1));
   }
+  if (c.kind == PKind::VonBaeyer)
+    for (const auto& [loc, bo2] : ring_multiple_bonds(c, o)) (bo2 == 2 ? enes : ynes).push_back(loc);
   std::string stem = (c.kind == PKind::Carbocycle ? "cyclo" : "") + alkane_stem(static_cast<int>(m));
   if (c.kind == PKind::VonBaeyer || (c.kind == PKind::Carbocycle && rs_[c.rsys].nhetero > 0)) {
     const auto L = locants(c, o);
@@ -3616,6 +3941,8 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
     const RingSys& R = rs_[c.rsys];
     if (c.kind == PKind::VonBaeyer && R.spiro)
       stem = rep_prefixes + "spiro[" + std::to_string(R.vb[0]) + "." + std::to_string(R.vb[1]) + "]" + stem;
+    else if (c.kind == PKind::VonBaeyer && !R.names.empty())
+      stem = rep_prefixes + R.names[static_cast<std::size_t>(order_index(c, o))] + stem;
     else if (c.kind == PKind::VonBaeyer)
       stem = rep_prefixes + "bicyclo[" + std::to_string(R.vb[0]) + "." + std::to_string(R.vb[1]) + "." + std::to_string(R.vb[2]) + "]" + stem;
     else

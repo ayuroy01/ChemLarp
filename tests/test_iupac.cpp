@@ -164,6 +164,13 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(C1CN2CCCc3cccc(C1)c32)", R"(2,3,6,7-tetrahydro-1H,5H-pyrido[3,2,1-ij]quinoline)"},
       {R"(CN1CCc2cccc3c2C1Cc1ccccc1-3)", R"(6-methyl-5,6,6a,7-tetrahydro-4H-dibenzo[de,g]quinoline)"},
       {R"(c1ccc2c(c1)-c1cccc3cccc2c13)", R"(fluoranthene)"},
+      {R"(C12C3C4C1C5C2C3C45)", R"(pentacyclo[4.2.0.0^{2,5}.0^{3,8}.0^{4,7}]octane)"},
+      {R"(C1=CC2CC1C1CCCC21)", R"(tricyclo[5.2.1.0^{2,6}]dec-8-ene)"},
+      {R"(c1ccc2c(c1)C1CCC2C1)", R"(tricyclo[6.2.1.0^{2,7}]undeca-2,4,6-triene)"},
+      {R"(CN1CCC23c4c5ccc(O)c4OC2C(O)C=CC3C1C5)", R"(4-methyl-12-oxa-4-azapentacyclo[9.6.1.0^{1,13}.0^{5,17}.0^{7,18}]octadeca-7(18),8,10,15-tetraene-10,14-diol)"},
+      {R"(O=C1OCCCCCCCCCCC=Cc2ccccc12)", R"(3-oxabicyclo[14.4.0]icosa-1(20),14,16,18-tetraen-2-one)"},
+      {R"(C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2)", R"(21,22,23,24-tetraazapentacyclo[16.2.1.1^{3,6}.1^{8,11}.1^{13,16}]tetracosa-1(20),2,4,6(24),7,9,11(23),12,14,16,18-undecaene)"},
+      {R"(C1C2CC3CC1CC(C2)O3)", R"(2-oxatricyclo[3.3.1.1^{3,7}]decane)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -176,7 +183,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "CCC12CCCN3C1C4=C(CC3)C5=CC=CC=C5N4C(=O)C2", "CN=[N+]=[N-]", "COP(=S)(OC)OC",
+  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "COP(=S)(OC)OC",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
