@@ -97,6 +97,9 @@ enum class DiagCode : std::uint16_t {
   // 10xx — queries (SMARTS)
   SmartsSyntax = 1000,      // malformed SMARTS
   SmartsUnsupported,        // valid SMARTS feature this engine does not implement
+
+  // 11xx — nomenclature
+  NamingUnsupported = 1100,  // structure needs a nomenclature rule the namer does not implement
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

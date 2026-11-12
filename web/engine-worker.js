@@ -27,6 +27,7 @@ const calls = {
   flash: (M, a) => callJson(M, 'cl_flash_text_json', ['string', 'number', 'number', 'string'], [a.mixture, a.temperature, a.pressure, a.eos]),
   psat: (M, a) => callJson(M, 'cl_saturation_pressure_json', ['string', 'number', 'string'], [a.smiles, a.temperature, a.eos]),
   inchi: (M, a) => callJson(M, 'cl_inchi_json', ['string'], [a.smiles]),
+  iupac: (M, a) => callJson(M, 'cl_iupac_name_json', ['string'], [a.smiles]),
   smarts: (M, a) => callJson(M, 'cl_smarts_match_json', ['string', 'string', 'number', 'number'], [a.smiles, a.smarts, a.chiral ? 1 : 0, a.max || 1000]),
   similarity: (M, a) => callJson(M, 'cl_similarity_json', ['string', 'string', 'number', 'number'], [a.a, a.b, a.radius || 0, a.bits || 0]),
   search: (M, a) => callJson(M, 'cl_search_json', ['string', 'string', 'string', 'number', 'number'], [a.lines, a.smarts || '', a.query || '', a.radius || 0, a.bits || 0]),

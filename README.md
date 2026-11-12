@@ -4,7 +4,7 @@ ChemLarp is a terminal-native chemistry engine written in C++20. It covers the p
 
 ## Use it in your browser (any OS, installable)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, a structure editor, Hartree-Fock and DFT calculations, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis with IUPAC names, a structure editor, Hartree-Fock and DFT calculations, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
 
 - **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
 - **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
@@ -77,6 +77,7 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 
 ```bash
 ./build/chemlarp inchi 'C[C@@H](C(=O)O)N'                                              # InChI and InChIKey
+./build/chemlarp name 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O'   # (2S)-2-[4-(2-methylpropyl)phenyl]propanoic acid
 ./build/chemlarp read compounds.sdf --inchi             # MOL/SDF, PDB, CML -> canonical SMILES, title, InChIKey
 ./build/chemlarp match 'CC(=O)Oc1ccccc1C(=O)O' '[CX3](=O)[OX2H1]'                     # SMARTS matches
 ./build/chemlarp qc 'C=O' --method b3lyp --basis 6-31G*        # HF / DFT energy, orbitals, charges, dipole
@@ -111,6 +112,7 @@ with chemlarp.System() as s:
     xyz = s.atom_x()        # numpy view straight into the C++ SoA column
 chemlarp.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
 chemlarp.inchi("N[C@@H](C)C(=O)O")["key"]   # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
+chemlarp.iupac_name("CC(=O)Oc1ccccc1C(=O)O")   # '2-(acetyloxy)benzoic acid'
 chemlarp.read_molecules("compounds.sdf")     # [{'title', 'smiles', 'formula', 'properties': {...}}, ...]
 chemlarp.smarts_match("CC(=O)Oc1ccccc1C(=O)O", "[CX3](=O)[OX2H1]")   # [(10, 11, 12)]
 chemlarp.similarity("CC(=O)Oc1ccccc1C(=O)O", "OC(=O)c1ccccc1O")["tanimoto"]   # ECFP4 Tanimoto
@@ -135,6 +137,7 @@ include/chemlarp/   public headers (C++ API + chemlarp_c.h C ABI)
   smarts.hpp          SMARTS parser and substructure matcher
   fingerprint.hpp     Morgan (ECFP) fingerprints, Tanimoto and Dice
   qc.hpp              Hartree-Fock and Kohn-Sham DFT single points
+  iupac.hpp           systematic IUPAC names (2013 Recommendations)
   reaction.hpp        equation parser, element/charge balance, ΔrG°, K
   thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
   joback.hpp          group-additivity ΔfH°/ΔfG° from the graph

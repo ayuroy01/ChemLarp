@@ -21,6 +21,7 @@
 #include "chemlarp/eos.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
+#include "chemlarp/iupac.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/qc.hpp"
 #include "chemlarp/json.hpp"
@@ -396,6 +397,17 @@ char* cl_inchi_json(const char* smiles) {
     const InchiResult r = inchi_from_smiles(smiles, d);
     std::string out = std::string("{\"ok\":") + (r.ok ? "true" : "false");
     if (r.ok) out += ",\"inchi\":" + json_escape(r.inchi) + ",\"key\":" + json_escape(r.key);
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* cl_iupac_name_json(const char* smiles) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    const NameResult r = iupac_name_from_smiles(smiles, d);
+    std::string out = std::string("{\"ok\":") + (r.ok ? "true" : "false");
+    if (r.ok) out += ",\"name\":" + json_escape(r.name);
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }

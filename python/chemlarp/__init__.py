@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -86,6 +86,7 @@ _cl_kinetics = _sig("cl_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes
                     ctypes.c_size_t, ctypes.c_double)
 _cl_embed = _sig("cl_embed_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int)
 _cl_inchi = _sig("cl_inchi_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_iupac = _sig("cl_iupac_name_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_smarts = _sig("cl_smarts_match_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_similarity = _sig("cl_similarity_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_search = _sig("cl_search_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
@@ -194,6 +195,18 @@ def inchi(smiles: str) -> dict:
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r
+
+
+def iupac_name(smiles: str) -> str:
+    """Systematic IUPAC name (2013 Recommendations) of a SMILES string.
+
+    Raises ChemLarpError with a NamingUnsupported diagnostic when the structure needs a
+    nomenclature rule ChemLarp does not implement; the namer never guesses.
+    """
+    r = _take_json(_cl_iupac(smiles.encode()))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r["name"]
 
 
 def read_molecules(source, format: str = "", keep_hydrogens: bool = False, max_records: int = 0) -> list[dict]:

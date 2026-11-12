@@ -121,6 +121,10 @@ CHEMLARP_API char* cl_depict_json(const char* smiles, double bond_px, int flags)
  * JSON: {"ok","inchi","key","diagnostics"}. */
 CHEMLARP_API char* cl_inchi_json(const char* smiles);
 
+/* Systematic IUPAC name of a SMILES string (2013 Recommendations; see iupac.hpp for scope).
+ * JSON: {"ok","name","diagnostics"}; ok false with a NamingUnsupported diagnostic outside the scope. */
+CHEMLARP_API char* cl_iupac_name_json(const char* smiles);
+
 /* Reads a MOL/SDF, PDB or CML file (see molio.hpp). `format` is "mol", "sdf", "pdb", "cml", a file name
  * whose extension decides, or "" to detect from the content. max_records 0 = all.
  * JSON: {"ok","format","records":[{"ok","line","title","smiles","formula","molar_mass","atoms","dimensions",

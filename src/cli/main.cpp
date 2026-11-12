@@ -40,6 +40,7 @@
 #include "chemlarp/eos.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
+#include "chemlarp/iupac.hpp"
 #include "chemlarp/json.hpp"
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
@@ -63,6 +64,7 @@ int usage() {
       "  chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  chemlarp psat <SMILES> -T K [--srk]\n"
       "  chemlarp inchi <SMILES> [--key]\n"
+      "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
       "  chemlarp match <SMILES> <SMARTS> [--chiral]          substructure matches (atom indices)\n"
       "  chemlarp qc <SMILES|file.sdf> [--method hf|svwn|pbe|b3lyp] [--basis STO-3G|3-21G|6-31G|6-31G*]\n"
@@ -377,6 +379,37 @@ int cmd_inchi(const std::vector<std::string>& args) {
   if (!key_only) std::printf("%s\n", r.inchi.c_str());
   std::printf("%s\n", r.key.c_str());
   return 0;
+}
+
+// IUPAC names: one per argument, or one per stdin line ("SMILES [title]") with '-'.
+int cmd_name(const std::vector<std::string>& args) {
+  int failures = 0;
+  auto one = [&](const std::string& smiles, bool batch) {
+    Diagnostics d;
+    const NameResult r = iupac_name_from_smiles(smiles, d);
+    if (batch) {
+      std::string why;
+      for (const auto& x : d.items())
+        if (x.severity == Severity::Error) why = x.message;
+      std::printf("%s\t%s\n", smiles.c_str(), r.ok ? r.name.c_str() : ("! " + why).c_str());
+    } else {
+      print_diagnostics(d, smiles);
+      if (r.ok) std::printf("%s\n", r.name.c_str());
+    }
+    failures += !r.ok;
+  };
+  if (args.size() == 1 && args[0] == "-") {
+    char buf[65536];
+    while (std::fgets(buf, sizeof buf, stdin)) {
+      std::string line(buf);
+      const auto end = line.find_first_of(" \t\r\n");
+      const std::string smiles = line.substr(0, end);
+      if (!smiles.empty()) one(smiles, true);
+    }
+  } else {
+    for (const auto& a : args) one(a, args.size() > 1);
+  }
+  return failures ? 1 : 0;
 }
 
 // Prints one line per record: canonical SMILES, a tab and the title (a SMILES file).
@@ -769,6 +802,7 @@ int main(int argc, char** argv) {
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
+  if (cmd == "name" && !args.empty()) return cmd_name(args);
   if (cmd == "read" && !args.empty()) return cmd_read(args);
   if (cmd == "match" && !args.empty()) return cmd_match(args);
   if (cmd == "qc" && !args.empty()) return cmd_qc(args);

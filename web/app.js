@@ -311,6 +311,10 @@
       h('div', { class: 'glass-card card' },
         h('div', { class: 'card-head' }, h('h2', { text: 'Identifiers' })),
         h('dl', { class: 'props' },
+          h('dt', { text: 'IUPAC name' }), c.iupac
+            ? h('dd', {}, h('span', { class: 'identifier' }, h('span', { class: 'text', text: c.iupac }),
+              h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Copy IUPAC name', onclick: () => copy(c.iupac) }, icon('copy'))))
+            : h('dd', { class: 'muted', text: c.iupacWhy || 'Not available' }),
           h('dt', { text: 'Formula' }), h('dd', {}, formulaNode(c.formula)),
           h('dt', { text: 'Canonical SMILES' }), h('dd', {}, h('span', { class: 'identifier' }, h('span', { class: 'text', text: c.canonical }),
             h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Copy canonical SMILES', onclick: () => copy(c.canonical) }, icon('copy')))),
@@ -331,14 +335,23 @@
     );
   }
 
+  // Short reason shown when no IUPAC name is produced (the namer reports, it never guesses).
+  function namingReason(diags) {
+    const d = (diags || []).find((x) => x.code === 'NamingUnsupported');
+    if (!d) return 'Not available';
+    const m = d.message.replace(/^no IUPAC name: /, '');
+    return `Not named: ${m.length > 90 ? m.slice(0, 87) + '…' : m}`;
+  }
+
   async function openCompound(input, { remember = true } = {}) {
     input = (input || '').trim();
     if (!input) return;
     $('compound').value = input;
     busy($('structure-out'), 'Reading structure…');
     try {
-      const [p, cn, ik] = await Promise.all([engine('parse', { smiles: input }), engine('canonical', { smiles: input, random: 3, seed: 7 }),
-        engine('inchi', { smiles: input }).catch(() => ({ result: { ok: false } }))]);
+      const [p, cn, ik, nm] = await Promise.all([engine('parse', { smiles: input }), engine('canonical', { smiles: input, random: 3, seed: 7 }),
+        engine('inchi', { smiles: input }).catch(() => ({ result: { ok: false } })),
+        engine('iupac', { smiles: input }).catch(() => ({ result: { ok: false, diagnostics: [] } }))]);
       const r = p.result;
       if (!r.ok) {
         compound = null;
@@ -354,6 +367,8 @@
         charge: s.net_charge, heavy: atoms.element.filter((z) => z !== 1).length, bonds: s.bond_count,
         cip: cn.result.ok ? cn.result.cip : { centres: [], double_bonds: [] }, random: cn.result.ok ? cn.result.random : [],
         inchi: ik.result.ok ? ik.result.inchi : null, inchiKey: ik.result.ok ? ik.result.key : null,
+        iupac: nm.result.ok ? nm.result.name : null,
+        iupacWhy: nm.result.ok ? null : namingReason(nm.result.diagnostics),
       };
       renderInspector();
       renderStructure(r, input);

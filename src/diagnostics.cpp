@@ -71,6 +71,7 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::FileContentIgnored: return "FileContentIgnored";
     case DiagCode::SmartsSyntax: return "SmartsSyntax";
     case DiagCode::SmartsUnsupported: return "SmartsUnsupported";
+    case DiagCode::NamingUnsupported: return "NamingUnsupported";
   }
   return "Unknown";
 }
