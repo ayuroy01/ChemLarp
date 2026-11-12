@@ -187,6 +187,12 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CC1=CC=C(C=C1)S(=O)(=O)NC(=O)OCC(C)(C)C)", R"(2,2-dimethylpropyl N-(4-methylbenzene-1-sulfonyl)carbamate)"},
       {R"(CC(=O)NS(=O)(=O)c1ccc(C)cc1)", R"(N-(4-methylbenzene-1-sulfonyl)acetamide)"},
       {R"(CCO.CCCO)", R"(ethanol—propan-1-ol (1/1))"},
+      {R"(O=C1Nc2ccccc2C12CCCCC2)", R"(1',2'-dihydrospiro[cyclohexane-1,3'-indole]-2'-one)"},
+      {R"(C1CCC2(CC1)CCc1ccccc12)", R"(2',3'-dihydrospiro[cyclohexane-1,1'-indene])"},
+      {R"(CN1C(=O)C2(CCNCC2)c2ccccc21)", R"(1-methyl-1,2-dihydrospiro[indole-3,4'-piperidine]-2-one)"},
+      {R"(O=C1NC(=O)C2(CCCc3ccccc32)N1)", R"(3',4'-dihydro-2'H-spiro[imidazolidine-4,1'-naphthalene]-2,5-dione)"},
+      {R"(O=C1NC(=O)C2(CCCc3sccc32)N1)", R"(6,7-dihydro-5H-spiro[[1]benzothiophene-4,4'-imidazolidine]-2',5'-dione)"},
+      {R"(O=C1Nc2ccccc2C12C=Cc1ccccc1N2)", R"(1,2-dihydro-1'H-spiro[indole-3,2'-quinoline]-2-one)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -200,7 +206,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
   for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "CC1=CC=CC=C1NP(=S)(C)C",
-                              "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
+                              "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)C1(CC1)c1ccccc21"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
     CHECK(!r.ok);

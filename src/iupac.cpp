@@ -49,6 +49,7 @@ double locant_key(const std::string& l) {
   std::size_t i = 0;
   while (i < l.size() && l[i] >= '0' && l[i] <= '9') v = v * 10 + (l[i++] - '0');
   if (i < l.size() && l[i] >= 'a' && l[i] <= 'z') v += 0.01 * (l[i] - 'a' + 1);
+  v += 0.0001 * static_cast<double>(std::count(l.begin(), l.end(), '\''));  // 2 < 2' < 2''
   return v;
 }
 
@@ -475,6 +476,7 @@ struct RingSys {
   std::vector<std::string> names;               // Template kind: parent name per numbering in `orders`
   std::vector<std::vector<std::string>> locs;   // Template kind: locants per numbering
   bool het_numbering = false;                   // numbering chosen by heteroatom locants first (Hantzsch-Widman)
+  bool spiro_mancude = false;                   // saturation already worked out per component (spiro_fused)
 };
 
 struct Spec {
@@ -541,6 +543,14 @@ struct FusedSys {
   std::vector<std::vector<int>> radj;
   std::map<std::pair<int, int>, int> bond_rings;  // rings containing each bond
   std::set<int> interior;                         // atoms with no peripheral bond
+};
+
+struct SpiroPart {
+  std::vector<int> atoms;
+  std::vector<std::vector<int>> orders;
+  std::vector<std::vector<std::string>> locs;
+  std::vector<std::string> names;
+  bool mancude = false;
 };
 
 struct FusedNumbering {
@@ -654,6 +664,8 @@ class Namer {
   bool hantzsch_widman(RingSys& R, bool& mancude);
   bool fusion_bicycle(RingSys& R);
   bool fusion_polycycle(RingSys& R);
+  bool spiro_fused(RingSys& R);
+  bool spiro_component(const std::vector<int>& atoms, int nrings, int centre, SpiroPart& out);
   bool build_fused(const std::vector<std::vector<int>>& rings, FusedSys& F);
   bool number_fused(const FusedSys& F, std::vector<FusedNumbering>& out);
   std::vector<std::vector<int>> sssr_;
@@ -1482,6 +1494,12 @@ bool Namer::rings() {
         }
       }
       if (R.orders.empty() && R.nrings == 2 && (spiro_system(R) || von_baeyer(R))) {
+        const int id = static_cast<int>(rs_.size());
+        for (int a : atoms) ringsys_[a] = id;
+        rs_.push_back(std::move(R));
+        continue;
+      }
+      if (R.orders.empty() && R.nrings >= 3 && spiro_fused(R)) {
         const int id = static_cast<int>(rs_.size());
         for (int a : atoms) ringsys_[a] = id;
         rs_.push_back(std::move(R));
@@ -3782,6 +3800,205 @@ bool Namer::von_baeyer_poly(RingSys& R) {
   for (int x : V)
     for (std::size_t k = 0; k < at_[x].nb.size(); ++k)
       if (ringbond_[x][k] && at_[x].nb[k] > x && at_[x].bo[k] > 1 && idx.count(at_[x].nb[k])) ++R.unsat;
+  return true;
+}
+
+// Names, numberings and saturation of one component of a spiro system (P-24.5): a saturated
+// monocycle, or a ring system with a template or fusion name.
+bool Namer::spiro_component(const std::vector<int>& atoms, int nrings, int centre, SpiroPart& out) {
+  out = SpiroPart{};
+  const std::set<int> in(atoms.begin(), atoms.end());
+  auto ring_bond = [&](int a, std::size_t k) { return ringbond_[a][k] && in.count(at_[a].nb[k]) > 0; };
+  RingSys T;
+  T.atoms = atoms;
+  T.nrings = nrings;
+  // retained and fusion templates whose atoms are exactly this component
+  {
+    const auto& qs = template_queries();
+    SmartsMatchOptions mo;
+    mo.unique = false;
+    mo.max_matches = 0;
+    for (std::size_t t = 0; t < qs.size() && T.orders.empty(); ++t) {
+      if (!qs[t].valid() || templates()[t].locants.size() != atoms.size() || pattern_rings(templates()[t].pattern) != nrings) continue;
+      for (const auto& mt : match_smarts(st_, sp_, qs[t], mo)) {
+        std::vector<int> o;
+        for (std::uint32_t g : mt) {
+          auto it = local_.find(g);
+          if (it == local_.end() || !in.count(it->second)) break;
+          o.push_back(it->second);
+        }
+        if (o.size() != mt.size()) continue;
+        T.templ = static_cast<int>(t);
+        T.orders.push_back(o);
+        T.names.push_back(templates()[t].name);
+        T.locs.push_back(templates()[t].locants);
+      }
+    }
+  }
+  bool mancude = T.templ >= 0 && templates()[T.templ].mancude;
+  if (T.orders.empty() && nrings == 1) {
+    // saturated monocycle: cycloalkane or Hantzsch-Widman name
+    for (int a : atoms)
+      for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
+        if (ring_bond(a, k) && at_[a].bo[k] != 1) return fail("unsaturated monocycle in a spiro system");
+    std::vector<int> cyc = {atoms[0]};
+    for (int prev = -1, cur = atoms[0]; cyc.size() < atoms.size();) {
+      int next = -1;
+      for (std::size_t k = 0; k < at_[cur].nb.size(); ++k)
+        if (ring_bond(cur, k) && at_[cur].nb[k] != prev && at_[cur].nb[k] != atoms[0]) next = at_[cur].nb[k];
+      if (next < 0) return false;
+      cyc.push_back(next);
+      prev = cur;
+      cur = next;
+    }
+    bool hetero = false;
+    for (int a : atoms) hetero |= at_[a].z != 6;
+    if (!hetero) {
+      const int m = static_cast<int>(cyc.size());
+      for (int st = 0; st < m; ++st)
+        for (int dir : {1, -1}) {
+          std::vector<int> o;
+          std::vector<std::string> l;
+          for (int i = 0; i < m; ++i) o.push_back(cyc[((st + dir * i) % m + m) % m]), l.push_back(std::to_string(i + 1));
+          T.orders.push_back(o);
+          T.locs.push_back(l);
+          T.names.push_back("cyclo" + alkane_stem(m) + "ane");
+        }
+    } else {
+      bool dummy = false;
+      const std::string saved = err_;
+      if (!hantzsch_widman(T, dummy) || T.orders.empty()) return false;
+      err_ = saved;
+    }
+  }
+  if (T.orders.empty() && nrings >= 2) {
+    const std::string saved = err_;
+    const bool ok = nrings == 2 ? fusion_bicycle(T) : fusion_polycycle(T);
+    err_ = saved;
+    if (!ok || T.orders.empty()) return fail("spiro component without a fusion name");
+    mancude = true;
+  }
+  if (T.orders.empty()) return false;
+  // lowest locants to heteroatoms, then to the spiro atom (P-24.5.3)
+  std::vector<std::vector<double>> keys;
+  for (std::size_t i = 0; i < T.orders.size(); ++i) {
+    std::vector<std::string> het, sp;
+    for (std::size_t j = 0; j < T.orders[i].size(); ++j) {
+      if (at_[T.orders[i][j]].z != 6) het.push_back(T.locs[i][j]);
+      if (T.orders[i][j] == centre) sp.push_back(T.locs[i][j]);
+    }
+    auto k = sorted_keys(het);
+    k.push_back(-1);
+    const auto k2 = sorted_keys(sp);
+    k.insert(k.end(), k2.begin(), k2.end());
+    keys.push_back(k);
+  }
+  const auto best = *std::min_element(keys.begin(), keys.end());
+  for (std::size_t i = 0; i < T.orders.size(); ++i)
+    if (keys[i] == best) {
+      out.orders.push_back(T.orders[i]);
+      out.locs.push_back(T.locs[i]);
+      out.names.push_back(T.names[i]);
+    }
+  out.mancude = mancude;
+  out.atoms = atoms;
+  return true;
+}
+
+// Spiro systems with at least one polycyclic component (P-24.5): "spiro[cyclohexane-1,3'-indole]".
+bool Namer::spiro_fused(RingSys& R) {
+  const std::set<int> in(R.atoms.begin(), R.atoms.end());
+  auto rdeg = [&](int a) {
+    int d = 0;
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k) d += ringbond_[a][k] && in.count(at_[a].nb[k]);
+    return d;
+  };
+  // the spiro atom: removing it splits the ring system in two
+  int centre = -1;
+  std::vector<std::vector<int>> parts;
+  for (int c : R.atoms) {
+    if (rdeg(c) != 4) continue;
+    std::vector<std::vector<int>> comps;
+    std::set<int> seen = {c};
+    for (int s0 : R.atoms) {
+      if (seen.count(s0)) continue;
+      std::vector<int> comp = {s0};
+      seen.insert(s0);
+      for (std::size_t h = 0; h < comp.size(); ++h)
+        for (std::size_t k = 0; k < at_[comp[h]].nb.size(); ++k) {
+          const int b = at_[comp[h]].nb[k];
+          if (ringbond_[comp[h]][k] && in.count(b) && !seen.count(b)) seen.insert(b), comp.push_back(b);
+        }
+      comps.push_back(comp);
+    }
+    if (comps.size() != 2) continue;
+    if (centre >= 0) return fail("ring system with several spiro atoms");
+    centre = c;
+    parts = comps;
+  }
+  if (centre < 0) return false;
+  SpiroPart P[2];
+  for (int i = 0; i < 2; ++i) {
+    std::vector<int> atoms = parts[i];
+    atoms.push_back(centre);
+    std::sort(atoms.begin(), atoms.end());
+    std::set<int> as(atoms.begin(), atoms.end());
+    int nb = 0;
+    for (int a : atoms)
+      for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
+        if (ringbond_[a][k] && at_[a].nb[k] > a && as.count(at_[a].nb[k])) ++nb;
+    const int nrings = nb - static_cast<int>(atoms.size()) + 1;
+    if (!spiro_component(atoms, nrings, centre, P[i])) return false;
+  }
+  // components cited in alphabetical order; the second one takes primed locants
+  if (alpha_key(P[1].names[0]) < alpha_key(P[0].names[0])) std::swap(P[0], P[1]);
+  for (std::size_t i = 0; i < P[0].orders.size(); ++i)
+    for (std::size_t j = 0; j < P[1].orders.size(); ++j) {
+      std::vector<int> o = P[0].orders[i];
+      std::vector<std::string> L = P[0].locs[i];
+      std::string l0, l1;
+      for (std::size_t k = 0; k < o.size(); ++k)
+        if (o[k] == centre) l0 = L[k];
+      for (std::size_t k = 0; k < P[1].orders[j].size(); ++k) {
+        const int a = P[1].orders[j][k];
+        if (a == centre) {
+          l1 = P[1].locs[j][k] + "'";
+          continue;
+        }
+        o.push_back(a);
+        L.push_back(P[1].locs[j][k] + "'");
+      }
+      R.orders.push_back(o);
+      R.locs.push_back(L);
+      R.names.push_back("spiro[" + bracket_locants(P[0].names[i]) + "-" + l0 + "," + l1 + "-" + bracket_locants(P[1].names[j]) + "]");
+    }
+  R.kind = PKind::Template;
+  R.templ = -1;
+  R.mancude = P[0].mancude || P[1].mancude;
+  R.spiro_mancude = true;
+  for (int a : R.atoms)
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
+      if (ringbond_[a][k] && at_[a].nb[k] > a && at_[a].bo[k] == 2) ++R.unsat;
+  // saturation of the mancude components only; the spiro atom is saturated by the spiro union
+  for (const auto& p : P) {
+    if (!p.mancude) continue;
+    const std::set<int> as(p.atoms.begin(), p.atoms.end());
+    for (int a : p.atoms) {
+      if (a == centre) continue;
+      int rd = 0;
+      bool dbl = false;
+      for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
+        if (ringbond_[a][k] && as.count(at_[a].nb[k])) ++rd, dbl |= at_[a].bo[k] == 2;
+      const bool inherent = ((at_[a].z == 8 || at_[a].z == 16) && rd == 2) || (at_[a].z == 7 && rd == 3);
+      if (inherent) continue;
+      R.matchable.push_back(a);
+      if (!dbl) R.X.push_back(a);
+    }
+  }
+  // indicated hydrogen where a component needs it ("3',4'-dihydro-2'H-spiro[imidazolidine-4,1'-naphthalene]");
+  // hydro() checks that a valid position exists for every numbering
+  R.ih = static_cast<int>(R.matchable.size() % 2);
+  if (!R.ih && !perfect_matching(R.matchable)) R.ih = 2;
   return true;
 }
 
