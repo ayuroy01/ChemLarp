@@ -1074,7 +1074,14 @@ bool Namer::perceive() {
         else {
           for (int y : at_[N].nb) {
             if (y == a) continue;
-            if (at_[y].z != 6 || dO(y) >= 0) return fail("N-acyl or N-heteroatom sulfonamide at " + sym(N));
+            if (at_[y].z != 6) return fail("N-heteroatom sulfonamide at " + sym(N));
+            if (dO(y) >= 0 && !plain_acyl(y)) {  // sulfonylureas and sulfonyl carbamates: C(=O) between N and N/O
+              int het = 0;
+              bool ok2 = !at_[y].ring;
+              for (int w : at_[y].nb)
+                if (at_[w].z != 6 && w != dO(y)) ++het, ok2 &= at_[w].z == 7 || at_[w].z == 8;
+              if (het != 2 || !ok2) return fail("N-acyl sulfonamide at " + sym(N));
+            }
           }
           acyl_[a] = Cls::Sulfonamide;
           amideN_[N] = 1;
@@ -1154,7 +1161,9 @@ bool Namer::perceive() {
           auto plainN = [&](int x) {
             if (at_[x].z != 7 || at_[x].ring || nitro_[x]) return false;
             for (int y : at_[x].nb)
-              if (y != a && !imineN_[y] && (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0)) return false;
+              if (y != a && !imineN_[y] && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
+                  (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0))
+                return false;
             return true;
           };
           if (A.ring || hs.empty()) acyl_[a] = Cls::Thione;
@@ -1249,6 +1258,7 @@ bool Namer::perceive() {
               } else {
                 for (int y : at_[x].nb) {
                   if (y == a || hydroxamO_[y] || hydrN2_[y] || imineN_[y]) continue;
+                  if (at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) continue;  // N-sulfonyl amide
                   if (at_[y].z != 6) return fail("N-heteroatom amide at " + sym(x));
                   if (dO(y) >= 0) {  // diacylamine: one acyl is the amide, the other an N-acyl prefix
                     int het = 0;
@@ -1278,7 +1288,9 @@ bool Namer::perceive() {
             auto plainN = [&](int x) {
               if (at_[x].z != 7 || at_[x].ring || nitro_[x]) return false;
               for (int y : at_[x].nb)
-                if (y != a && !imineN_[y] && (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0)) return false;
+                if (y != a && !imineN_[y] && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
+                  (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0))
+                return false;
               return true;
             };
             const int x = hs[0], y = hs[1];
@@ -1350,7 +1362,9 @@ bool Namer::perceive() {
         if (val != 2) return fail("sulfur " + sym(a) + " in a higher oxidation state (sulfoxides, sulfones, sulfonic acids)");
         if (deg(a) == 0) return fail("hydrogen sulfide");
         for (std::size_t k = 0; k < A.nb.size(); ++k)
-          if (at_[A.nb[k]].z != 6 || A.bo[k] != 1) return fail("unsupported sulfur bond at " + sym(a));
+          if (A.bo[k] != 1 || (at_[A.nb[k]].z != 6 && !(at_[A.nb[k]].z == 16 && deg(A.nb[k]) == 2 && !at_[A.nb[k]].arom &&
+                                                         acyl_[A.nb[k]] == Cls::None && !lambdaS_[A.nb[k]] && !thioP_[A.nb[k]])))
+            return fail("unsupported sulfur bond at " + sym(a));
         break;
       }
       case 9: case 17: case 35: case 53:
@@ -1767,6 +1781,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
           int N = -1;
           for (int x : A.nb)
             if (at_[x].z == 7) N = x;
+          if (N == from) return sulfonyl_name(q, from);  // N-sulfonyl amides and ureas
           std::vector<int> xs;
           for (int x : at_[N].nb)
             if (x != q) xs.push_back(x);
@@ -1778,6 +1793,17 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         default: break;
       }
       if (others.empty()) return Named{"sulfanyl", false, {}};
+      if (others.size() == 1 && at_[others[0]].z == 16) {  // -S-S-R: (R-disulfanyl)
+        const int S2 = others[0];
+        int r = -1;
+        for (int y : at_[S2].nb)
+          if (y != q) r = y;
+        if (r < 0) return Named{"disulfanyl", false, {}};
+        if (at_[r].z != 6) return fail_n("unsupported polysulfide at " + sym(q));
+        auto R = sub(r, S2, 1);
+        if (!R) return std::nullopt;
+        return Named{(R->compound ? enclose(R->text) : R->text) + "disulfanyl", true, R->stereo};
+      }
       if (others.size() != 1 || at_[others[0]].z != 6) return fail_n("unsupported sulfur substituent at " + sym(q));
       auto R = sub(others[0], q, 1);
       if (!R) return std::nullopt;
@@ -4974,8 +5000,24 @@ std::optional<std::string> name_components(const ChemicalSystemState& st, std::u
   }
   std::string out;
   if (!neutrals.empty()) {
+    if (neutrals.size() > 1 && cations.empty() && anions.empty() && adducts.empty()) {
+      // addition compound (P-74.2): names joined by em dashes with the ratio, fewer components first
+      std::map<std::string, int> cnt;
+      for (const auto& x : neutrals) ++cnt[x.name];
+      if (waters) cnt["water"] += waters;
+      std::vector<std::pair<std::string, int>> v(cnt.begin(), cnt.end());
+      std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) {
+        return a.second != b.second ? a.second < b.second : alpha_key(a.first) < alpha_key(b.first);
+      });
+      std::string names, ratio;
+      for (const auto& [nm, k] : v) {
+        names += (names.empty() ? "" : "—") + nm;
+        ratio += (ratio.empty() ? "" : "/") + std::to_string(k);
+      }
+      return names + " (" + ratio + ")";
+    }
     if (neutrals.size() != 1 || !cations.empty() || !anions.empty() || (adducts.empty() && waters == 0)) {
-      err = "mixture of several neutral components";
+      err = "mixture of neutral and ionic components";
       return std::nullopt;
     }
     out = neutrals[0].name;

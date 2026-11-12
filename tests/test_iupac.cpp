@@ -181,6 +181,12 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CCOP(=S)(OCC)Oc1ccc(cc1)[N+](=O)[O-])", R"(O,O-diethyl O-(4-nitrophenyl) phosphorothioate)"},
       {R"(COP(=S)(OC)SCC(=O)OC)", R"(methyl 2-[(dimethoxyphosphorothioyl)sulfanyl]acetate)"},
       {R"(CCOP(=O)(OCC)SCCN(CC)CC)", R"(S-[2-(diethylamino)ethyl] O,O-diethyl phosphorothioate)"},
+      {R"(C(C(C(=O)O)N)SSCC(C(=O)O)N)", R"(2-amino-3-[(2-amino-2-carboxyethyl)disulfanyl]propanoic acid)"},
+      {R"(CSSC)", R"((methyldisulfanyl)methane)"},
+      {R"(CCCNC(=O)NS(=O)(=O)C1=CC=C(C=C1)Cl)", R"(4-chloro-N-(propylcarbamoyl)benzene-1-sulfonamide)"},
+      {R"(CC1=CC=C(C=C1)S(=O)(=O)NC(=O)OCC(C)(C)C)", R"(2,2-dimethylpropyl N-(4-methylbenzene-1-sulfonyl)carbamate)"},
+      {R"(CC(=O)NS(=O)(=O)c1ccc(C)cc1)", R"(N-(4-methylbenzene-1-sulfonyl)acetamide)"},
+      {R"(CCO.CCCO)", R"(ethanol—propan-1-ol (1/1))"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -193,7 +199,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "CC1=CC=CC=C1NP(=S)(C)C",
+  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
