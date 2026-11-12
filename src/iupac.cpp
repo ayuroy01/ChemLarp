@@ -529,6 +529,26 @@ struct Built {
 
 struct Component;
 
+// A fused ring system: rings, shared bonds, periphery.
+struct FusedSys {
+  struct Edge {
+    int r, s, u, v;
+  };
+  std::vector<int> atoms;
+  std::vector<std::vector<int>> rings;
+  std::map<int, std::vector<int>> rings_of;
+  std::vector<Edge> edges;
+  std::vector<std::vector<int>> radj;
+  std::map<std::pair<int, int>, int> bond_rings;  // rings containing each bond
+  std::set<int> interior;                         // atoms with no peripheral bond
+};
+
+struct FusedNumbering {
+  std::vector<int> o;          // peripheral atoms clockwise from locant 1, then interior atoms
+  std::vector<std::string> L;  // their locants
+  std::vector<double> key;
+};
+
 class Namer {
  public:
   Namer(const ChemicalSystemState& st, std::uint32_t sp, std::vector<std::uint32_t> only = {}) : st_(st), sp_(sp), only_(std::move(only)) {}
@@ -631,6 +651,9 @@ class Namer {
   bool hantzsch_widman(RingSys& R, bool& mancude);
   bool fusion_bicycle(RingSys& R);
   bool fusion_polycycle(RingSys& R);
+  bool build_fused(const std::vector<std::vector<int>>& rings, FusedSys& F);
+  bool number_fused(const FusedSys& F, std::vector<FusedNumbering>& out);
+  std::vector<std::vector<int>> sssr_;
   Component ring_component(const std::vector<int>& cyc) const;
   int order_index(const Cand& c, const std::vector<int>& o) const;
   void hydro(const Cand& c, const std::vector<std::string>& L, std::string& ind, std::vector<std::string>& hyd) const;
@@ -1400,7 +1423,7 @@ bool Namer::rings() {
           if (!dbl) R.X.push_back(a);
         }
         R.ih = static_cast<int>(R.matchable.size() % 2);
-        if (!R.ih && !perfect_matching(R.matchable)) return fail("ring system without a mancude parent of standard form");
+        if (!R.ih && !perfect_matching(R.matchable)) R.ih = 2;  // two indicated hydrogens: 1H,5H-benzo[ij]quinolizine
       }
     }
     const int id = static_cast<int>(rs_.size());
@@ -2464,21 +2487,22 @@ bool Namer::fusion_bicycle(RingSys& R) {
   return true;
 }
 
-// ---- fusion nomenclature for ortho-fused systems of three or more rings (P-25.3, FR-3 to FR-5) ----
+// ---- fusion nomenclature for fused systems of three or more rings (P-25.3, FR-3 to FR-5) ----------
 //
-// Covered: systems in which no atom belongs to three rings (no peri-fusion) and the rings form a
-// tree. The name is built from a base component (FR-3.1) and attached components up to second
+// Covered: ortho- and ortho-peri-fused systems (any two rings share at most one bond; an atom may
+// belong to three rings). The name is built from a base component (FR-3.1) and attached components up to second
 // order; the numbering comes from the orientation rules of FR-5.2 applied to every placement of
 // the rings on a hexagonal grid, then the lowest-locant rules of FR-5.4.
 
 namespace {
 
 struct FusionUnit {
-  std::vector<int> rings;                    // ring indices, sorted
-  std::vector<std::vector<int>> orders;      // atoms along the periphery from locant 1
-  std::vector<std::string> locs;             // locant per position
-  std::string base, prefix;                  // "quinoline" / "quino", "[1]benzofuran" / "[1]benzofuro"
-  bool prefix_locants = true;                // false for benzo and monocarbocycles
+  std::vector<int> rings;                        // ring indices, sorted
+  std::vector<std::vector<int>> orders;          // atoms along the periphery from locant 1 towards 2
+  std::vector<std::vector<std::string>> locs;    // locants per order
+  std::set<int> atomset;
+  std::string base, prefix;                      // "quinoline" / "quino", "[1]benzofuran" / "[1]benzofuro"
+  bool prefix_locants = true;                    // false for benzo and monocarbocycles
   bool usable_base = true;
   std::vector<double> senior;
 };
@@ -2543,34 +2567,26 @@ std::string fusion_prefix(const std::string& base) {  // FR-2.1 contractions, ot
 
 }  // namespace
 
-bool Namer::fusion_polycycle(RingSys& R) {
-  const std::set<int> in(R.atoms.begin(), R.atoms.end());
-  std::vector<std::vector<int>> rings;
-  for (const Ring& rg : find_sssr(st_, sp_)) {
-    std::vector<int> cyc;
-    for (std::uint32_t g : rg.atoms) {
-      auto it = local_.find(g);
-      if (it == local_.end() || !in.count(it->second)) break;
-      cyc.push_back(it->second);
-    }
-    if (cyc.size() == rg.atoms.size()) rings.push_back(cyc);
-  }
+// Ring analysis of a fused system: its rings, the bonds they share and what lies on the periphery.
+bool Namer::build_fused(const std::vector<std::vector<int>>& rings, FusedSys& F) {
+  F = FusedSys{};
+  F.rings = rings;
   const int nr = static_cast<int>(rings.size());
-  if (nr != R.nrings || nr < 3) return false;
-  std::map<int, std::vector<int>> rings_of;
   for (int r = 0; r < nr; ++r) {
-    if (rings[r].size() < 3 || rings[r].size() > 8) return fail("fused ring of more than eight members");
-    for (int a : rings[r]) rings_of[a].push_back(r);
+    const auto& c = rings[r];
+    if (c.size() < 3 || c.size() > 8) return fail("fused ring of more than eight members");
+    for (std::size_t i = 0; i < c.size(); ++i) {
+      F.rings_of[c[i]].push_back(r);
+      const int a = c[i], b = c[(i + 1) % c.size()];
+      ++F.bond_rings[{std::min(a, b), std::max(a, b)}];
+    }
   }
-  for (int a : R.atoms) {
-    if (rings_of[a].size() > 2) return fail("peri-fused ring system (an atom common to three rings) without a built-in parent");
+  for (const auto& [a, rs] : F.rings_of) {
+    F.atoms.push_back(a);
+    if (rs.size() > 3) return fail("atom common to four rings at " + sym(a));
     if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
   }
-  struct Edge {
-    int r, s, u, v;
-  };
-  std::vector<Edge> edges;
-  std::vector<std::vector<int>> radj(nr);
+  F.radj.assign(nr, {});
   for (int r = 0; r < nr; ++r)
     for (int s2 = r + 1; s2 < nr; ++s2) {
       std::vector<int> common;
@@ -2578,71 +2594,106 @@ bool Namer::fusion_polycycle(RingSys& R) {
         if (std::find(rings[s2].begin(), rings[s2].end(), a) != rings[s2].end()) common.push_back(a);
       if (common.empty()) continue;
       if (common.size() != 2 || order(common[0], common[1]) == 0) return fail("rings sharing more than one bond");
-      radj[r].push_back(static_cast<int>(edges.size()));
-      radj[s2].push_back(static_cast<int>(edges.size()));
-      edges.push_back({r, s2, common[0], common[1]});
+      F.radj[r].push_back(static_cast<int>(F.edges.size()));
+      F.radj[s2].push_back(static_cast<int>(F.edges.size()));
+      F.edges.push_back({r, s2, common[0], common[1]});
     }
-  if (static_cast<int>(edges.size()) != nr - 1) return fail("fused ring system whose rings form a cycle");
-  auto fusion_atom = [&](int a) { return rings_of[a].size() == 2; };
-  auto fusion_bond = [&](int a, int b) {
-    if (!fusion_atom(a) || !fusion_atom(b)) return false;
-    for (const Edge& e : edges)
-      if ((e.u == a && e.v == b) || (e.u == b && e.v == a)) return true;
-    return false;
-  };
+  for (const auto& kv : F.bond_rings)
+    if (kv.second > 2) return false;
+  for (int a : F.atoms) {
+    bool peripheral = false;
+    for (int b : at_[a].nb) {
+      auto it = F.bond_rings.find({std::min(a, b), std::max(a, b)});
+      if (it != F.bond_rings.end() && it->second == 1) peripheral = true;
+    }
+    if (!peripheral) {
+      if (at_[a].z != 6) return fail("interior heteroatom in a fused ring system at " + sym(a));
+      F.interior.insert(a);
+    }
+  }
+  // the rings must hang together through shared bonds
+  std::vector<char> seen(nr, 0);
+  std::vector<int> q = {0};
+  seen[0] = 1;
+  for (std::size_t h = 0; h < q.size(); ++h)
+    for (int ei : F.radj[q[h]]) {
+      const int o2 = F.edges[ei].r == q[h] ? F.edges[ei].s : F.edges[ei].r;
+      if (!seen[o2]) seen[o2] = 1, q.push_back(o2);
+    }
+  return static_cast<int>(q.size()) == nr;
+}
 
-  // ---- orientation and peripheral numbering -----------------------------------------------------
+// Peripheral numbering of a fused system (FR-5.2 to FR-5.5): every placement of the rings on the
+// eight-direction grid is scored by the orientation rules; the best ones are numbered clockwise
+// from the upper right ring and the lowest-locant rules pick among them.
+bool Namer::number_fused(const FusedSys& F, std::vector<FusedNumbering>& out) {
+  out.clear();
+  const int nr = static_cast<int>(F.rings.size());
+  auto bond_count = [&](int a, int b) {
+    auto it = F.bond_rings.find({std::min(a, b), std::max(a, b)});
+    return it == F.bond_rings.end() ? 0 : it->second;
+  };
+  auto fusion_atom = [&](int a) { return F.rings_of.at(a).size() >= 2; };
   static const int vx[8] = {2, 1, 0, -1, -2, -1, 0, 1}, vy[8] = {0, 1, 2, 1, 0, -1, -2, -1};
   std::vector<int> bfs = {0}, parent_edge(nr, -1);
   {
     std::vector<char> seen(nr, 0);
     seen[0] = 1;
     for (std::size_t h = 0; h < bfs.size(); ++h)
-      for (int ei : radj[bfs[h]]) {
-        const int o2 = edges[ei].r == bfs[h] ? edges[ei].s : edges[ei].r;
+      for (int ei : F.radj[bfs[h]]) {
+        const int o2 = F.edges[ei].r == bfs[h] ? F.edges[ei].s : F.edges[ei].r;
         if (!seen[o2]) seen[o2] = 1, parent_edge[o2] = ei, bfs.push_back(o2);
       }
-    if (static_cast<int>(bfs.size()) != nr) return false;
   }
+  std::size_t n_peripheral = 0;
+  for (int a : F.atoms) n_peripheral += !F.interior.count(a);
   long evaluations = 0;
   const long kMaxEvaluations = 2000000;
-
-  struct Numbering {
-    std::vector<int> o;
-    std::vector<std::string> L;
-    std::vector<double> key;
-  };
-  std::vector<Numbering> found;
+  std::vector<FusedNumbering> found;
   std::vector<double> best_orient;
   std::vector<std::vector<int>> cw(nr), dir(nr);
   std::vector<int> px(nr), py(nr);
+  auto bond_index = [&](int r, int u, int v) {
+    const int n = static_cast<int>(cw[r].size());
+    for (int i = 0; i < n; ++i)
+      if ((cw[r][i] == u && cw[r][(i + 1) % n] == v) || (cw[r][i] == v && cw[r][(i + 1) % n] == u)) return i;
+    return -1;
+  };
 
   auto evaluate = [&]() {
     std::map<std::pair<int, int>, int> at;
     for (int r = 0; r < nr; ++r)
       if (!at.emplace(std::make_pair(px[r], py[r]), r).second) return;  // overlapping rings
-    // FR-5.2: (a) rings in the horizontal row, (b) upper right quadrant, (c) lower left, (d) above the row
-    std::vector<double> orient;
-    auto fused = [&](int p, int q) {
-      for (int ei : radj[p])
-        if (edges[ei].r == q || edges[ei].s == q) return true;
+    // every shared bond must face its neighbour from both sides (closes the cycles of peri-fusion)
+    for (const auto& e : F.edges) {
+      const int i = bond_index(e.r, e.u, e.v), j = bond_index(e.s, e.u, e.v);
+      if (i < 0 || j < 0) return;
+      const int d = dir[e.r][i];
+      if (px[e.s] != px[e.r] + vx[d] || py[e.s] != py[e.r] + vy[d] || dir[e.s][j] != (d + 4) % 8) return;
+      if (cw[e.r][i] == cw[e.s][j]) return;  // the two rings must run through the bond in opposite senses
+    }
+    auto fused = [&](int p, int q2) {
+      for (int ei : F.radj[p])
+        if (F.edges[ei].r == q2 || F.edges[ei].s == q2) return true;
       return false;
     };
-    auto east_of = [&](int r) {  // the ring fused to r through its east side, or -1
+    auto east_of = [&](int r) {
       auto it = at.find({px[r] + 2, py[r]});
       return it != at.end() && fused(r, it->second) ? it->second : -1;
     };
+    // FR-5.2: (a) rings in the horizontal row, (b) upper right quadrant, (c) lower left, (d) above the row
+    std::vector<double> orient;
     for (int r = 0; r < nr; ++r) {
       {
         auto it = at.find({px[r] - 2, py[r]});
-        if (it != at.end() && fused(r, it->second)) continue;  // not the west end of its row
+        if (it != at.end() && fused(r, it->second)) continue;
       }
       int len = 1;
-      for (int q = east_of(r); q >= 0; q = east_of(q)) ++len;
+      for (int q2 = east_of(r); q2 >= 0; q2 = east_of(q2)) ++len;
       const double cx = px[r] + (len - 1), cy = py[r];
       double ur = 0, ll = 0, above = 0;
-      for (int q = 0; q < nr; ++q) {
-        const double dx = px[q] - cx, dy = py[q] - cy;
+      for (int q2 = 0; q2 < nr; ++q2) {
+        const double dx = px[q2] - cx, dy = py[q2] - cy;
         ur += (dx > 0 ? 1 : dx == 0 ? 0.5 : 0) * (dy > 0 ? 1 : dy == 0 ? 0.5 : 0);
         ll += (dx < 0 ? 1 : dx == 0 ? 0.5 : 0) * (dy < 0 ? 1 : dy == 0 ? 0.5 : 0);
         above += dy > 0;
@@ -2651,11 +2702,7 @@ bool Namer::fusion_polycycle(RingSys& R) {
       if (orient.empty() || t > orient) orient = t;
     }
     if (!best_orient.empty() && orient < best_orient) return;
-    if (best_orient.empty() || orient > best_orient) {
-      best_orient = orient;
-      found.clear();
-    }
-    // FR-5.3: start in the ring farthest up and to the right
+    // FR-5.3: start in the ring farthest up and to the right, at its most counter-clockwise free atom
     int top = 0;
     for (int r = 1; r < nr; ++r)
       if (py[r] > py[top] || (py[r] == py[top] && px[r] > px[top])) top = r;
@@ -2674,10 +2721,10 @@ bool Namer::fusion_polycycle(RingSys& R) {
     }
     if (pick < 0) return;
     for (int guard = 0; guard < n && !fusion_atom(cw[top][(pick + n - 1) % n]); ++guard) pick = (pick + n - 1) % n;
-    Numbering nm;
+    FusedNumbering nm;
     int a = cw[top][pick];
     int counter = 0, letter = 0;
-    for (std::size_t steps = 0; steps < R.atoms.size(); ++steps) {
+    for (std::size_t steps = 0; steps < n_peripheral; ++steps) {
       nm.o.push_back(a);
       if (fusion_atom(a) && at_[a].z == 6) {
         nm.L.push_back(std::to_string(counter) + std::string(1, static_cast<char>('a' + letter++)));
@@ -2686,16 +2733,37 @@ bool Namer::fusion_polycycle(RingSys& R) {
         letter = 0;
       }
       int next = -1;
-      for (int r : rings_of[a]) {
+      for (int r : F.rings_of.at(a)) {
         const auto& c = cw[r];
         const std::size_t i = static_cast<std::size_t>(std::find(c.begin(), c.end(), a) - c.begin());
         const int b = c[(i + 1) % c.size()];
-        if (!fusion_bond(a, b)) next = b;
+        if (bond_count(a, b) == 1) next = b;
       }
       if (next < 0) return;
       a = next;
     }
-    if (a != nm.o[0] || std::set<int>(nm.o.begin(), nm.o.end()).size() != R.atoms.size() || letter > 25) return;
+    if (a != nm.o[0] || std::set<int>(nm.o.begin(), nm.o.end()).size() != n_peripheral) return;
+    // FR-5.5: interior atoms continue the letters of the last peripheral locant, nearest first
+    {
+      std::set<int> todo = F.interior;
+      while (!todo.empty()) {
+        int pick_atom = -1, pick_rank = -1, ties = 0;
+        for (int x : todo) {
+          int rank = -1;
+          for (int b : at_[x].nb) {
+            const auto it = std::find(nm.o.begin(), nm.o.end(), b);
+            if (it != nm.o.end() && bond_count(x, b) > 0) rank = std::max(rank, static_cast<int>(it - nm.o.begin()));
+          }
+          if (rank > pick_rank) pick_atom = x, pick_rank = rank, ties = 1;
+          else if (rank == pick_rank) ++ties;
+        }
+        if (pick_atom < 0 || pick_rank < 0 || ties != 1) return;
+        nm.o.push_back(pick_atom);
+        nm.L.push_back(std::to_string(counter) + std::string(1, static_cast<char>('a' + letter++)));
+        todo.erase(pick_atom);
+      }
+    }
+    if (letter > 25) return;
     auto add = [&](const std::vector<std::string>& v) {
       const auto k = sorted_keys(v);
       nm.key.insert(nm.key.end(), k.begin(), k.end());
@@ -2714,6 +2782,10 @@ bool Namer::fusion_polycycle(RingSys& R) {
       add(v);
     }
     add(fc);
+    if (best_orient.empty() || orient > best_orient) {
+      best_orient = orient;
+      found.clear();
+    }
     for (const auto& f : found)
       if (f.o == nm.o) return;
     found.push_back(std::move(nm));
@@ -2728,15 +2800,11 @@ bool Namer::fusion_polycycle(RingSys& R) {
     }
     const int r = bfs[idx];
     const int n = static_cast<int>(cw[r].size());
-    // entry bond: for the root, bond 0 with the direction already stored in dir[r][0]
-    int e = 0, de = dir[r].empty() ? 0 : dir[r][0];
-    if (parent_edge[r] >= 0) {
-      const Edge& pe = edges[parent_edge[r]];
-      for (int i = 0; i < n; ++i)
-        if ((cw[r][i] == pe.u && cw[r][(i + 1) % n] == pe.v) || (cw[r][i] == pe.v && cw[r][(i + 1) % n] == pe.u)) e = i;
-      de = dir[r][0];  // set by the parent in slot 0 as the entry direction
-    }
+    int e = 0;
+    const int de = dir[r][0];  // entry direction, left in slot 0 by the parent (or the root loop)
+    if (parent_edge[r] >= 0) e = bond_index(r, F.edges[parent_edge[r]].u, F.edges[parent_edge[r]].v);
     std::set<std::vector<int>> tried;  // shapes that send the fused neighbours the same way are one case
+    const std::vector<int> saved = dir[r];
     for (const auto& shape : ring_shapes(n)) {
       const auto pos_it = std::find(shape.begin(), shape.end(), de);
       if (pos_it == shape.end()) continue;
@@ -2746,38 +2814,32 @@ bool Namer::fusion_polycycle(RingSys& R) {
       {
         std::vector<int> sig;
         for (int i = 0; i < n; ++i)
-          if (fusion_bond(cw[r][i], cw[r][(i + 1) % n])) sig.push_back(d[i]);
+          if (bond_count(cw[r][i], cw[r][(i + 1) % n]) == 2) sig.push_back(d[i]);
         if (!tried.insert(sig).second) continue;
       }
-      const std::vector<int> saved = dir[r];
       dir[r] = d;
-      for (int ei : radj[r]) {
-        const int c = edges[ei].r == r ? edges[ei].s : edges[ei].r;
+      bool clash = false;
+      for (int ei : F.radj[r]) {
+        const int c = F.edges[ei].r == r ? F.edges[ei].s : F.edges[ei].r;
         if (parent_edge[c] != ei) continue;
-        int bi = 0;
-        for (int i = 0; i < n; ++i)
-          if ((cw[r][i] == edges[ei].u && cw[r][(i + 1) % n] == edges[ei].v) || (cw[r][i] == edges[ei].v && cw[r][(i + 1) % n] == edges[ei].u)) bi = i;
+        const int bi = bond_index(r, F.edges[ei].u, F.edges[ei].v);
         px[c] = px[r] + vx[d[bi]];
         py[c] = py[r] + vy[d[bi]];
-        // the child runs clockwise through the shared bond in the opposite sense
         const int from = cw[r][(bi + 1) % n], to = cw[r][bi];
-        std::vector<int> cc = rings[c];
+        std::vector<int> cc = F.rings[c];
         const std::size_t m = cc.size();
         std::size_t fi = static_cast<std::size_t>(std::find(cc.begin(), cc.end(), from) - cc.begin());
-        if (cc[(fi + 1) % m] != to) {
-          std::reverse(cc.begin(), cc.end());
-          fi = static_cast<std::size_t>(std::find(cc.begin(), cc.end(), from) - cc.begin());
-        }
+        if (cc[(fi + 1) % m] != to) std::reverse(cc.begin(), cc.end());
         cw[c] = cc;
         dir[c] = {(d[bi] + 4) % 8};
       }
-      self(self, idx + 1);
-      dir[r] = saved;
+      if (!clash) self(self, idx + 1);
     }
+    dir[r] = saved;
   };
   for (int mirror = 0; mirror < 2; ++mirror)
     for (int d0 = 0; d0 < 8; ++d0) {
-      cw[0] = rings[0];
+      cw[0] = F.rings[0];
       if (mirror) std::reverse(cw[0].begin(), cw[0].end());
       px[0] = py[0] = 0;
       dir[0] = {d0};
@@ -2787,18 +2849,46 @@ bool Namer::fusion_polycycle(RingSys& R) {
   if (found.empty()) return fail("fused ring system that cannot be oriented on the grid");
   std::vector<double> best_key = found[0].key;
   for (const auto& f : found) best_key = std::min(best_key, f.key);
+  for (auto& f : found)
+    if (f.key == best_key) out.push_back(std::move(f));
+  return true;
+}
+
+bool Namer::fusion_polycycle(RingSys& R) {
+  if (sssr_.empty())
+    for (const Ring& rg : find_sssr(st_, sp_)) {
+      std::vector<int> cyc;
+      for (std::uint32_t g : rg.atoms) {
+        auto it = local_.find(g);
+        if (it == local_.end()) break;
+        cyc.push_back(it->second);
+      }
+      if (cyc.size() == rg.atoms.size()) sssr_.push_back(cyc);
+    }
+  const std::set<int> in(R.atoms.begin(), R.atoms.end());
+  std::vector<std::vector<int>> rings;
+  for (const auto& cyc : sssr_)
+    if (std::all_of(cyc.begin(), cyc.end(), [&](int a) { return in.count(a) > 0; })) rings.push_back(cyc);
+  const int nr = static_cast<int>(rings.size());
+  if (nr != R.nrings || nr < 3) return false;
+  FusedSys F;
+  if (!build_fused(rings, F)) return false;
+  const auto& edges = F.edges;
+  const auto& radj = F.radj;
+  std::vector<FusedNumbering> numberings;
+  if (!number_fused(F, numberings)) return false;
 
   // ---- components -------------------------------------------------------------------------------
   // FR-3.1: nitrogen; else the senior heteroatom; more rings; larger rings at the first difference;
   // more heteroatoms; more variety; more O, S, N in that order; lower heteroatom locants
-  auto unit_seniority = [&](const std::vector<int>& o, const std::vector<std::string>& locs, const std::vector<int>& rs) {
+  auto unit_seniority = [&](const std::map<int, std::string>& loc, const std::vector<int>& rs, double rank) {
     int nN = 0, nO = 0, nS = 0;
     std::vector<double> hl, sizes;
-    for (std::size_t i = 0; i < o.size(); ++i) {
-      nN += at_[o[i]].z == 7;
-      nO += at_[o[i]].z == 8;
-      nS += at_[o[i]].z == 16;
-      if (at_[o[i]].z != 6) hl.push_back(-locant_key(locs[i]));
+    for (const auto& [a, l] : loc) {
+      nN += at_[a].z == 7;
+      nO += at_[a].z == 8;
+      nS += at_[a].z == 16;
+      if (at_[a].z != 6) hl.push_back(-locant_key(l));
     }
     for (int r : rs) sizes.push_back(static_cast<double>(rings[r].size()));
     std::sort(sizes.rbegin(), sizes.rend());
@@ -2807,20 +2897,77 @@ bool Namer::fusion_polycycle(RingSys& R) {
     v.insert(v.end(), sizes.begin(), sizes.end());
     v.insert(v.end(), {double(nN + nO + nS), double((nN > 0) + (nO > 0) + (nS > 0)), double(nO), double(nS), double(nN)});
     v.insert(v.end(), hl.begin(), hl.end());
+    v.push_back(rank);
     return v;
   };
   std::vector<FusionUnit> units;
+  // adds one numbering of a unit: its periphery from locant 1 towards locant 2
+  auto add_order = [&](FusionUnit& u, const std::map<int, std::string>& loc) {
+    std::vector<std::vector<int>> rs;
+    for (int r : u.rings) rs.push_back(rings[r]);
+    std::map<std::pair<int, int>, int> cnt;
+    for (const auto& c : rs)
+      for (std::size_t i = 0; i < c.size(); ++i) ++cnt[{std::min(c[i], c[(i + 1) % c.size()]), std::max(c[i], c[(i + 1) % c.size()])}];
+    std::map<int, std::vector<int>> pn;  // peripheral neighbours
+    for (const auto& [b, k] : cnt)
+      if (k == 1) pn[b.first].push_back(b.second), pn[b.second].push_back(b.first);
+    int start = -1;
+    for (const auto& [a, l] : loc)
+      if (l == "1") start = a;
+    if (start < 0 || pn[start].size() != 2) return false;
+    auto lk = [&](int a) {
+      auto it = loc.find(a);
+      return it == loc.end() ? 1e9 : locant_key(it->second);
+    };
+    int prev = start, cur = lk(pn[start][0]) <= lk(pn[start][1]) ? pn[start][0] : pn[start][1];
+    std::vector<int> o = {start};
+    while (cur != start) {
+      if (pn[cur].size() != 2 || o.size() > loc.size()) return false;
+      o.push_back(cur);
+      const int next = pn[cur][0] == prev ? pn[cur][1] : pn[cur][0];
+      prev = cur;
+      cur = next;
+    }
+    std::vector<std::string> l;
+    for (int a : o) {
+      auto it = loc.find(a);
+      if (it == loc.end()) return false;
+      l.push_back(it->second);
+    }
+    u.orders.push_back(o);
+    u.locs.push_back(l);
+    for (const auto& kv : loc) u.atomset.insert(kv.first);
+    return true;
+  };
+  auto rings_inside = [&](const std::set<int>& os, std::vector<int>& rs) {
+    std::set<int> covered;
+    rs.clear();
+    for (int r = 0; r < nr; ++r)
+      if (std::all_of(rings[r].begin(), rings[r].end(), [&](int a) { return os.count(a) > 0; })) {
+        rs.push_back(r);
+        covered.insert(rings[r].begin(), rings[r].end());
+      }
+    return covered == os;
+  };
+  static const std::map<std::string, double> carbo_rank = {
+      {"indene", 2}, {"naphthalene", 3}, {"azulene", 4}, {"acenaphthylene", 9}, {"fluorene", 10}, {"phenalene", 11}, {"phenanthrene", 12},
+      {"anthracene", 13}, {"fluoranthene", 14}, {"pyrene", 18}, {"perylene", 23}};
   for (int r = 0; r < nr; ++r) {
     const Component c = ring_component(rings[r]);
     FusionUnit u;
     u.rings = {r};
-    u.orders = c.numberings;
-    for (int i = 0; i < c.size; ++i) u.locs.push_back(std::to_string(i + 1));
     u.base = c.fusion_base;
     u.prefix = c.prefix;
     u.prefix_locants = !c.carbocycle;
     u.usable_base = !c.carbocycle;
-    u.senior = unit_seniority(c.numberings[0], u.locs, u.rings);
+    std::map<int, std::string> first;
+    for (const auto& o : c.numberings) {
+      std::map<int, std::string> loc;
+      for (int i = 0; i < c.size; ++i) loc[o[i]] = std::to_string(i + 1);
+      if (first.empty()) first = loc;
+      add_order(u, loc);
+    }
+    u.senior = unit_seniority(first, u.rings, 0);
     units.push_back(std::move(u));
   }
   {
@@ -2835,63 +2982,44 @@ bool Namer::fusion_polycycle(RingSys& R) {
       if (!T.mancude || !qs[t].valid() || k < 2 || k >= nr || tn.find('[') != std::string::npos || tn == "purine") continue;
       std::map<std::vector<int>, std::size_t> by_rings;
       for (const auto& mt : match_smarts(st_, sp_, qs[t], mo)) {
-        std::vector<int> o;
+        std::map<int, std::string> loc;
         bool ok = true;
-        for (std::uint32_t g : mt) {
-          auto it = local_.find(g);
-          if (it == local_.end() || !in.count(it->second)) {
-            ok = false;
-            break;
-          }
-          o.push_back(it->second);
+        for (std::size_t i = 0; i < mt.size() && ok; ++i) {
+          auto it = local_.find(mt[i]);
+          if (it == local_.end() || !in.count(it->second)) ok = false;
+          else loc[it->second] = T.locants[i];
         }
-        if (!ok) continue;
-        const std::set<int> os(o.begin(), o.end());
+        if (!ok || loc.size() != mt.size()) continue;
+        std::set<int> os;
+        for (const auto& kv : loc) os.insert(kv.first);
         std::vector<int> rs;
-        std::set<int> covered;
-        for (int r = 0; r < nr; ++r)
-          if (std::all_of(rings[r].begin(), rings[r].end(), [&](int a) { return os.count(a) > 0; })) {
-            rs.push_back(r);
-            covered.insert(rings[r].begin(), rings[r].end());
-          }
-        if (static_cast<int>(rs.size()) != k || covered != os) continue;
-        bool periphery = true;  // locant order must walk the unit's periphery
-        for (std::size_t i = 0; i < o.size(); ++i) {
-          const int a = o[i], b = o[(i + 1) % o.size()];
-          int shared = 0;
-          for (int r : rs)
-            if (std::find(rings[r].begin(), rings[r].end(), a) != rings[r].end() && std::find(rings[r].begin(), rings[r].end(), b) != rings[r].end())
-              ++shared;
-          if (order(a, b) == 0 || shared != 1) periphery = false;
-        }
-        if (!periphery) continue;
+        if (!rings_inside(os, rs) || static_cast<int>(rs.size()) != k) continue;
         auto it = by_rings.find(rs);
         if (it == by_rings.end()) {
           FusionUnit u;
           u.rings = rs;
-          u.locs = T.locants;
           u.base = bracket_locants(tn);
           u.prefix = fusion_prefix(u.base);
-          u.senior = unit_seniority(o, u.locs, rs);
+          auto rk = carbo_rank.find(tn);
+          u.senior = unit_seniority(loc, rs, rk == carbo_rank.end() ? 0 : rk->second);
           it = by_rings.emplace(rs, units.size()).first;
           units.push_back(std::move(u));
         }
-        units[it->second].orders.push_back(o);
+        add_order(units[it->second], loc);
       }
     }
   }
-
   // benzo-heteromonocycles are components in their own right (P-25.2.2.4): "[1,5]benzothiazepine"
-  for (const Edge& e : edges) {
-    const bool rb = rings[e.r].size() == 6 && std::all_of(rings[e.r].begin(), rings[e.r].end(), [&](int a) { return at_[a].z == 6; });
-    const bool sb = rings[e.s].size() == 6 && std::all_of(rings[e.s].begin(), rings[e.s].end(), [&](int a) { return at_[a].z == 6; });
-    if (rb == sb || nr < 3) continue;
-    const int het = rb ? e.s : e.r;
+  for (const auto& e : edges) {
+    auto benzene = [&](int r) { return rings[r].size() == 6 && std::all_of(rings[r].begin(), rings[r].end(), [&](int a) { return at_[a].z == 6; }); };
+    if (benzene(e.r) == benzene(e.s)) continue;
+    const int het = benzene(e.r) ? e.s : e.r;
     if (std::all_of(rings[het].begin(), rings[het].end(), [&](int a) { return at_[a].z == 6; })) continue;
     std::vector<int> rs = {std::min(e.r, e.s), std::max(e.r, e.s)};
     bool known = false;
     for (const auto& u : units) known |= u.rings == rs;
     if (known) continue;
+    // the pair must be ortho-fused on its own: no atom of the pair in both rings beyond the shared bond
     RingSys T;
     T.nrings = 2;
     std::set<int> ta(rings[e.r].begin(), rings[e.r].end());
@@ -2901,32 +3029,94 @@ bool Namer::fusion_polycycle(RingSys& R) {
     const bool ok = fusion_bicycle(T);
     err_ = saved_err;
     if (!ok || T.names.empty() || T.names[0].find('[') != std::string::npos) continue;
-    bool same = true;
-    for (const auto& l : T.locs) same &= l == T.locs[0];
-    if (!same) continue;
     FusionUnit u;
     u.rings = rs;
-    u.orders = T.orders;
-    u.locs = T.locs[0];
     u.base = bracket_locants(T.names[0]);
     u.prefix = fusion_prefix(u.base);
-    u.senior = unit_seniority(u.orders[0], u.locs, rs);
+    std::map<int, std::string> first;
+    for (std::size_t i = 0; i < T.orders.size(); ++i) {
+      std::map<int, std::string> loc;
+      for (std::size_t j = 0; j < T.orders[i].size(); ++j) loc[T.orders[i][j]] = T.locs[i][j];
+      if (first.empty()) first = loc;
+      add_order(u, loc);
+    }
+    if (u.orders.empty()) continue;
+    u.senior = unit_seniority(first, rs, 0);
     units.push_back(std::move(u));
+  }
+  // retained peri-fused hydrocarbons (P-25.1.1), numbered by the general rules
+  {
+    static const std::vector<std::pair<const char*, const char*>> peri = {
+        {"acenaphthylene", "c1cc2cccc3cccc1c23"}, {"phenalene", "c1cc2cccc3cccc(c1)c23"}, {"pyrene", "c1cc2ccc3cccc4ccc(c1)c2c34"},
+        {"fluoranthene", "c1ccc2c(c1)c1cccc3cccc2c13"}, {"perylene", "c1cc2cccc3c4cccc5cccc(c(c1)c23)c54"}};
+    static const std::vector<SmartsQuery> pq = [] {
+      std::vector<SmartsQuery> v;
+      for (const auto& p : peri) {
+        Diagnostics d;
+        v.push_back(parse_smarts(generic_smarts(p.second), d));
+      }
+      return v;
+    }();
+    SmartsMatchOptions mo;
+    mo.max_matches = 0;
+    for (std::size_t t = 0; t < peri.size(); ++t) {
+      if (!pq[t].valid() || !F.interior.size()) continue;
+      std::set<std::vector<int>> done;
+      for (const auto& mt : match_smarts(st_, sp_, pq[t], mo)) {
+        std::set<int> os;
+        bool ok = true;
+        for (std::uint32_t g : mt) {
+          auto it = local_.find(g);
+          if (it == local_.end() || !in.count(it->second)) ok = false;
+          else os.insert(it->second);
+        }
+        std::vector<int> rs;
+        if (!ok || !rings_inside(os, rs) || static_cast<int>(rs.size()) != pattern_rings(peri[t].second) || !done.insert(rs).second) continue;
+        std::vector<std::vector<int>> sub;
+        for (int r : rs) sub.push_back(rings[r]);
+        FusedSys G;
+        std::vector<FusedNumbering> nums;
+        const std::string saved_err = err_;
+        const bool good = build_fused(sub, G) && number_fused(G, nums);
+        err_ = saved_err;
+        if (!good) continue;
+        FusionUnit u;
+        u.rings = rs;
+        u.base = peri[t].first;
+        u.prefix = fusion_prefix(u.base);
+        std::map<int, std::string> first;
+        for (const auto& nmb : nums) {
+          std::map<int, std::string> loc;
+          for (std::size_t j = 0; j < nmb.o.size(); ++j) loc[nmb.o[j]] = nmb.L[j];
+          if (first.empty()) first = loc;
+          add_order(u, loc);
+        }
+        if (u.orders.empty()) continue;
+        u.senior = unit_seniority(first, rs, carbo_rank.at(peri[t].first));
+        units.push_back(std::move(u));
+      }
+    }
   }
 
   // base component (FR-3.1)
   int base = -1;
   for (std::size_t i = 0; i < units.size(); ++i)
-    if (units[i].usable_base && (base < 0 || units[i].senior > units[static_cast<std::size_t>(base)].senior)) base = static_cast<int>(i);
+    if (units[i].usable_base && !units[i].orders.empty() && (base < 0 || units[i].senior > units[static_cast<std::size_t>(base)].senior))
+      base = static_cast<int>(i);
   if (base < 0) return fail("fused carbocyclic system without a named base component");
   const FusionUnit& B = units[static_cast<std::size_t>(base)];
   std::vector<char> in_base(nr, 0);
   for (int r : B.rings) in_base[r] = 1;
 
-  // attached components: a first-order unit on each bond of the base, second-order units on those
+  // attached components: first-order units on the base, second-order units on those
   struct Attached {
-    int unit = -1, edge = -1;
+    int unit = -1;
     std::vector<Attached> kids;
+  };
+  auto shared = [&](const FusionUnit& a, const FusionUnit& b) {
+    int k = 0;
+    for (int x : a.atomset) k += b.atomset.count(x) > 0;
+    return k;
   };
   auto group_of = [&](int start, const std::vector<char>& blocked) {
     std::vector<int> g = {start};
@@ -2940,13 +3130,12 @@ bool Namer::fusion_polycycle(RingSys& R) {
     std::sort(g.begin(), g.end());
     return g;
   };
-  auto cover = [&](auto&& self, int entry, int edge, const std::vector<char>& blocked, int depth, Attached& out) -> bool {
-    const std::vector<int> group = group_of(entry, blocked);
+  auto cover = [&](const std::vector<int>& group, Attached& out) -> bool {
     std::vector<int> cands;
     for (std::size_t i = 0; i < units.size(); ++i) {
       const auto& ur = units[i].rings;
-      if (std::find(ur.begin(), ur.end(), entry) == ur.end()) continue;
-      if (!std::includes(group.begin(), group.end(), ur.begin(), ur.end())) continue;
+      if (units[i].orders.empty() || !std::includes(group.begin(), group.end(), ur.begin(), ur.end())) continue;
+      if (shared(units[i], B) < 2) continue;
       cands.push_back(static_cast<int>(i));
     }
     std::sort(cands.begin(), cands.end(), [&](int x, int y) {
@@ -2955,21 +3144,29 @@ bool Namer::fusion_polycycle(RingSys& R) {
     });
     for (int ci : cands) {
       const FusionUnit& u = units[static_cast<std::size_t>(ci)];
-      if (depth >= 1 && u.rings != group) continue;  // second-order units must finish their branch
       Attached a;
       a.unit = ci;
-      a.edge = edge;
-      std::vector<char> b2 = blocked;
-      for (int r : u.rings) b2[r] = 1;
+      std::vector<char> blocked(nr, 1);
+      for (int r : group) blocked[r] = 0;
+      for (int r : u.rings) blocked[r] = 1;
       bool ok = true;
-      for (int r : u.rings)
-        for (int ei : radj[r]) {
-          const int o2 = edges[ei].r == r ? edges[ei].s : edges[ei].r;
-          if (b2[o2]) continue;
-          Attached kid;
-          if (!self(self, o2, ei, b2, depth + 1, kid)) ok = false;
-          a.kids.push_back(kid);
+      std::vector<char> seen(nr, 0);
+      for (int r : group) {
+        if (blocked[r] || seen[r]) continue;
+        const std::vector<int> sub = group_of(r, blocked);
+        for (int x : sub) seen[x] = 1;
+        int kid = -1;
+        for (std::size_t i = 0; i < units.size(); ++i)
+          if (units[i].rings == sub && !units[i].orders.empty()) kid = static_cast<int>(i);
+        // a second-order unit sits on its first-order unit only
+        if (kid < 0 || shared(units[static_cast<std::size_t>(kid)], u) < 2 || shared(units[static_cast<std::size_t>(kid)], B) >= 2) {
+          ok = false;
+          break;
         }
+        Attached k;
+        k.unit = kid;
+        a.kids.push_back(k);
+      }
       if (!ok) continue;
       out = a;
       return true;
@@ -2977,79 +3174,114 @@ bool Namer::fusion_polycycle(RingSys& R) {
     return false;
   };
   std::vector<Attached> first;
-  for (int r : B.rings)
-    for (int ei : radj[r]) {
-      const int o2 = edges[ei].r == r ? edges[ei].s : edges[ei].r;
-      if (in_base[o2]) continue;
+  {
+    std::vector<char> seen(nr, 0);
+    for (int r = 0; r < nr; ++r) {
+      if (in_base[r] || seen[r]) continue;
+      const std::vector<int> group = group_of(r, in_base);
+      for (int x : group) seen[x] = 1;
       Attached a;
-      if (!cover(cover, o2, ei, in_base, 0, a)) return fail("fused ring system needing attached components beyond second order");
+      if (!cover(group, a)) return fail("fused ring system needing attached components beyond second order");
       first.push_back(a);
     }
+  }
 
-  // descriptors: letters of the base, locants of attached units in the direction of lettering
-  auto position = [](const std::vector<int>& o, int a) { return static_cast<int>(std::find(o.begin(), o.end(), a) - o.begin()); };
+  // The atoms unit `u` shares with the periphery `op` of its parent, as a run of consecutive positions.
+  auto shared_run = [&](const FusionUnit& u, const std::vector<int>& op, int& startpos, int& len) {
+    const int n = static_cast<int>(op.size());
+    std::vector<char> c(n, 0);
+    len = 0;
+    for (int i = 0; i < n; ++i) c[i] = u.atomset.count(op[i]) > 0, len += c[i];
+    if (len < 2 || len >= n) return false;
+    startpos = -1;
+    for (int i = 0; i < n; ++i)
+      if (c[i] && !c[(i + n - 1) % n]) {
+        if (startpos >= 0) return false;  // two separate runs
+        startpos = i;
+      }
+    return startpos >= 0;
+  };
   struct Piece {
-    std::string prefix, kids, locs;  // "pyrido", "benzo[4,5]", "2,3"
+    std::string prefix, kids, locs, letters;
     int letter = 0;
     std::vector<double> key;
   };
+  auto cite = [&](const std::vector<std::string>& ls, const std::string& mark) {  // "1,8" from 1, 8a, 8
+    std::string out;
+    for (const auto& l : ls) {
+      const bool lettered = !l.empty() && l.back() >= 'a' && l.back() <= 'z';
+      if (ls.size() > 2 && lettered) continue;
+      out += (out.empty() ? "" : ",") + l + mark;
+    }
+    return out;
+  };
+  auto loc_keys = [&](const std::vector<std::string>& ls) {
+    std::vector<double> k;
+    for (const auto& l : ls) {
+      const bool lettered = !l.empty() && l.back() >= 'a' && l.back() <= 'z';
+      if (ls.size() > 2 && lettered) continue;
+      k.push_back(locant_key(l));
+    }
+    std::vector<double> s2 = k;
+    std::sort(s2.begin(), s2.end());
+    s2.insert(s2.end(), k.begin(), k.end());
+    return s2;
+  };
   auto describe = [&](const Attached& a, const std::vector<int>& ob, Piece& out) -> bool {
-    const Edge& e = edges[a.edge];
-    const int nb = static_cast<int>(ob.size());
-    const int i = position(ob, e.u), j = position(ob, e.v);
-    if (i >= nb || j >= nb) return false;
-    int li;
-    if ((i + 1) % nb == j) li = i;
-    else if ((j + 1) % nb == i) li = j;
-    else return false;
-    const int firstAtom = ob[li], secondAtom = ob[(li + 1) % nb];
     const FusionUnit& u = units[static_cast<std::size_t>(a.unit)];
+    const int nb = static_cast<int>(ob.size());
+    int sp0 = 0, len = 0;
+    if (!shared_run(u, ob, sp0, len)) return false;
+    if (sp0 + len - 2 > 25) return false;
     bool have = false;
-    for (const auto& oa : u.orders) {
+    for (std::size_t oi = 0; oi < u.orders.size(); ++oi) {
+      const auto& oa = u.orders[oi];
+      const auto& la = u.locs[oi];
       Piece p;
       p.prefix = u.prefix;
-      p.letter = li;
-      const int na = static_cast<int>(oa.size());
-      const int q1 = position(oa, firstAtom), q2 = position(oa, secondAtom);
-      if (q1 >= na || q2 >= na) continue;
-      const std::string l1 = u.locs[q1], l2 = u.locs[q2];
-      std::vector<double> pr = {locant_key(l1), locant_key(l2)};
-      p.key = pr;
-      std::sort(p.key.begin(), p.key.end());
-      p.key.insert(p.key.end(), pr.begin(), pr.end());
-      if (u.prefix_locants || !a.kids.empty()) p.locs = l1 + "," + l2;  // benzo cites its locants once it carries components
+      p.letter = sp0;
+      for (int k = 0; k + 1 < len; ++k) p.letters += static_cast<char>('a' + (sp0 + k) % nb);
+      std::vector<std::string> ls;
       bool ok = true;
+      for (int k = 0; k < len && ok; ++k) {
+        const auto it = std::find(oa.begin(), oa.end(), ob[(sp0 + k) % nb]);
+        if (it == oa.end()) ok = false;
+        else ls.push_back(la[static_cast<std::size_t>(it - oa.begin())]);
+      }
+      if (!ok) continue;
+      p.key = loc_keys(ls);
+      if (u.prefix_locants || !a.kids.empty()) p.locs = cite(ls, "");
       for (const Attached& k : a.kids) {
-        const Edge& ke = edges[k.edge];
-        const int a1 = position(oa, ke.u), a2 = position(oa, ke.v);
-        if (a1 >= na || a2 >= na) { ok = false; break; }
-        int lo;
-        if ((a1 + 1) % na == a2) lo = a1;
-        else if ((a2 + 1) % na == a1) lo = a2;
-        else { ok = false; break; }
-        int f1 = oa[lo], f2 = oa[(lo + 1) % na];
-        if (locant_key(u.locs[lo]) > locant_key(u.locs[(lo + 1) % na])) std::swap(f1, f2);  // cite the first-order locants ascending
-        const std::string m1 = u.locs[position(oa, f1)], m2 = u.locs[position(oa, f2)];
         const FusionUnit& ku = units[static_cast<std::size_t>(k.unit)];
+        int s1 = 0, l1 = 0;
+        if (!shared_run(ku, oa, s1, l1)) { ok = false; break; }
+        const int na = static_cast<int>(oa.size());
+        std::vector<int> run;
+        for (int j = 0; j < l1; ++j) run.push_back(oa[(s1 + j) % na]);
+        std::vector<std::string> ms;
+        for (int x : run) ms.push_back(la[static_cast<std::size_t>(std::find(oa.begin(), oa.end(), x) - oa.begin())]);
+        if (locant_key(ms.front()) > locant_key(ms.back())) {  // cite the first-order locants ascending
+          std::reverse(run.begin(), run.end());
+          std::reverse(ms.begin(), ms.end());
+        }
         std::string bestk;
         std::vector<double> bestkk;
-        for (const auto& ok2 : ku.orders) {
-          const int n2 = static_cast<int>(ok2.size());
-          const int k1 = position(ok2, f1), k2 = position(ok2, f2);
-          if (k1 >= n2 || k2 >= n2) continue;
-          std::vector<double> kk = {locant_key(ku.locs[k1]), locant_key(ku.locs[k2])};
-          std::vector<double> sk = kk;
-          std::sort(sk.begin(), sk.end());
-          sk.insert(sk.end(), kk.begin(), kk.end());
-          if (bestkk.empty() || sk < bestkk) {
-            bestkk = sk;
-            bestk = ku.locs[k1] + "'," + ku.locs[k2] + "'";
+        for (std::size_t ki = 0; ki < ku.orders.size(); ++ki) {
+          std::vector<std::string> ks;
+          bool good = true;
+          for (int x : run) {
+            const auto it = std::find(ku.orders[ki].begin(), ku.orders[ki].end(), x);
+            if (it == ku.orders[ki].end()) { good = false; break; }
+            ks.push_back(ku.locs[ki][static_cast<std::size_t>(it - ku.orders[ki].begin())]);
           }
+          if (!good) continue;
+          const auto kk = loc_keys(ks);
+          if (bestkk.empty() || kk < bestkk) bestkk = kk, bestk = cite(ks, "'");
         }
         if (bestkk.empty()) { ok = false; break; }
-        p.kids += ku.prefix + "[" + (ku.prefix_locants ? bestk + ":" : "") + m1 + "," + m2 + "]";
-        p.key.push_back(locant_key(m1));
-        p.key.push_back(locant_key(m2));
+        p.kids += ku.prefix + "[" + (ku.prefix_locants ? bestk + ":" : "") + cite(ms, "") + "]";
+        const auto mk = loc_keys(ms);
+        p.key.insert(p.key.end(), mk.begin(), mk.end());
         p.key.insert(p.key.end(), bestkk.begin(), bestkk.end());
       }
       if (!ok) continue;
@@ -3068,6 +3300,17 @@ bool Namer::fusion_polycycle(RingSys& R) {
       ps.push_back(p);
     }
     if (!ok) continue;
+    {
+      // Peri-fusion is limited to one attached component sharing two bonds with the base: names with
+      // several peri-fused components or longer shared paths could not be checked against a second
+      // implementation, so they are refused rather than risked.
+      int peri = 0;
+      for (const auto& p : ps) {
+        if (p.letters.size() > 2) return fail("peri-fused component sharing more than two bonds with its base");
+        peri += p.letters.size() == 2;
+      }
+      if (peri > 1) return fail("fused ring system with several peri-fused components");
+    }
     std::stable_sort(ps.begin(), ps.end(), [](const Piece& x, const Piece& y) {
       const std::string kx = alpha_key(x.prefix), ky = alpha_key(y.prefix);
       if (kx != ky) return kx < ky;
@@ -3089,18 +3332,23 @@ bool Namer::fusion_polycycle(RingSys& R) {
       while (j < ps.size() && ps[j].prefix == ps[i].prefix && ps[j].kids.empty() && ps[i].kids.empty()) ++j;
       if (j == i) j = i + 1;
       const int cnt = static_cast<int>(j - i);
-      if (ps[i].letter > 25) return fail("fusion letter beyond z");
       std::string desc;
       for (std::size_t q = i; q < j; ++q) {
         std::string locs = ps[q].locs;
         if (!locs.empty() && q > i) {  // primes on the locants of repeated components
           const std::string primes(q - i, '\'');
-          const std::size_t comma = locs.find(',');
-          locs = locs.substr(0, comma) + primes + "," + locs.substr(comma + 1) + primes;
+          std::string marked;
+          std::size_t pos = 0;
+          while (pos <= locs.size()) {
+            std::size_t comma = locs.find(',', pos);
+            if (comma == std::string::npos) comma = locs.size();
+            marked += (marked.empty() ? "" : ",") + locs.substr(pos, comma - pos) + primes;
+            pos = comma + 1;
+          }
+          locs = marked;
         }
-        const std::string letter(1, static_cast<char>('a' + ps[q].letter));
         if (q > i) desc += ps[i].locs.empty() ? "," : ":";
-        desc += locs.empty() ? letter : locs + "-" + letter;
+        desc += locs.empty() ? ps[q].letters : locs + "-" + ps[q].letters;
       }
       nm += ps[i].kids + (cnt > 1 ? multiplier(cnt, false) : "") + ps[i].prefix + "[" + desc + "]";
       i = j;
@@ -3115,8 +3363,7 @@ bool Namer::fusion_polycycle(RingSys& R) {
         {"naphtho[2,3-b]anthracene", "pentacene"}, {"benzo[l]phenanthrene", "triphenylene"}, {"dibenzo[a,i]phenanthrene", "picene"}};
     if (auto it = retained.find(name); it != retained.end()) name = it->second;
   }
-  for (const auto& f : found) {
-    if (f.key != best_key) continue;
+  for (const auto& f : numberings) {
     R.orders.push_back(f.o);
     R.locs.push_back(f.L);
     R.names.push_back(name);
@@ -3147,27 +3394,35 @@ void Namer::hydro(const Cand& c, const std::vector<std::string>& L, std::string&
   if (c.kind != PKind::Template) return;
   const RingSys& R = rs_[c.rsys];
   if (!R.mancude) return;
-  int pick = -1;
+  std::vector<int> picks;
   if (R.ih) {
     std::vector<int> xs = R.X;
     std::sort(xs.begin(), xs.end(), [&](int a, int b) { return locant_key(L[a]) < locant_key(L[b]); });
-    for (int x : xs) {
+    auto feasible = [&](const std::vector<int>& out) {
       std::vector<int> rest;
       for (int a : R.matchable)
-        if (a != x) rest.push_back(a);
-      if (perfect_matching(rest)) {
-        pick = x;
-        break;
-      }
+        if (std::find(out.begin(), out.end(), a) == out.end()) rest.push_back(a);
+      return perfect_matching(rest);
+    };
+    if (R.ih == 1) {
+      for (int x : xs)
+        if (feasible({x})) {
+          picks = {x};
+          break;
+        }
+    } else {
+      for (std::size_t i = 0; i < xs.size() && picks.empty(); ++i)
+        for (std::size_t j = i + 1; j < xs.size() && picks.empty(); ++j)
+          if (feasible({xs[i], xs[j]})) picks = {xs[i], xs[j]};
     }
-    if (pick < 0) {
+    if (picks.empty()) {
       ind = "?";  // no indicated-hydrogen position gives a valid mancude parent
       return;
     }
-    ind = L[pick];
+    for (std::size_t i = 0; i < picks.size(); ++i) ind += (i ? "H," : "") + L[picks[i]];  // "1H,5" + "H-"
   }
   for (int x : R.X)
-    if (x != pick) hyd.push_back(L[x]);
+    if (std::find(picks.begin(), picks.end(), x) == picks.end()) hyd.push_back(L[x]);
 }
 
 // Prefixes with locants (P-14.5 alphanumerical order, P-16.3 multiplying prefixes, P-16.5 enclosing marks).
@@ -3216,7 +3471,12 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
     std::vector<std::string> hyd;
     hydro(c, L, ind, hyd);
     if (ind == "?") valid = false;
-    if (!ind.empty()) s.ind.push_back(locant_key(ind));
+    for (std::size_t p0 = 0; !ind.empty() && p0 <= ind.size();) {  // one key per indicated hydrogen
+      std::size_t comma = ind.find(',', p0);
+      if (comma == std::string::npos) comma = ind.size();
+      s.ind.push_back(locant_key(ind.substr(p0, comma - p0)));
+      p0 = comma + 1;
+    }
     if (hyd.size() % 2) valid = false;  // hydro prefixes come in pairs; an odd set has no mancude reference
     un.insert(un.end(), hyd.begin(), hyd.end());
   }

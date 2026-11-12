@@ -157,6 +157,13 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"([O-][n+]1ccccc1)", R"(1-oxidopyridin-1-ium)"},
       {R"(C[N+](C)(C)[O-])", R"(N,N-dimethyl-N-oxidomethanaminium)"},
       {R"(Nn1cnnc1)", R"(4H-1,2,4-triazol-4-amine)"},
+      {R"(c1cc2ccc3cccc4ccc(c1)c2c34)", R"(pyrene)"},
+      {R"(C1Cc2cccc3cccc1c23)", R"(1,2-dihydroacenaphthylene)"},
+      {R"(c1ccc2c(c1)cc1ccc3cccc4ccc2c1c34)", R"(benzo[a]pyrene)"},
+      {R"(O=C1NC(=O)c2cccc3cccc1c23)", R"(2,3-dihydro-1H-benzo[de]isoquinoline-1,3-dione)"},
+      {R"(C1CN2CCCc3cccc(C1)c32)", R"(2,3,6,7-tetrahydro-1H,5H-pyrido[3,2,1-ij]quinoline)"},
+      {R"(CN1CCc2cccc3c2C1Cc1ccccc1-3)", R"(6-methyl-5,6,6a,7-tetrahydro-4H-dibenzo[de,g]quinoline)"},
+      {R"(c1ccc2c(c1)-c1cccc3cccc2c13)", R"(fluoranthene)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -169,7 +176,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "c1cc2ccc3cccc4ccc(c1)c2c34", "CN=[N+]=[N-]", "COP(=S)(OC)OC",
+  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "CCC12CCCN3C1C4=C(CC3)C5=CC=CC=C5N4C(=O)C2", "CN=[N+]=[N-]", "COP(=S)(OC)OC",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
