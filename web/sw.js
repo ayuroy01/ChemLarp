@@ -2,7 +2,7 @@
 // The build stamps a new cache name on every deploy, so updates replace old files.
 const CACHE = 'chemlarp-__BUILD_ID__';
 const FILES = [
-  './', 'index.html', 'style.css', 'app.js', 'viewer.js', 'chart.js', 'engine-worker.js',
+  './', 'index.html', 'style.css', 'app.js', 'viewer.js', 'editor.js', 'chart.js', 'engine-worker.js',
   'chemlarp.js', 'chemlarp.wasm', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
   'data/roadmap.json', 'data/mechanisms/h2o2.ocm', 'data/mechanisms/h2o2.yaml',

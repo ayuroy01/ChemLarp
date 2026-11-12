@@ -360,6 +360,7 @@
       if (remember) remember_(compound);
       store.set('last', input);
       if (current() === 'model3d') build3d();
+      if (current() === 'draw' && editor && !editor.atoms.length) edLoadCompound();
     } catch (err) { fail($('structure-out'), err); }
   }
 
@@ -513,6 +514,119 @@
     } catch (err) { fail(out, err); }
   }
 
+  // ---- draw: structure editor -------------------------------------------------------------
+  let editor = null;
+  let edSmiles = null;  // canonical SMILES of the drawing, when valid
+  let edTimer = null;
+  function edSide(nodes) { $('ed-side').replaceChildren(...nodes); }
+  function edHelp() {
+    return h('details', { class: 'ed-help' }, h('summary', { text: 'Shortcuts' }),
+      h('ul', {}, [
+        'Click empty space or an atom to add a bond; drag to aim it.',
+        'Click a bond to raise its order; with a wedge tool, click again to flip it.',
+        'Hover an atom and type C N O S P F I H, L for Cl, B for Br, or + and −.',
+        'Hover a bond and press 1, 2 or 3; Delete removes what is under the pointer.',
+        'Scroll to pan, pinch or ⌘-scroll to zoom; ⌘Z undoes.',
+      ].map((t) => h('li', { text: t }))));
+  }
+  async function edCheck() {
+    if (!editor) return;
+    if (!editor.atoms.length) {
+      edSmiles = null;
+      edSide([status('warn', 'Empty canvas', 'Draw a structure, or load the open compound'), edActions(), edHelp()]);
+      return;
+    }
+    try {
+      const r = (await engine('read', { text: editor.toMolfile(), format: 'mol' })).result;
+      const rec = r.records && r.records[0];
+      const nums = [];
+      for (const d of r.diagnostics) for (const m of d.message.matchAll(/atom (\d+)/g)) nums.push(Number(m[1]));
+      editor.setErrors(nums);
+      if (rec && rec.ok) {
+        edSmiles = rec.smiles;
+        edSide([
+          status('ok', 'Valid structure', `${rec.formula} · ${fmt(rec.molar_mass, 2)} g/mol`),
+          h('div', { class: 'field' }, h('label', { text: 'Canonical SMILES' }), h('div', { class: 'ed-smiles mono', text: rec.smiles })),
+          edActions(),
+          ...diagnostics(r.diagnostics.filter((d) => d.severity === 'warning')),
+          edHelp(),
+        ]);
+      } else {
+        edSmiles = null;
+        edSide([status('bad', 'Not a valid structure yet', 'Problem atoms are marked in red'), edActions(), ...diagnostics(r.diagnostics), edHelp()]);
+      }
+    } catch (err) { edSide([status('bad', 'Could not check the drawing', err.message), edActions()]); }
+  }
+  function edActions() {
+    return h('div', { class: 'ed-side-actions' },
+      h('button', { type: 'button', class: 'btn btn-primary', disabled: !edSmiles, onclick: () => { openCompound(edSmiles); location.hash = 'structure'; }, text: 'Open in ChemLarp' }),
+      h('button', { type: 'button', class: 'btn', disabled: !compound, onclick: edLoadCompound, text: 'Load open compound' }),
+      h('button', { type: 'button', class: 'btn', disabled: !edSmiles, onclick: () => copy(edSmiles), text: 'Copy SMILES' }),
+      h('button', { type: 'button', class: 'btn', disabled: !editor || !editor.atoms.length, onclick: () => download('structure.mol', editor.toMolfile(), 'chemical/x-mdl-molfile'), text: 'Molfile' }));
+  }
+  async function edLoadCompound() {
+    if (!compound) { toast('Open a compound first'); return; }
+    try {
+      const r = await depiction(compound, 1);
+      if (r.ok) editor.loadMolfile(r.molfile);
+    } catch (err) { toast(err.message); }
+  }
+  async function edClean() {
+    if (!edSmiles) { toast('Clean needs a valid structure'); return; }
+    const r = (await engine('depict', { smiles: edSmiles, bond: 30, flags: 1 })).result;
+    if (r.ok) editor.loadMolfile(r.molfile);
+  }
+  function setupEditor() {
+    if (editor) { requestAnimationFrame(() => editor.render()); return; }
+    editor = new StructureEditor($('ed-host'), { onChange: () => { clearTimeout(edTimer); edTimer = setTimeout(edCheck, 220); } });
+    const bar = document.querySelector('.editor-toolbar');
+    // ring button icons
+    bar.querySelectorAll('polygon.ed-ring-icon').forEach((pg) => {
+      const n = Number(pg.dataset.n), r = 8.5;
+      pg.setAttribute('points', Array.from({ length: n }, (_, k) => {
+        const a = -Math.PI / 2 + (2 * Math.PI * k) / n;
+        return `${12 + r * Math.cos(a)},${12.5 + r * Math.sin(a)}`;
+      }).join(' '));
+    });
+    bar.querySelectorAll('[data-aromatic] svg').forEach((sv) => {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', 12); c.setAttribute('cy', 12.5); c.setAttribute('r', 4.6);
+      sv.append(c);
+    });
+    const pick = (b) => {
+      bar.querySelectorAll('[aria-pressed]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+    };
+    bar.querySelectorAll('.ed-btn').forEach((b) => { if (!['undo', 'redo', 'clean', 'clear', 'other'].includes(b.dataset.ed)) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') || 'false'); });
+    bar.addEventListener('click', (e) => {
+      const b = e.target.closest('.ed-btn');
+      if (!b) return;
+      const k = b.dataset.ed;
+      if (k === 'undo') return editor.undo();
+      if (k === 'redo') return editor.redo();
+      if (k === 'clean') return edClean();
+      if (k === 'clear') return editor.clear();
+      if (k === 'other') {
+        const el = (prompt('Element symbol (e.g. Si, Se, Na, B):') || '').trim();
+        if (!/^[A-Z][a-z]?$/.test(el)) return;
+        editor.element = el;
+        editor.tool = { kind: 'element' };
+        pick(b);
+        return;
+      }
+      pick(b);
+      if (k === 'bond') editor.tool = { kind: 'bond', order: Number(b.dataset.order || 1), stereo: Number(b.dataset.stereo || 0) };
+      else if (k === 'chain') editor.tool = { kind: 'chain' };
+      else if (k === 'ring') editor.tool = { kind: 'ring', size: Number(b.dataset.size), aromatic: b.hasAttribute('data-aromatic') };
+      else if (k === 'element') { editor.element = b.dataset.el; editor.tool = { kind: 'element' }; }
+      else if (k === 'charge') editor.tool = { kind: 'charge', delta: Number(b.dataset.delta) };
+      else if (k === 'erase') editor.tool = { kind: 'erase' };
+      else if (k === 'select') editor.tool = { kind: 'select' };
+      editor.svg.focus({ preventScroll: true });
+    });
+    if (compound) edLoadCompound(); else edCheck();
+  }
+
   // ---- recents --------------------------------------------------------------------------
   function remember_(c) {
     const list = store.get('recents', []).filter((x) => x.canonical !== c.canonical);
@@ -529,7 +643,7 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'search', 'reaction', 'equilibrium', 'phases', 'kinetics', 'roadmap'];
+  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'kinetics', 'roadmap'];
   const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
@@ -540,6 +654,7 @@
     $('content').scrollTop = 0;
     app.classList.remove('show-inspector');
     if (name === 'model3d') build3d();
+    if (name === 'draw') setupEditor();
     if (name === 'roadmap') loadRoadmap();
     if (autorun[name] && !ran.has(name)) { ran.add(name); $(autorun[name]).requestSubmit(); }
   }
@@ -809,7 +924,7 @@
     if (!mod) return;
     if (e.key === 'k') { e.preventDefault(); $('compound').focus(); $('compound').select(); }
     else if (e.key === 'i') { e.preventDefault(); toggleInspector(); }
-    else if (/^[1-6]$/.test(e.key)) {
+    else if (/^[1-9]$/.test(e.key)) {
       const a = document.querySelector(`.tool-list a[data-key="${e.key}"]`);
       if (a) { e.preventDefault(); location.hash = a.dataset.tool; }
     }

@@ -4,7 +4,7 @@ ChemLarp is a terminal-native chemistry engine written in C++20. It covers the p
 
 ## Use it in your browser (any OS, installable)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, a structure editor, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
 
 - **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
 - **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.

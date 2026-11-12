@@ -40,7 +40,7 @@
         {
           "name": "Structure editor",
           "size": "L",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Readers for MOL/SDF, PDB, CML",
