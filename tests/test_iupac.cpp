@@ -1,6 +1,6 @@
 // IUPAC names (2013 Recommendations). Every expected name was checked by parsing it back with
 // OPSIN 2.8 (py2opsin) and comparing the InChIKey with the input structure (RDKit); the corpus
-// harness does the same on 7,000 PubChem structures (see ARCHITECTURE.md).
+// harness does the same on 7,000 PubChem structures, including salts and zwitterions (see ARCHITECTURE.md).
 #include <string>
 #include <utility>
 #include <vector>
@@ -73,6 +73,22 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CC(C)C[C@H](N)C(=O)O)", R"((2S)-2-amino-4-methylpentanoic acid)"},
       {R"(OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O)", R"((2R,3R,4S,5S,6R)-6-(hydroxymethyl)oxane-2,3,4,5-tetraol)"},
       {R"(Cn1cnc2c1c(=O)n(C)c(=O)n2C)", R"(1,3,7-trimethyl-2,3,6,7-tetrahydro-1H-purine-2,6-dione)"},
+      {R"(CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21)", R"(7-chloro-1-methyl-5-phenyl-2,3-dihydro-1H-1,4-benzodiazepin-2-one)"},
+      {R"(NC(=O)N1c2ccccc2C=Cc2ccccc21)", R"(5H-dibenzo[b,f]azepine-5-carboxamide)"},
+      {R"(NC12CC3CC(CC(C3)C1)C2)", R"(adamantan-1-amine)"},
+      {R"(CN(C)C(=O)Cc1c(-c2ccc(C)cc2)nc2ccc(C)cn12)", R"(N,N-dimethyl-2-[6-methyl-2-(4-methylphenyl)imidazo[1,2-a]pyridin-3-yl]acetamide)"},
+      {R"(O=C1CCCCCCCCCCCCCCO1)", R"(1-oxacyclohexadecan-2-one)"},
+      {R"(NC(=S)N)", R"(thiourea)"},
+      {R"(CC(N)=S)", R"(ethanethioamide)"},
+      {R"(O=C1CSC(=S)N1)", R"(2-sulfanylidene-1,3-thiazolidin-4-one)"},
+      {R"(CC(=O)[O-].[Na+])", R"(sodium acetate)"},
+      {R"(C[N+](C)(C)CC(=O)[O-])", R"(2-(trimethylazaniumyl)acetate)"},
+      {R"(C[n+]1ccccc1.[I-])", R"(1-methylpyridin-1-ium iodide)"},
+      {R"(CN(C)CCOC(c1ccccc1)c1ccccc1.Cl)", R"(2-(diphenylmethoxy)-N,N-dimethylethan-1-amine hydrochloride)"},
+      {R"(NNC(=O)c1ccncc1)", R"(pyridine-4-carbohydrazide)"},
+      {R"(CC(=O)NO)", R"(N-hydroxyacetamide)"},
+      {R"(O=C(N/N=C/c1ccccc1)c1ccccc1)", R"(N'-[(E)-phenylmethylidene]benzohydrazide)"},
+      {R"(CC(=O)[O-].CC(=O)[O-].[Ca+2])", R"(calcium diacetate)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -85,8 +101,8 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[Si](C)C", "[Na+].CC(=O)[O-]", "CC(=O)Cl", "c1ccc2cc3ccccc3cc2c1C1CC12CC2", "NN", "CC(=S)N",
-                              "c1ccc2nc3ccccc3cc2c1.O", "C1CC2(C1)CCC2"}) {
+  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1ccc2cc3ccccc3cc2c1C1CC12CC2", "NN", "c1ccc(N=Nc2ccccc2)cc1",
+                              "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)CCC2"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
     CHECK(!r.ok);

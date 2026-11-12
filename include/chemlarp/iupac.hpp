@@ -13,8 +13,10 @@
 //  - principal characteristic groups as suffixes in the order of P-41
 //    (carboxylic and sulfonic acids, esters, amides and sulfonamides, nitriles,
 //    aldehydes, ketones, alcohols, thiols, amines, imines), the rest as
-//    prefixes; functional class names for esters, carbonates, carbamates,
-//    phosphate monoesters and phosphonic acids; ureas;
+//    prefixes; thioamides, hydrazides, thiones; functional class names for
+//    esters, carbonates, carbamates, phosphate monoesters and phosphonic acids;
+//    ureas and thioureas; anions, cations, zwitterions, and salts, hydrogen
+//    halide adducts and hydrates named component by component;
 //  - parent selection by P-44 (rings before chains, then longest chain, then
 //    unsaturation), numbering by the lowest-locant rules of P-31.1.4,
 //    alphanumerical order and multiplying prefixes (P-14.5, P-16.3), enclosing
@@ -23,8 +25,8 @@
 //    acid, benzoic acid, phenol, aniline, benzaldehyde, benzonitrile, ...);
 //  - CIP stereodescriptors (R/S, E/Z) on parent and substituent atoms.
 //
-// A structure outside this scope (ions and salts, fused ring systems without a
-// built-in parent, spiro and tricyclic systems, amidines, hydrazines, ...) gets
+// A structure outside this scope (fused ring systems without a built-in parent,
+// spiro and tricyclic systems, amidines, hydrazines, polyphosphates, ...) gets
 // no name and a NamingUnsupported diagnostic saying why: the namer never guesses.
 
 #include <cstdint>
