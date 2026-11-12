@@ -547,6 +547,7 @@ class Namer {
   std::vector<char> amidN_;  // imino nitrogen of an amidine or guanidine
   std::vector<char> lambdaS_;   // ring sulfur with 1 or 2 oxo groups (lambda4 / lambda6)
   std::vector<int> hzPartner_;  // hydrazine / hydrazone nitrogens: the other nitrogen, else -1
+  std::vector<int> azoPartner_;  // R-N=N-R': the other nitrogen, else -1
   std::vector<char> nO_;        // oxygen of a hydroxylamine (N-O-H or N-O-C, N not acyl)
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
@@ -770,16 +771,27 @@ bool Namer::perceive() {
     for (int o : A.bo) val += o;
     if (A.z == 7 && A.q == 1 && !nitro_[a] && val == 4) {
       bool ok = true;
-      for (int b : A.nb) ok &= at_[b].z == 6 || (A.arom && at_[b].z == 7 && at_[b].arom);
+      int oxido = 0;
+      for (int b : A.nb) {
+        if (is_Ominus(b)) {  // N-oxide: an oxido prefix on the cationic nitrogen
+          ++oxido;
+          continue;
+        }
+        ok &= at_[b].z == 6 || (A.arom && at_[b].z == 7 && at_[b].arom);
+      }
+      ok &= oxido <= 1;
       if (ok && !A.ring && std::all_of(A.bo.begin(), A.bo.end(), [](int o) { return o == 1; })) cationN_[a] = 1;
       else if (ok && (A.arom || A.ring)) ringCat_[a] = 1;
     }
     if (is_Ominus(a) && A.bo[0] == 1 && (at_[A.nb[0]].z == 6 || at_[A.nb[0]].z == 16)) anionO_[a] = 1;
   }
+  for (int a = 0; a < n(); ++a)
+    if (is_Ominus(a) && at_[a].bo[0] == 1 && (cationN_[at_[a].nb[0]] || ringCat_[at_[a].nb[0]])) anionO_[a] = 2;  // N-oxide oxygen
   // hydrazides C(=O)-NR-NR2 / C(=O)-NR-N=CR2 and N-hydroxy amides C(=O)-NR-OH
   hydrN_.assign(n(), 0);
   amidN_.assign(n(), 0);
   hzPartner_.assign(n(), -1);
+  azoPartner_.assign(n(), -1);
   lambdaS_.assign(n(), 0);
   nO_.assign(n(), 0);
   hydrN2_.assign(n(), 0);
@@ -846,6 +858,22 @@ bool Namer::perceive() {
       if (!ok || dbl > 1) continue;
       hzPartner_[N] = M;
       hzPartner_[M] = N;
+    }
+  }
+  for (int N = 0; N < n(); ++N) {  // azo compounds R-N=N-R'
+    const NAtom& A = at_[N];
+    if (A.z != 7 || A.ring || A.arom || A.q != 0 || deg(N) > 2) continue;
+    for (std::size_t k = 0; k < A.nb.size(); ++k) {
+      const int M = A.nb[k];
+      if (A.bo[k] != 2 || at_[M].z != 7 || at_[M].ring || at_[M].arom || at_[M].q != 0 || deg(M) > 2) continue;
+      bool ok = true;
+      for (int X : {N, M})
+        for (std::size_t j = 0; j < at_[X].nb.size(); ++j) {
+          const int y = at_[X].nb[j];
+          if (y == N || y == M) continue;
+          if (at_[X].bo[j] != 1 || at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) ok = false;
+        }
+      if (ok) azoPartner_[N] = M;
     }
   }
   for (int N = 0; N < n(); ++N) {
@@ -1179,7 +1207,9 @@ bool Namer::perceive() {
         break;
       }
       case 7: {
-        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0) break;
+        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0 ||
+            azoPartner_[a] >= 0)
+          break;
         if (amideN_[a]) {  // N-hydroxy amide nitrogen, checked with its acyl carbon
           bool hx = false;
           for (int b : A.nb) hx |= hydroxamO_[b] != 0;
@@ -1192,7 +1222,8 @@ bool Namer::perceive() {
           const int b = A.nb[k];
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
           const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl);
-          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b]) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
+          const bool n_amino = at_[b].z == 7 && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
+          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
         break;
@@ -1234,7 +1265,8 @@ bool Namer::perceive() {
     }
   }
   for (int a = 0; a < n(); ++a)
-    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0 || at_[a].ring ||
+    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0 || azoPartner_[a] >= 0 ||
+        at_[a].ring ||
         at_[a].arom)
       amineN_[a] = 0;
   return true;
@@ -1649,6 +1681,25 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       if (others.empty()) return Named{"amino", false, {}};
       if (others.size() == 1 && hydrN2_[others[0]] && deg(others[0]) == 1) return Named{"hydrazinyl", false, {}};
+      if (azoPartner_[q] >= 0) {  // -N=N-R: (phenyldiazenyl), with its E/Z
+        const int M = azoPartner_[q];
+        Named out;
+        out.compound = true;
+        std::string t = "diazenyl";
+        for (int y : at_[M].nb) {
+          if (y == q) continue;
+          auto R = sub(y, M, 1);
+          if (!R) return std::nullopt;
+          out.stereo = R->stereo;
+          t = (R->compound ? enclose(R->text) : R->text) + "diazenyl";
+        }
+        if (auto it = stereo_.find(bond_key(q, M)); it != stereo_.end()) {
+          t = "(" + std::string(to_string(it->second)) + ")-" + t;
+          out.stereo.push_back(it->first);
+        }
+        out.text = t;
+        return out;
+      }
       if (hzPartner_[q] >= 0) {  // -NR-NR2: (2-phenylhydrazin-1-yl)
         const int M = hzPartner_[q];
         std::vector<std::pair<std::string, Named>> e;
@@ -3646,7 +3697,41 @@ std::optional<std::string> Namer::run() {
   int silicon = -1, nsilicon = 0;
   for (int a = 0; a < n(); ++a)
     if (at_[a].z == 14) silicon = a, ++nsilicon;
-  if (principal == Cls::None && nsilicon == 1 && !at_[silicon].nb.empty()) {
+  int azo = -1, nazo = 0;
+  for (int a = 0; a < n(); ++a)
+    if (azoPartner_[a] > a) azo = a, ++nazo;
+  if (principal == Cls::None && nsilicon == 0 && nazo == 1) {
+    // diazene as the senior parent hydride when there is no suffix (P-68.3.1.3): "diphenyldiazene"
+    const int M = azoPartner_[azo];
+    std::vector<Named> subs;
+    std::vector<Key> extra;
+    for (int X : {azo, M})
+      for (int y : at_[X].nb) {
+        if (y == azo || y == M) continue;
+        auto R = sub(y, X, 1);
+        if (!R) return std::nullopt;
+        extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        subs.push_back(*R);
+      }
+    std::map<std::string, std::pair<int, bool>> g;
+    for (const auto& x : subs) ++g[x.text].first, g[x.text].second = x.compound;
+    std::vector<std::pair<std::string, std::pair<int, bool>>> gv(g.begin(), g.end());
+    std::sort(gv.begin(), gv.end(), [](const auto& a2, const auto& b2) { return alpha_key(a2.first) < alpha_key(b2.first); });
+    std::string name;
+    for (std::size_t i = 0; i < gv.size(); ++i) {
+      const auto& [t, kc] = gv[i];
+      std::string piece = kc.second ? (kc.first > 1 ? multiplier(kc.first, true) : "") + enclose(t) : multiplier(kc.first, false) + t;
+      if (i > 0 && !is_enclosed(piece)) piece = enclose(piece);
+      name += piece;
+    }
+    name += "diazene";
+    if (auto it = stereo_.find(bond_key(azo, M)); it != stereo_.end()) {
+      name = "(" + std::string(to_string(it->second)) + ")-" + name;
+      extra.push_back(it->first);
+    }
+    result = name;
+    cited = extra;
+  } else if (principal == Cls::None && nsilicon == 1 && !at_[silicon].nb.empty()) {
     // silane as the senior parent hydride when there is no suffix (P-44.1.2.1): "trimethyl(phenyl)silane"
     std::vector<int> xs(at_[silicon].nb.begin(), at_[silicon].nb.end());
     auto R = ligands(xs, silicon, "silane");
