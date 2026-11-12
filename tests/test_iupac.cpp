@@ -261,6 +261,14 @@ TEST(iupac_names_round_trip_through_opsin) {
        "6-(6-amino-9H-purin-9-yl)-2-oxo-4a,6,7,7a-tetrahydro-4H-2λ5-furo[3,2-d][1,3,2]dioxaphosphinine-2,7-diol"},
       {"C1(C(C(C2C(C1O)OP(=O)(O2)O)O)O)O", "2-oxo-3a,4,5,6,7,7a-hexahydro-1,3,2λ5-benzodioxaphosphole-2,4,5,6,7-pentaol"},
       {"CC1(C(COP(=O)(OP(=O)(O1)O)O)O)CO", "6-(hydroxymethyl)-6-methyl-2,4-dioxo-1,3,5,2λ5,4λ5-trioxadiphosphocane-2,4,7-triol"},
+      // isothioureas, acylguanidines, ring-N carboximidamides (P-66.4.1)
+      {"C(CSC(=N)N)N", "2-aminoethyl carbamimidothioate"},
+      {"CCSC(=NC1=CC=CC=C1)N", "ethyl N'-phenylcarbamimidothioate"},
+      {"C1=CC=C(C=C1)NC(=NC)S", "N'-methyl-N-phenylcarbamimidothioic acid"},
+      {"C1=CC(=C(C(=C1)Cl)CC(=O)N=C(N)N)Cl", "N-(diaminomethylidene)-2-(2,6-dichlorophenyl)acetamide"},
+      {"CC(=O)N=C(N)NC", "N-[amino(methylamino)methylidene]acetamide"},
+      {"C1CN(CC2=CC=CC=C21)C(=N)N", "1,2,3,4-tetrahydroisoquinoline-2-carboximidamide"},
+      {"C1CCN(CC1)C(=NC)NC", "N,N'-dimethylpiperidine-1-carboximidamide"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

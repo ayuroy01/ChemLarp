@@ -428,8 +428,8 @@ const std::vector<SmartsQuery>& template_queries() {
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
   Carboxylate = -60, CarbonicAnion = -55, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, PhosAnion = -45, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
-  Acid = 10, CarbonicAcid = 15, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
-  SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
+  Acid = 10, CarbonicAcid = 15, IsothioAcid = 16, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
+  SulfEster = 44, Isothiourea = 45, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
   Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, RingP = 530, None = 999
@@ -1414,6 +1414,70 @@ bool Namer::perceive() {
         if (imineC_[a]) break;  // read above
         if (imN >= 0) {  // imines and oximes (C=N-H, C=N-R, C=N-OH, C=N-OR); amidines and guanidines
           if (nd || nt) return fail("unsupported carbon " + sym(a));
+          // a plain acyclic nitrogen (H or non-acyl carbon neighbours only)
+          auto plainNx = [&](int b) {
+            if (at_[b].z != 7 || at_[b].ring || at_[b].arom || at_[b].q != 0) return false;
+            for (std::size_t k = 0; k < at_[b].nb.size(); ++k) {
+              const int y = at_[b].nb[k];
+              if (y == a) continue;
+              if (at_[b].bo[k] != 1 || at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) return false;
+            }
+            return true;
+          };
+          // isothioureas R-S-C(=NR)-NR2 (carbamimidothioates) and their free acids (P-66.4.1.2)
+          if (!A.ring && plainNx(imN) && deg(imN) <= 2) {
+            int nN = -1, sS = -1, other = 0;
+            for (int b : A.nb) {
+              if (b == imN) continue;
+              if (at_[b].z == 7 && order(a, b) == 1 && plainNx(b)) nN = b;
+              else if (at_[b].z == 16 && order(a, b) == 1 && !at_[b].ring && at_[b].q == 0 &&
+                       (is_SH(b) || (deg(b) == 2 && [&] {
+                          const int y = at_[b].nb[0] == a ? at_[b].nb[1] : at_[b].nb[0];
+                          return at_[y].z == 6 && dO(y) < 0 && dS(y) < 0;
+                        }())))
+                sS = b;
+              else ++other;
+            }
+            if (nN >= 0 && sS >= 0 && !other) {
+              acyl_[a] = is_SH(sS) ? Cls::IsothioAcid : Cls::Isothiourea;
+              amidN_[imN] = 1;
+              amideN_[nN] = 1;
+              carbX_[sS] = 1;
+              break;
+            }
+          }
+          // acylguanidines R-CO-N=C(NR2)2: the amide is senior, the guanidine carbon a
+          // "(diaminomethylidene)" substituent on its nitrogen
+          if (!A.ring && !at_[imN].ring && deg(imN) == 2) {
+            int acylC = -1, nplain = 0, other = 0;
+            for (int y : at_[imN].nb)
+              if (y != a && plain_acyl(y)) acylC = y;
+            for (int b : A.nb) {
+              if (b == imN) continue;
+              if (order(a, b) == 1 && plainNx(b)) ++nplain;
+              else ++other;
+            }
+            if (acylC >= 0 && nplain == 2 && !other) {
+              amidN_[imN] = 1;
+              break;
+            }
+          }
+          // ring-N carboximidamides: ring N-C(=NR)-NR2, "piperidine-1-carboximidamide"
+          if (!A.ring && plainNx(imN) && deg(imN) <= 2) {
+            int ringN = -1, nN = -1, other = 0;
+            for (int b : A.nb) {
+              if (b == imN) continue;
+              if (at_[b].z == 7 && at_[b].ring && !at_[b].arom && at_[b].q == 0 && order(a, b) == 1 && ringN < 0) ringN = b;
+              else if (order(a, b) == 1 && plainNx(b)) nN = b;
+              else ++other;
+            }
+            if (ringN >= 0 && nN >= 0 && !other) {
+              acyl_[a] = Cls::Amidine;
+              amidN_[imN] = 1;
+              amideN_[nN] = 1;
+              break;
+            }
+          }
           std::vector<int> ns;
           for (int b : A.nb) {
             if (b == imN || at_[b].z == 6) continue;
@@ -5356,6 +5420,48 @@ std::optional<std::string> Namer::run() {
     }
     if (!result) {
       if (err_.empty()) err_ = "acid halide could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::Isothiourea || principal == Cls::IsothioAcid) {
+    // isothioureas as carbamimidothioates (P-66.4.1.2): "2-aminoethyl carbamimidothioate",
+    // "ethyl N'-phenylcarbamimidothioate", "N'-phenylcarbamimidothioic acid"; N amino, N' imino
+    for (int C = 0; C < n(); ++C) {
+      if (acyl_[C] != principal) continue;
+      int Nam = -1, Nim = -1, Sx = -1;
+      for (std::size_t k = 0; k < at_[C].nb.size(); ++k) {
+        const int x = at_[C].nb[k];
+        if (at_[x].z == 7) (at_[C].bo[k] == 2 ? Nim : Nam) = x;
+        if (at_[x].z == 16) Sx = x;
+      }
+      std::vector<std::pair<std::string, Named>> e;
+      std::vector<Key> extra;
+      bool ok = true;
+      for (auto [X, loc] : {std::pair{Nam, "N"}, std::pair{Nim, "N'"}})
+        for (int y : at_[X].nb) {
+          if (y == C) continue;
+          auto R = sub(y, X, 1);
+          if (!R) { ok = false; break; }
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          e.push_back({loc, *R});
+        }
+      if (!ok) continue;
+      std::string org;
+      if (principal == Cls::Isothiourea) {
+        const int r = at_[Sx].nb[0] == C ? at_[Sx].nb[1] : at_[Sx].nb[0];
+        auto R = sub(r, Sx, 1);
+        if (!R) continue;
+        extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        org = organyl(*R) + " ";
+      }
+      std::string word = format_prefixes(e, false) + "carbamimidothio" + (principal == Cls::Isothiourea ? "ate" : "ic acid");
+      if (auto it = stereo_.find(bond_key(C, Nim)); it != stereo_.end()) {
+        word = "(" + std::string(to_string(it->second)) + ")-" + word;
+        extra.push_back(it->first);
+      }
+      finish(Built{}, org + word, extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "isothiourea could not be named";
       return std::nullopt;
     }
   } else if (principal == Cls::SulfateAnion || principal == Cls::SulfamicAcid || principal == Cls::SulfamateAnion ||
