@@ -247,6 +247,12 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"CC1C(O1)P(=O)([O-])[O-].[Na+].[Na+]", "disodium (3-methyloxiran-2-yl)phosphonate"},
       {"CC(=O)OP(=O)(O)O", "acetyl dihydrogen phosphate"},
       {"CC(=O)NC(CCC(=O)OP(=O)(O)O)C(=O)O", "2-acetamido-5-oxo-5-(phosphonooxy)pentanoic acid"},
+      // di- and triphosphoric acids and their diesters, as phosphoryl phosphates
+      {"OP(=O)(O)OP(=O)(O)O", "diphosphoric acid"},
+      {"OP(=O)(O)OP(=O)(O)OP(=O)(O)O", "triphosphoric acid"},
+      {"COP(=O)(O)OP(=O)(O)OC", "[hydroxy(methoxy)phosphoryl] methyl hydrogen phosphate"},
+      {"COP(=O)(O)OP(=O)(O)OP(=O)(O)OC", "bis[hydroxy(methoxy)phosphoryl] hydrogen phosphate"},
+      {"NCCOP(=O)(O)OP(=O)(O)OCC", "2-aminoethyl [ethoxy(hydroxy)phosphoryl] hydrogen phosphate"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

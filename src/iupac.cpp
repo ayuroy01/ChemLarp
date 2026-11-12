@@ -5231,16 +5231,60 @@ std::optional<std::string> Namer::run() {
         if (bridges == 2 && std::count(at_[Pp].nb.begin(), at_[Pp].nb.end(), esterO[0])) linear = false;
       }
     }
-    if (!linear) {
-      err_ = "polyphosphate other than a monoester of di- or triphosphoric acid";
-      return std::nullopt;
+    if (esterO.empty()) {  // diphosphoric and triphosphoric acid
+      if (chainP.size() > 3 || hydrogens != static_cast<int>(chainP.size()) + 2) {
+        err_ = "unsupported polyphosphoric acid";
+        return std::nullopt;
+      }
+      result = chainP.size() == 2 ? "diphosphoric acid" : "triphosphoric acid";
+      linear = false;
+    } else if (!linear) {
+      // diesters and branched esters: one phosphorus as the parent phosphate, the others as
+      // phosphoryl groups ("[hydroxy(methoxy)phosphoryl] methyl hydrogen phosphate", as in
+      // "acetyl dihydrogen phosphate"); the shortest such name
+      for (int P : chainP) {
+        std::map<std::string, int> g;
+        std::set<std::string> wrapped;  // phosphoryl groups, already enclosed here
+        std::vector<Key> extra;
+        int hyd = 0;
+        bool ok = true;
+        for (std::size_t k = 0; k < at_[P].nb.size() && ok; ++k) {
+          const int x = at_[P].nb[k];
+          if (at_[P].bo[k] != 1) continue;
+          if (is_OH(x)) { ++hyd; continue; }
+          if (at_[x].z != 8 || deg(x) != 2) { ok = false; break; }
+          const int r = at_[x].nb[0] == P ? at_[x].nb[1] : at_[x].nb[0];
+          auto R = at_[r].z == 15 ? phosphoryl_name(r, x) : sub(r, x, 1);
+          if (!R) { ok = false; break; }
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          if (at_[r].z == 15) wrapped.insert(enclose(R->text));
+          ++g[at_[r].z == 15 ? enclose(R->text) : organyl(*R)];
+        }
+        if (!ok) continue;
+        std::vector<std::pair<std::string, int>> gv(g.begin(), g.end());
+        std::sort(gv.begin(), gv.end(), [](const auto& a2, const auto& b2) { return alpha_key(a2.first) < alpha_key(b2.first); });
+        std::string name;
+        for (const auto& [t, k] : gv) {
+          const bool comp = t[0] == '(' || t[0] == '[' || t[0] == '{' || has_digit(t);
+          name += (name.empty() ? "" : " ") +
+                  (k > 1 ? (comp ? multiplier(k, true) + (wrapped.count(t) ? t : enclose(t)) : multiplier(k, false) + t) : t);
+        }
+        if (hyd) name += " " + multiplier(hyd, false) + "hydrogen";
+        finish(Built{}, name + " phosphate", extra);
+      }
+      if (!result) {
+        if (err_.empty()) err_ = "polyphosphate ester could not be named";
+        return std::nullopt;
+      }
     }
+    if (linear) {
     const int O = esterO[0];
     const int r = at_[at_[O].nb[0]].z == 6 ? at_[O].nb[0] : at_[O].nb[1];
     auto R = sub(r, O, 1);
     if (!R) return std::nullopt;
     result = organyl(*R) + " " + multiplier(hydrogens, false) + "hydrogen " + (chainP.size() == 2 ? "diphosphate" : "triphosphate");
     cited = R->stereo;
+    }
   } else if (principal == Cls::AcylHalide || principal == Cls::SulfonylHalide) {
     // acid halides by functional class names (P-65.5.1): "benzoyl chloride", "methanesulfonyl chloride"
     for (int a = 0; a < n(); ++a) {
