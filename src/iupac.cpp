@@ -409,7 +409,12 @@ const std::vector<SmartsQuery>& template_queries() {
     std::vector<SmartsQuery> v;
     for (const auto& t : templates()) {
       Diagnostics d;
-      v.push_back(parse_smarts(t.mancude ? generic_smarts(t.pattern) : std::string(t.pattern), d));
+      std::string p = t.mancude ? generic_smarts(t.pattern) : std::string(t.pattern);
+      if (!t.mancude)  // saturated parents also carry ring cations: piperidin-1-ium
+        for (std::size_t k = p.find("[NX3]"); k != std::string::npos; k = p.find("[NX3]", k + 1)) p.replace(k, 5, "[N;X3+0,X4+]");
+      if (!t.mancude)  // and ring sulfur oxides: 1,1-dioxo-1lambda6-thiolane
+        for (std::size_t k = p.find("[SX2]"); k != std::string::npos; k = p.find("[SX2]", k + 1)) p.replace(k, 5, "[S;X2,X3,X4]");
+      v.push_back(parse_smarts(p, d));
     }
     return v;
   }();
@@ -421,20 +426,21 @@ const std::vector<SmartsQuery>& template_queries() {
 // Seniority of classes (P-41), lower = more senior.
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
-  Carboxylate = -6, Sulfonate = -5, Olate = -4, Ammonium = -3, RingCation = -2,  // anions, then cations (P-41: ions first)
-  Acid = 1, SulfonicAcid = 2, Phosphonic = 3, Ester = 4, Carbonate = 5, Carbamate = 6, PhosMono = 7, Amide = 8, Thioamide = 9,
-  Hydrazide = 10, Amidine = 11, Sulfonamide = 12, Urea = 13, Thiourea = 14, Guanidine = 15, Nitrile = 16, Aldehyde = 17, Ketone = 18,
-  Thione = 19, Alcohol = 20, Thiol = 21, Amine = 22, Imine = 23,
-  Sulfonyl = 50, Sulfinyl = 51, None = 99
+  Carboxylate = -60, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
+  Acid = 10, SulfonicAcid = 20, Phosphonic = 30, Ester = 40, ThioEster = 42, SulfEster = 44, Carbonate = 50, Carbamate = 60,
+  PhosMono = 70, PhosEster = 72, AcylHalide = 74, SulfonylHalide = 76, Amide = 80, Thioamide = 90, Hydrazide = 100, Amidine = 110,
+  Sulfonamide = 120, Urea = 130, Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, Thione = 190,
+  Alcohol = 200, Thiol = 210, Amine = 220, Imine = 230, Hydrazine = 240,
+  Sulfonyl = 500, Sulfinyl = 510, None = 999
 };
 
 bool is_acyl(Cls c) {
-  return c == Cls::Acid || c == Cls::Carboxylate || c == Cls::Ester || c == Cls::Amide || c == Cls::Thioamide || c == Cls::Hydrazide ||
+  return c == Cls::Acid || c == Cls::Carboxylate || c == Cls::Ester || c == Cls::ThioEster || c == Cls::Amide || c == Cls::Thioamide || c == Cls::Hydrazide ||
          c == Cls::Amidine ||
          c == Cls::Nitrile ||
          c == Cls::Aldehyde;
 }
-bool is_sulfur_suffix(Cls c) { return c == Cls::SulfonicAcid || c == Cls::Sulfonate || c == Cls::Sulfonamide; }
+bool is_sulfur_suffix(Cls c) { return c == Cls::SulfonicAcid || c == Cls::Sulfonate || c == Cls::SulfEster || c == Cls::Sulfonamide; }
 
 struct NAtom {
   int z = 0, h = 0, q = 0;
@@ -536,7 +542,10 @@ class Namer {
   std::vector<Cls> acyl_;
   std::vector<char> amineN_, amideN_, nitro_, imineC_, imineN_, cationN_, ringCat_, anionO_;
   std::vector<char> hydrN_, hydrN2_, hydroxamO_;
-  std::vector<char> amidN_;  // imino nitrogen of an amidine or guanidine  // hydrazide N (on the acyl) and N'; N-hydroxy amide O
+  std::vector<char> amidN_;  // imino nitrogen of an amidine or guanidine
+  std::vector<char> lambdaS_;   // ring sulfur with 1 or 2 oxo groups (lambda4 / lambda6)
+  std::vector<int> hzPartner_;  // hydrazine / hydrazone nitrogens: the other nitrogen, else -1
+  std::vector<char> nO_;        // oxygen of a hydroxylamine (N-O-H or N-O-C, N not acyl)
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
   std::vector<RingSys> rs_;
@@ -580,11 +589,12 @@ class Namer {
   bool is_Ominus(int o) const { return at_[o].z == 8 && at_[o].q == -1 && deg(o) == 1 && at_[o].h == 0; }
   bool is_OH(int o) const { return at_[o].z == 8 && at_[o].h == 1 && deg(o) == 1 && at_[o].q == 0; }
   bool is_SH(int s) const { return at_[s].z == 16 && at_[s].h == 1 && deg(s) == 1; }
-  int ester_O(int c) const {
+  int ester_O(int c) const {  // the ester heteroatom of a carboxylic, thio or sulfonic ester
     for (int x : at_[c].nb)
-      if (at_[x].z == 8 && deg(x) == 2) return x;
+      if ((at_[x].z == 8 || (acyl_[c] == Cls::ThioEster && at_[x].z == 16)) && deg(x) == 2) return x;
     return -1;
   }
+  std::optional<Named> phosphoryl_name(int P, int from);
   int amide_N(int c) const {
     int r = -1;
     for (int x : at_[c].nb)
@@ -617,6 +627,7 @@ class Namer {
   void hydro(const Cand& c, const std::vector<std::string>& L, std::string& ind, std::vector<std::string>& hyd) const;
   std::optional<Built> assemble(const Spec& sp, const Cand& c, const std::vector<int>& o);
   std::string hydride(const Cand& c, const std::vector<int>& o, bool omit_unsat, bool& saturated) const;
+  std::string lambda_name(std::string name, const Cand& c, const std::vector<int>& o) const;
   std::optional<Named> sub(int q, int from, int bo);
   std::optional<Named> sub_impl(int q, int from, int bo);
   std::optional<Named> build_sub(Mode mode, int root, int from, int link = -1, const std::string& word = "carbonyl");
@@ -753,13 +764,16 @@ bool Namer::perceive() {
       bool ok = true;
       for (int b : A.nb) ok &= at_[b].z == 6 || (A.arom && at_[b].z == 7 && at_[b].arom);
       if (ok && !A.ring && std::all_of(A.bo.begin(), A.bo.end(), [](int o) { return o == 1; })) cationN_[a] = 1;
-      else if (ok && A.arom) ringCat_[a] = 1;
+      else if (ok && (A.arom || A.ring)) ringCat_[a] = 1;
     }
     if (is_Ominus(a) && A.bo[0] == 1 && (at_[A.nb[0]].z == 6 || at_[A.nb[0]].z == 16)) anionO_[a] = 1;
   }
   // hydrazides C(=O)-NR-NR2 / C(=O)-NR-N=CR2 and N-hydroxy amides C(=O)-NR-OH
   hydrN_.assign(n(), 0);
   amidN_.assign(n(), 0);
+  hzPartner_.assign(n(), -1);
+  lambdaS_.assign(n(), 0);
+  nO_.assign(n(), 0);
   hydrN2_.assign(n(), 0);
   hydroxamO_.assign(n(), 0);
   for (int N = 0; N < n(); ++N) {
@@ -775,7 +789,11 @@ bool Namer::perceive() {
     int cheteros = 0;
     for (int y : at_[acylC].nb) cheteros += at_[y].z != 6 && y != dO(acylC);
     if (cheteros != 1) continue;  // only plain acyl groups
-    if (is_OH(other)) {
+    const bool alkoxy = at_[other].z == 8 && deg(other) == 2 && at_[other].q == 0 && [&] {
+      const int y = at_[other].nb[0] == N ? at_[other].nb[1] : at_[other].nb[0];
+      return at_[y].z == 6 && dO(y) < 0 && dS(y) < 0;
+    }();
+    if (is_OH(other) || alkoxy) {  // N-hydroxy and N-alkoxy amides
       hydroxamO_[other] = 1;
       amideN_[N] = 1;
       continue;
@@ -793,6 +811,48 @@ bool Namer::perceive() {
     hydrN_[N] = 1;
     hydrN2_[other] = 1;
   }
+  // hydrazines R2N-NR2 and hydrazones R2C=N-NR2 (no acyl groups); hydroxylamines R2N-OR
+  auto plain_sp3_N = [&](int x) {
+    return at_[x].z == 7 && !at_[x].ring && !at_[x].arom && at_[x].q == 0 && !hydrN_[x] && !hydrN2_[x] && !nitro_[x];
+  };
+  for (int N = 0; N < n(); ++N) {
+    if (!plain_sp3_N(N)) continue;
+    for (std::size_t k = 0; k < at_[N].nb.size(); ++k) {
+      const int M = at_[N].nb[k];
+      if (at_[N].bo[k] != 1 || M < N || !plain_sp3_N(M)) continue;
+      bool ok = true;
+      int dbl = 0;
+      for (int X : {N, M})
+        for (std::size_t j = 0; j < at_[X].nb.size(); ++j) {
+          const int y = at_[X].nb[j];
+          if (y == N || y == M) continue;
+          if (at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) ok = false;
+          if (at_[X].bo[j] == 2) {
+            ++dbl;
+            for (std::size_t i = 0; i < at_[y].nb.size(); ++i)
+              if (at_[y].nb[i] != X && (at_[at_[y].nb[i]].z != 6 || at_[y].bo[i] != 1)) ok = false;
+          } else if (at_[X].bo[j] != 1) {
+            ok = false;
+          }
+        }
+      if (!ok || dbl > 1) continue;
+      hzPartner_[N] = M;
+      hzPartner_[M] = N;
+    }
+  }
+  for (int N = 0; N < n(); ++N) {
+    if (!plain_sp3_N(N) || hzPartner_[N] >= 0 || amideN_[N]) continue;
+    for (std::size_t k = 0; k < at_[N].nb.size(); ++k) {
+      const int O = at_[N].nb[k];
+      if (at_[O].z != 8 || at_[O].ring || at_[O].q != 0 || at_[N].bo[k] != 1) continue;
+      bool ok = is_OH(O);
+      if (deg(O) == 2) {
+        const int y = at_[O].nb[0] == N ? at_[O].nb[1] : at_[O].nb[0];
+        ok = at_[y].z == 6 && dO(y) < 0 && dS(y) < 0;
+      }
+      if (ok) nO_[O] = 1;
+    }
+  }
   // sulfur and phosphorus oxo groups
   std::vector<char> okO(n(), 0);
   for (int a = 0; a < n(); ++a) {
@@ -808,15 +868,37 @@ bool Namer::perceive() {
     }
     if (A.z == 16) {
       if (dO_.empty()) continue;
-      if (A.ring || A.h) return fail("cyclic or hydrido sulfur oxide at " + sym(a));
-      int nC = 0, nOH = 0, nOm = 0;
+      if (A.h) return fail("hydrido sulfur oxide at " + sym(a));
+      if (A.ring) {  // ring sulfoxide / sulfone: oxo prefixes on a lambda4 / lambda6 ring sulfur (P-14.1.3)
+        if (dO_.size() > 2 || single.size() != 2) return fail("unsupported cyclic sulfur oxide at " + sym(a));
+        for (int b : single)
+          if (!ringbond_[a][static_cast<std::size_t>(std::find(A.nb.begin(), A.nb.end(), b) - A.nb.begin())])
+            return fail("unsupported cyclic sulfur oxide at " + sym(a));
+        lambdaS_[a] = static_cast<char>(dO_.size());
+        for (int b : dO_) okO[b] = 1;
+        continue;
+      }
+      int nC = 0, nOH = 0, nOm = 0, nOR = 0, nX = 0;
       int N = -1;
       for (int b : single) {
         if (at_[b].z == 6) ++nC;
         else if (is_OH(b)) ++nOH;
         else if (is_Ominus(b)) ++nOm;
         else if (at_[b].z == 7 && !nitro_[b]) N = b;
+        else if (at_[b].z == 8 && deg(b) == 2 && !at_[b].ring && [&] {
+                   const int y = at_[b].nb[0] == a ? at_[b].nb[1] : at_[b].nb[0];
+                   return at_[y].z == 6 && dO(y) < 0 && dS(y) < 0;
+                 }())
+          ++nOR;
+        else if ((at_[b].z == 9 || at_[b].z == 17 || at_[b].z == 35 || at_[b].z == 53) && deg(b) == 1) ++nX;
         else return fail("sulfur ester or halide at " + sym(a));
+      }
+      if (dO_.size() == 2 && single.size() == 2 && nC == 1 && (nOR == 1 || nX == 1)) {
+        acyl_[a] = nOR ? Cls::SulfEster : Cls::SulfonylHalide;
+        for (int b : dO_) okO[b] = 1;
+        for (int b : single)
+          if (at_[b].z == 8) okO[b] = 1;
+        continue;
       }
       if (dO_.size() == 1 && nC == 2 && single.size() == 2) acyl_[a] = Cls::Sulfinyl;
       else if (dO_.size() == 2 && single.size() == 2 && nC == 2) acyl_[a] = Cls::Sulfonyl;
@@ -847,9 +929,13 @@ bool Namer::perceive() {
           bridge = b;
         } else return fail("unsupported phosphorus group at " + sym(a));
       }
-      if (dO_.size() != 1 || nOH != 2 || single.size() != 3) return fail("phosphorus group other than a phosphate monoester or phosphonic acid at " + sym(a));
-      if (nC == 1) acyl_[a] = Cls::Phosphonic;
-      else if (bridge >= 0) acyl_[a] = Cls::PhosMono;
+      int nOR = 0;
+      for (int b : single)
+        if (at_[b].z == 8 && deg(b) == 2) ++nOR;
+      if (dO_.size() != 1 || single.size() != 3 || nC > 1) return fail("phosphorus group other than a phosphoric or phosphonic acid derivative at " + sym(a));
+      if (nOH == 2 && nC == 1) acyl_[a] = Cls::Phosphonic;
+      else if (nOH == 2 && bridge >= 0) acyl_[a] = Cls::PhosMono;
+      else if (nOR >= 1) acyl_[a] = Cls::PhosEster;  // di-/triesters, phosphonate esters
       else return fail("unsupported phosphorus group at " + sym(a));
       okO[dO_[0]] = 1;
       for (int b : single)
@@ -906,7 +992,7 @@ bool Namer::perceive() {
           if (acyl_[a] == Cls::Thioamide && A.h > 1) return fail("unsupported thioformamide at " + sym(a));
           break;
         }
-        if (imN >= 0 && hydrN2_[imN]) {  // hydrazone carbon of a hydrazide: an ylidene on N'
+        if (imN >= 0 && (hydrN2_[imN] || hzPartner_[imN] >= 0)) {  // hydrazone carbon: an ylidene on its nitrogen
           if (nd || nt) return fail("unsupported carbon " + sym(a));
           break;
         }
@@ -924,10 +1010,12 @@ bool Namer::perceive() {
           if (!ns.empty()) {
             if (A.ring || at_[imN].ring || deg(imN) > 2) return fail("cyclic or substituted amidine at " + sym(a));
             for (int y : at_[imN].nb)
-              if (y != a && (at_[y].z != 6 || dO(y) >= 0)) return fail("amidine imino nitrogen with a heteroatom or acyl at " + sym(imN));
+              if (y != a && !((at_[y].z == 6 && dO(y) < 0) || is_OH(y))) return fail("amidine imino nitrogen with a heteroatom or acyl at " + sym(imN));
             acyl_[a] = ns.size() == 1 ? Cls::Amidine : Cls::Guanidine;
             amidN_[imN] = 1;
             for (int b : ns) amideN_[b] = 1;
+            for (int y : at_[imN].nb)
+              if (is_OH(y)) hydroxamO_[y] = 1;  // amidoxime: N'-hydroxy
             break;
           }
           for (int y : at_[imN].nb) {
@@ -979,12 +1067,22 @@ bool Namer::perceive() {
                 for (int y : at_[x].nb) {
                   if (y == a || hydroxamO_[y] || hydrN2_[y]) continue;
                   if (at_[y].z != 6) return fail("N-heteroatom amide at " + sym(x));
-                  if (dO(y) >= 0) return fail("imide or diacylamine at " + sym(x));
+                  if (dO(y) >= 0) {  // diacylamine: one acyl is the amide, the other an N-acyl prefix
+                    int het = 0;
+                    for (int w : at_[y].nb) het += at_[w].z != 6 && w != dO(y);
+                    if (het != 1 || at_[y].ring) return fail("imide or diacylamine at " + sym(x));
+                  }
                 }
                 acyl_[a] = hydrN_[x] ? Cls::Hydrazide : Cls::Amide;
                 amideN_[x] = 1;
               }
-            } else return fail("acyl halide or thioester at " + sym(a));
+            } else if (at_[x].z == 9 || at_[x].z == 17 || at_[x].z == 35 || at_[x].z == 53) {
+              acyl_[a] = Cls::AcylHalide;
+            } else if (at_[x].z == 16 && deg(x) == 2 && !at_[x].ring && acyl_[x] == Cls::None) {
+              const int y = at_[x].nb[0] == a ? at_[x].nb[1] : at_[x].nb[0];
+              if (at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) return fail("unsupported thioester at " + sym(a));
+              acyl_[a] = Cls::ThioEster;
+            } else return fail("unsupported acyl group at " + sym(a));
           } else if (hs.size() == 2) {
             // carbonic acid derivatives: carbonates, carbamates, ureas and ring-N carboxylic acids/esters/amides
             auto esterO = [&](int x) {
@@ -1021,7 +1119,7 @@ bool Namer::perceive() {
         break;
       }
       case 7: {
-        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a]) break;
+        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0) break;
         if (amideN_[a]) {  // N-hydroxy amide nitrogen, checked with its acyl carbon
           bool hx = false;
           for (int b : A.nb) hx |= hydroxamO_[b] != 0;
@@ -1034,13 +1132,13 @@ bool Namer::perceive() {
           const int b = A.nb[k];
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
           const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl);
-          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
+          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b]) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
         break;
       }
       case 8: {
-        if (nitroO[a] || okO[a] || anionO_[a] || hydroxamO_[a]) break;
+        if (nitroO[a] || okO[a] || anionO_[a] || hydroxamO_[a] || nO_[a]) break;
         {
           bool oxime = false;
           for (int b : A.nb) oxime |= imineN_[b] != 0;
@@ -1057,7 +1155,7 @@ bool Namer::perceive() {
         if (acyl_[a] == Cls::None) return fail("unsupported phosphorus at " + sym(a));
         break;
       case 16: {
-        if (A.arom || acyl_[a] != Cls::None) break;
+        if (A.arom || acyl_[a] != Cls::None || lambdaS_[a]) break;
         if (deg(a) == 1 && A.bo[0] == 2 && at_[A.nb[0]].z == 6) break;  // thiocarbonyl
         if (val != 2) return fail("sulfur " + sym(a) + " in a higher oxidation state (sulfoxides, sulfones, sulfonic acids)");
         if (deg(a) == 0) return fail("hydrogen sulfide");
@@ -1066,14 +1164,16 @@ bool Namer::perceive() {
         break;
       }
       case 9: case 17: case 35: case 53:
-        if (deg(a) != 1 || A.bo[0] != 1 || at_[A.nb[0]].z != 6) return fail("halogen " + sym(a) + " not bonded to carbon");
+        if (deg(a) != 1 || A.bo[0] != 1 || (at_[A.nb[0]].z != 6 && acyl_[A.nb[0]] != Cls::SulfonylHalide))
+          return fail("halogen " + sym(a) + " not bonded to carbon");
         break;
       default:
         return fail("element " + std::string(element_symbol(static_cast<std::uint8_t>(A.z))) + " is outside the naming scope (C, H, N, O, S, halogens)");
     }
   }
   for (int a = 0; a < n(); ++a)
-    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || at_[a].ring || at_[a].arom)
+    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || hzPartner_[a] >= 0 || at_[a].ring ||
+        at_[a].arom)
       amineN_[a] = 0;
   return true;
 }
@@ -1292,6 +1392,14 @@ std::optional<Named> Namer::sulfonyl_name(int S, int from) {
   return build_sub(Mode::Carbonyl, S, from, link, acyl_[S] == Cls::Sulfinyl ? "sulfinyl" : "sulfonyl");
 }
 
+// "dimethoxyphosphoryl", "[hydroxy(methyl)phosphoryl]": phosphorus P reached from `from`.
+std::optional<Named> Namer::phosphoryl_name(int P, int from) {
+  std::vector<int> xs;
+  for (std::size_t k = 0; k < at_[P].nb.size(); ++k)
+    if (at_[P].nb[k] != from && at_[P].bo[k] == 1) xs.push_back(at_[P].nb[k]);
+  return ligands(xs, P, "phosphoryl");
+}
+
 // "ethyl(methyl)" + tail for the substituents xs of nitrogen n_atom.
 std::optional<Named> Namer::ligands(const std::vector<int>& xs, int n_atom, const std::string& tail) {
   Named out;
@@ -1329,6 +1437,21 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
   if (bo == 2) {
     if (A.z == 8 && deg(q) == 1) return Named{"oxo", false, {}};
     if (A.z == 16 && deg(q) == 1) return Named{"sulfanylidene", false, {}};
+    if (A.z == 7 && hzPartner_[q] >= 0) {  // =N-NR2: (2,2-dimethylhydrazinylidene)
+      const int M = hzPartner_[q];
+      std::vector<std::pair<std::string, Named>> e;
+      Named out;
+      for (std::size_t k = 0; k < at_[M].nb.size(); ++k) {
+        if (at_[M].nb[k] == q) continue;
+        auto R = sub(at_[M].nb[k], M, at_[M].bo[k]);
+        if (!R) return std::nullopt;
+        out.stereo.insert(out.stereo.end(), R->stereo.begin(), R->stereo.end());
+        e.push_back({"2", *R});
+      }
+      out.text = format_prefixes(e, false) + "hydrazinylidene";
+      out.compound = !e.empty();
+      return out;
+    }
     if (A.z == 7 && imineN_[q]) {  // =N-H, =N-R, =N-OH, =N-OR
       int x = -1;
       for (int y : A.nb)
@@ -1353,6 +1476,21 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     case 8: {
       if (others.empty()) return Named{A.q == -1 ? "oxido" : "hydroxy", false, {}};
       if (others.size() == 1 && at_[others[0]].z == 15 && acyl_[others[0]] == Cls::PhosMono) return Named{"phosphonooxy", false, {}};
+      if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfEster) {  // (methanesulfonyl)oxy
+        auto R = sulfonyl_name(others[0], q);
+        if (!R) return std::nullopt;
+        return Named{enclose(R->text) + "oxy", true, R->stereo};
+      }
+      if (others.size() == 1 && at_[others[0]].z == 15 && acyl_[others[0]] == Cls::PhosEster) {  // (dimethoxyphosphoryl)oxy
+        auto R = phosphoryl_name(others[0], q);
+        if (!R) return std::nullopt;
+        return Named{enclose(R->text) + "oxy", true, R->stereo};
+      }
+      if (others.size() == 1 && nO_[q] && at_[others[0]].z == 7) {  // -O-NR2: (aminooxy)
+        auto R = sub(others[0], q, 1);
+        if (!R) return std::nullopt;
+        return Named{(R->compound ? enclose(R->text) : R->text) + "oxy", true, R->stereo};
+      }
       if (others.size() == 1 && imineN_[others[0]]) {
         auto R = sub(others[0], q, 1);
         if (!R) return std::nullopt;
@@ -1376,10 +1514,21 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     }
     case 15:
       if (acyl_[q] == Cls::Phosphonic) return Named{"phosphono", false, {}};
+      if (acyl_[q] == Cls::PhosEster || acyl_[q] == Cls::PhosMono) return phosphoryl_name(q, from);
       return fail_n("unsupported phosphorus substituent at " + sym(q));
     case 16: {
       switch (acyl_[q]) {
         case Cls::SulfonicAcid: return Named{"sulfo", false, {}};
+        case Cls::SulfEster: {  // (methoxysulfonyl)
+          auto alk = sub(ester_O(q), q, 1);
+          if (!alk) return std::nullopt;
+          return Named{(alk->compound ? enclose(alk->text) : alk->text) + "sulfonyl", true, alk->stereo};
+        }
+        case Cls::SulfonylHalide:
+          for (int x : A.nb)
+            if (at_[x].z == 9 || at_[x].z == 17 || at_[x].z == 35 || at_[x].z == 53)
+              return Named{std::string(at_[x].z == 9 ? "fluoro" : at_[x].z == 17 ? "chloro" : at_[x].z == 35 ? "bromo" : "iodo") + "sulfonyl", true, {}};
+          return fail_n("unsupported sulfonyl halide at " + sym(q));
         case Cls::Sulfonate: return Named{"sulfonato", false, {}};
         case Cls::Sulfonamide: {
           int N = -1;
@@ -1418,6 +1567,24 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       if (others.empty()) return Named{"amino", false, {}};
       if (others.size() == 1 && hydrN2_[others[0]] && deg(others[0]) == 1) return Named{"hydrazinyl", false, {}};
+      if (hzPartner_[q] >= 0) {  // -NR-NR2: (2-phenylhydrazin-1-yl)
+        const int M = hzPartner_[q];
+        std::vector<std::pair<std::string, Named>> e;
+        Named out;
+        for (int X : {q, M})
+          for (std::size_t k = 0; k < at_[X].nb.size(); ++k) {
+            const int y = at_[X].nb[k];
+            if (y == from || y == q || y == M) continue;
+            auto R = sub(y, X, at_[X].bo[k]);
+            if (!R) return std::nullopt;
+            out.stereo.insert(out.stereo.end(), R->stereo.begin(), R->stereo.end());
+            e.push_back({X == q ? "1" : "2", *R});
+          }
+        if (e.empty()) return Named{"hydrazinyl", false, {}};
+        out.text = format_prefixes(e, false) + "hydrazin-1-yl";
+        out.compound = true;
+        return out;
+      }
       if (others.size() == 1 && acyl_[others[0]] == Cls::Guanidine) {
         bool plain = true;
         for (int x : at_[others[0]].nb)
@@ -1467,6 +1634,20 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         if (xs.empty()) return Named{"carbamothioyl", false, {}};
         return ligands(xs, N, "carbamothioyl");
       }
+      if (dO(q) >= 0 && at_[from].z != 6 && acyl_[q] != Cls::Carbamate && acyl_[q] != Cls::Urea) return acyl_name(q, from);
+      if (dO(q) >= 0 && acyl_[q] == Cls::AcylHalide) {
+        for (int x : A.nb)
+          if (x != from && (at_[x].z == 9 || at_[x].z == 17 || at_[x].z == 35 || at_[x].z == 53))
+            return Named{std::string("carbono") + (at_[x].z == 9 ? "fluor" : at_[x].z == 17 ? "chlor" : at_[x].z == 35 ? "brom" : "iod") + "idoyl", false, {}};
+      }
+      if (dO(q) >= 0 && acyl_[q] == Cls::ThioEster) {
+        int S = -1;
+        for (int x : A.nb)
+          if (at_[x].z == 16 && x != from) S = x;
+        auto R = sub(S, q, 1);
+        if (!R) return std::nullopt;
+        return Named{(R->compound ? enclose(R->text) : R->text) + "carbonyl", true, R->stereo};
+      }
       if (dO(q) >= 0) {
         switch (acyl_[q]) {
           case Cls::Acid: return Named{"carboxy", false, {}};
@@ -1506,8 +1687,6 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
   if (c.kind == PKind::Chain)
     for (int a : c.atoms)
       if (principal_acyl(a)) c.inchain = true;
-  for (int a : c.atoms)
-    if (ringCat_[a] && !(mol && sp.principal == Cls::RingCation)) return fail("ring cation that is not the principal characteristic group");
   bool nprefix = false;
   auto consume_acyl = [&](int A, int at) -> bool {
     for (int b : at_[A].nb) {
@@ -1515,7 +1694,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
       if (at_[b].z == 6) return fail("acyl carbon " + sym(A) + " with a second carbon");
       if (at_[b].ring) return fail("acyl group on a ring atom outside the parent at " + sym(A));
       used[b] = 1;
-      if (acyl_[A] == Cls::Ester && at_[b].z == 8 && deg(b) == 2) c.ester_o.push_back({b, at});
+      if ((acyl_[A] == Cls::Ester || acyl_[A] == Cls::SulfEster || acyl_[A] == Cls::ThioEster) && b == ester_O(A)) c.ester_o.push_back({b, at});
       if (acyl_[A] == Cls::Hydrazide && at_[b].z == 7)
         for (int x : at_[b].nb) {
           if (x == A) continue;
@@ -2892,6 +3071,8 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
   if (sp.mode == Mode::Oyl && o[0] != sp.root) valid = false;
   std::vector<std::string> suf, un, ene, pre;
   for (int a : c.suffix_at) suf.push_back(L[a]);
+  for (int a : o)  // cationic centres expressed by "-ium" next to another suffix (P-73.1.1.2)
+    if (ringCat_[a] && !(sp.mode == Mode::Molecule && sp.principal == Cls::RingCation)) suf.push_back(L[a]);
   {
     std::string ind;
     std::vector<std::string> hyd;
@@ -2969,6 +3150,36 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
   return s;
 }
 
+// Lambda convention for ring sulfur oxides: "1,2-benzothiazole" -> "1λ6,2-benzothiazole",
+// "thiolane" -> "1λ6-thiolane".
+std::string Namer::lambda_name(std::string name, const Cand& c, const std::vector<int>& o) const {
+  const auto L = locants(c, o);
+  for (int a : o) {
+    if (!lambdaS_[a]) continue;
+    const std::string tag = L[a] + (lambdaS_[a] == 1 ? "λ4" : "λ6");
+    std::size_t end = 0;
+    while (end < name.size() && ((name[end] >= '0' && name[end] <= '9') || name[end] == ',' || (name[end] >= 'a' && name[end] <= 'z' && end > 0 &&
+                                                                                                  name[end - 1] >= '0' && name[end - 1] <= '9')))
+      ++end;
+    bool done = false;
+    if (end > 0 && end < name.size() && name[end] == '-') {
+      std::string list = name.substr(0, end), out;
+      std::size_t pos = 0;
+      while (pos <= list.size()) {
+        std::size_t comma = list.find(',', pos);
+        if (comma == std::string::npos) comma = list.size();
+        std::string tok = list.substr(pos, comma - pos);
+        if (tok == L[a] && !done) tok = tag, done = true;
+        out += (out.empty() ? "" : ",") + tok;
+        pos = comma + 1;
+      }
+      if (done) name = out + name.substr(end);
+    }
+    if (!done) name = tag + "-" + name;
+  }
+  return name;
+}
+
 std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_unsat, bool& saturated) const {
   saturated = true;
   if (c.kind == PKind::Benzene) return "benzene";
@@ -2979,7 +3190,7 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
     std::string s;
     if (!hyd.empty()) s = join_locants(hyd) + "-" + multiplier(static_cast<int>(hyd.size()), false) + "hydro";
     if (!ind.empty()) s += (s.empty() ? "" : "-") + ind + "H-";
-    append_piece(s, rs_[c.rsys].names[static_cast<std::size_t>(order_index(c, o))]);
+    append_piece(s, lambda_name(rs_[c.rsys].names[static_cast<std::size_t>(order_index(c, o))], c, o));
     return s;
   }
   const std::size_t m = o.size();
@@ -2999,6 +3210,9 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
       for (int x : o)
         if (at_[x].z == z) l.push_back(L[x]);
       if (l.empty()) continue;
+      for (auto& x : l)
+        for (int a2 : o)
+          if (at_[a2].z == 16 && lambdaS_[a2] && L[a2] == x) x += lambdaS_[a2] == 1 ? "λ4" : "λ6";
       rep_prefixes += (rep_prefixes.empty() ? "" : "-") + join_locants(l) + "-" + multiplier(static_cast<int>(l.size()), false) + word;
     }
     const RingSys& R = rs_[c.rsys];
@@ -3074,7 +3288,17 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
 
   // parent hydride + suffix
   bool saturated = true;
-  const std::string hyd = hydride(c, o, omit_unsat, saturated);
+  std::string hyd = hydride(c, o, omit_unsat, saturated);
+  {
+    std::vector<std::string> ium;
+    for (int a : o)
+      if (ringCat_[a] && !(mol && sp.principal == Cls::RingCation)) ium.push_back(L[a]);
+    if (!ium.empty()) {
+      if (c.kind == PKind::Chain) return fail("cationic chain atom"), std::nullopt;
+      hyd = attach(hyd, join_locants(ium), multiplier(static_cast<int>(ium.size()), false) + "ium");
+      saturated = false;  // "...-1-ium" stays whole before the next suffix
+    }
+  }
   std::string core;
   const int k = static_cast<int>(c.suffix_at.size());
   auto suffix_locs = [&]() {
@@ -3106,6 +3330,8 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
         case Cls::Amine: word = "amine"; break;
         case Cls::Carboxylate: word = c.inchain ? "oate" : "carboxylate"; break;
         case Cls::Sulfonate: word = "sulfonate"; break;
+        case Cls::SulfEster: word = "sulfonate"; break;
+        case Cls::ThioEster: word = c.inchain ? "thioate" : "carbothioate"; break;
         case Cls::Olate: word = "olate"; break;
         case Cls::Ammonium: word = "aminium"; break;
         case Cls::RingCation: word = "ium"; break;
@@ -3308,7 +3534,7 @@ std::optional<std::string> Namer::run() {
     if (static_cast<int>(c) < static_cast<int>(principal)) principal = c;
   };
   for (int a = 0; a < n(); ++a) {
-    if (acyl_[a] != Cls::None && static_cast<int>(acyl_[a]) < 50) senior(acyl_[a]);
+    if (acyl_[a] != Cls::None && static_cast<int>(acyl_[a]) < 500) senior(acyl_[a]);
     if (is_OH(a) && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Acid) senior(Cls::Alcohol);
     if (is_SH(a)) senior(Cls::Thiol);
     if (amineN_[a]) senior(Cls::Amine);
@@ -3316,6 +3542,7 @@ std::optional<std::string> Namer::run() {
     if (ringCat_[a]) senior(Cls::RingCation);
     if (anionO_[a] && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Carboxylate) senior(Cls::Olate);
     if (imineC_[a]) senior(Cls::Imine);
+    if (hzPartner_[a] >= 0) senior(Cls::Hydrazine);
   }
   std::optional<std::string> result;
   std::vector<Key> cited;
@@ -3345,6 +3572,39 @@ std::optional<std::string> Namer::run() {
     }
     if (!result) {
       if (err_.empty()) err_ = "phosphorus acid derivative could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::Hydrazine) {
+    // hydrazine as parent (P-68.3.1.2): "phenylhydrazine", "1,1-dimethylhydrazine", "(propan-2-ylidene)hydrazine"
+    for (int N = 0; N < n(); ++N) {
+      const int M = hzPartner_[N];
+      if (M < N) continue;
+      std::vector<Named> sN, sM;
+      std::vector<Key> extra;
+      bool ok = true;
+      for (int X : {N, M})
+        for (std::size_t k = 0; k < at_[X].nb.size() && ok; ++k) {
+          const int y = at_[X].nb[k];
+          if (y == N || y == M) continue;
+          auto R = sub(y, X, at_[X].bo[k]);
+          if (!R) { ok = false; break; }
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          (X == N ? sN : sM).push_back(*R);
+        }
+      if (!ok) continue;
+      auto least = [](const std::vector<Named>& v) {
+        std::string m = "~";
+        for (const auto& x : v) m = std::min(m, alpha_key(x.text));
+        return m;
+      };
+      if (sM.size() > sN.size() || (sM.size() == sN.size() && least(sM) < least(sN))) std::swap(sN, sM);
+      std::vector<std::pair<std::string, Named>> e;
+      for (const auto& x : sN) e.push_back({"1", x});
+      for (const auto& x : sM) e.push_back({"2", x});
+      finish(Built{}, format_prefixes(e, e.size() == 1) + "hydrazine", extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "hydrazine could not be named";
       return std::nullopt;
     }
   } else if (principal == Cls::Guanidine) {
@@ -3453,7 +3713,66 @@ std::optional<std::string> Namer::run() {
       if (err_.empty()) err_ = "carbonic acid derivative could not be named";
       return std::nullopt;
     }
-  } else if (principal != Cls::Ester) {
+  } else if (principal == Cls::AcylHalide || principal == Cls::SulfonylHalide) {
+    // acid halides by functional class names (P-65.5.1): "benzoyl chloride", "methanesulfonyl chloride"
+    for (int a = 0; a < n(); ++a) {
+      if (acyl_[a] != principal) continue;
+      int X = -1;
+      for (int x : at_[a].nb)
+        if (at_[x].z == 9 || at_[x].z == 17 || at_[x].z == 35 || at_[x].z == 53) X = x;
+      auto R = principal == Cls::AcylHalide ? acyl_name(a, X) : sulfonyl_name(a, X);
+      if (!R) continue;
+      const int z = at_[X].z;
+      finish(Built{}, R->text + (z == 9 ? " fluoride" : z == 17 ? " chloride" : z == 35 ? " bromide" : " iodide"), R->stereo);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "acid halide could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::PhosEster) {
+    // esters of phosphoric and phosphonic acids (P-67.1.3.2): "triethyl phosphate", "dimethyl methylphosphonate",
+    // "diethyl hydrogen phosphate"
+    for (int P = 0; P < n(); ++P) {
+      if (acyl_[P] != Cls::PhosEster) continue;
+      std::vector<std::string> org;
+      std::vector<Key> extra;
+      int hydrogens = 0;
+      std::string cpart;
+      bool ok = true;
+      for (std::size_t k = 0; k < at_[P].nb.size() && ok; ++k) {
+        const int x = at_[P].nb[k];
+        if (at_[P].bo[k] != 1) continue;
+        if (is_OH(x)) ++hydrogens;
+        else if (at_[x].z == 8) {
+          const int r = at_[x].nb[0] == P ? at_[x].nb[1] : at_[x].nb[0];
+          auto R = sub(r, x, 1);
+          if (!R) ok = false;
+          else org.push_back(organyl(*R)), extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        } else if (at_[x].z == 6) {
+          auto R = sub(x, P, 1);
+          if (!R) ok = false;
+          else cpart = (R->compound ? enclose(R->text) : R->text), extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        }
+      }
+      if (!ok) continue;
+      std::map<std::string, int> g;
+      for (const auto& o : org) ++g[o];
+      std::vector<std::pair<std::string, int>> gv(g.begin(), g.end());
+      std::sort(gv.begin(), gv.end(), [](const auto& a2, const auto& b2) { return alpha_key(a2.first) < alpha_key(b2.first); });
+      std::string name;
+      for (const auto& [t, k] : gv) {
+        const bool comp = t[0] == '(' || t[0] == '[' || has_digit(t);
+        name += (name.empty() ? "" : " ") + (k > 1 ? (comp ? multiplier(k, true) + enclose(t) : multiplier(k, false) + t) : t);
+      }
+      if (hydrogens) name += " " + multiplier(hydrogens, false) + "hydrogen";
+      name += " " + (cpart.empty() ? std::string("phosphate") : cpart + "phosphonate");
+      finish(Built{}, name, extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "phosphorus ester could not be named";
+      return std::nullopt;
+    }
+  } else if (principal != Cls::Ester && principal != Cls::ThioEster && principal != Cls::SulfEster) {
     Spec sp;
     sp.region.assign(n(), 1);
     sp.pok.assign(n(), 1);
@@ -3468,7 +3787,7 @@ std::optional<std::string> Namer::run() {
     // esters: functional class names "alkyl ...oate" (P-65.6.3.2)
     std::vector<int> E;
     for (int a = 0; a < n(); ++a)
-      if (acyl_[a] == Cls::Ester) E.push_back(a);
+      if (acyl_[a] == principal) E.push_back(a);
     std::vector<std::vector<int>> attempts;
     {
       std::vector<char> blocked(n(), 0);
@@ -3489,7 +3808,7 @@ std::optional<std::string> Namer::run() {
         sp.pok[a] = 1;
       }
       sp.region = region_from(att[0], blocked);
-      sp.principal = Cls::Ester;
+      sp.principal = principal;
       auto b = build(sp);
       if (!b || b->ester_o.empty()) continue;
       std::map<std::string, std::pair<int, bool>> alk;
@@ -3498,16 +3817,18 @@ std::optional<std::string> Namer::run() {
       bool ok = true;
       for (const auto& [o, loc] : b->ester_o) {
         const int x0 = at_[o].nb[0], x1 = at_[o].nb[1];
-        const int r = (acyl_[x0] == Cls::Ester && sp.pok[x0]) ? x1 : x0;
+        const int r = (acyl_[x0] == principal && sp.pok[x0]) ? x1 : x0;
         auto R = sub(r, o, 1);
         if (!R) {
           ok = false;
           break;
         }
-        auto& g = alk[organyl(*R)];
+        const std::string org = principal == Cls::ThioEster ? "S-" + (R->compound ? enclose(R->text) : R->text)  // S-methyl ethanethioate
+                                                             : organyl(*R);
+        auto& g = alk[org];
         ++g.first;
         g.second = R->compound;
-        alk_locs[organyl(*R)].push_back(loc);
+        alk_locs[org].push_back(loc);
         extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
       }
       if (!ok) continue;

@@ -120,6 +120,27 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(C1Cc2c(sc3ncnc(N)c23)C1)", R"(6,7-dihydro-5H-cyclopenta[4,5]thieno[2,3-d]pyrimidin-4-amine)"},
       {R"(Clc1ccc2c(c1)C(c1ccccc1)=NCc1nncn1-2)", R"(8-chloro-6-phenyl-4H-[1,2,4]triazolo[4,3-a][1,4]benzodiazepine)"},
       {R"(CN1CCN(CC1)C1=Nc2ccccc2Sc2ccc(C)cc12)", R"(2-methyl-11-(4-methylpiperazin-1-yl)benzo[b][1,4]benzothiazepine)"},
+      {R"(C[N+]1(C)CCCCC1)", R"(1,1-dimethylpiperidin-1-ium)"},
+      {R"(C[NH+]1CCCC1C(=O)[O-])", R"(1-methylpyrrolidin-1-ium-2-carboxylate)"},
+      {R"(C[n+]1ccc(cc1)-c1cc[n+](C)cc1)", R"(1-methyl-4-(1-methylpyridin-1-ium-4-yl)pyridin-1-ium)"},
+      {R"(NNc1ccccc1)", R"(phenylhydrazine)"},
+      {R"(CC(C)=NNc1ccccc1)", R"(1-phenyl-2-(propan-2-ylidene)hydrazine)"},
+      {R"(OC(=O)CC=NNc1ccccc1)", R"(3-(2-phenylhydrazinylidene)propanoic acid)"},
+      {R"(CON(C)C(=O)c1ccccc1)", R"(N-methoxy-N-methylbenzamide)"},
+      {R"(OC(=O)CCN(C)O)", R"(3-[hydroxy(methyl)amino]propanoic acid)"},
+      {R"(O=S1(=O)CCCC1)", R"(1,1-dioxo-1λ6-thiolane)"},
+      {R"(O=C1NS(=O)(=O)c2ccccc12)", R"(1,1-dioxo-2,3-dihydro-1λ6,2-benzothiazol-3-one)"},
+      {R"(NS(=O)(=O)c1cc2c(cc1Cl)NCNS2(=O)=O)", R"(6-chloro-1,1-dioxo-3,4-dihydro-2H-1λ6,2,4-benzothiadiazine-7-sulfonamide)"},
+      {R"(ClC(=O)c1ccccc1)", R"(benzoyl chloride)"},
+      {R"(CS(=O)(=O)Cl)", R"(methanesulfonyl chloride)"},
+      {R"(Cc1ccc(S(=O)(=O)OCC)cc1)", R"(ethyl 4-methylbenzene-1-sulfonate)"},
+      {R"(CC(=O)SCCN)", R"(S-(2-aminoethyl) ethanethioate)"},
+      {R"(COP(C)(=O)OC)", R"(dimethyl methylphosphonate)"},
+      {R"(CCOP(=O)(O)OCC)", R"(diethyl hydrogen phosphate)"},
+      {R"(CC(=O)NC(C)=O)", R"(N-acetylacetamide)"},
+      {R"(NC(=NO)c1ccccc1)", R"(N'-hydroxybenzenecarboximidamide)"},
+      {R"(OC(=O)c1ccc(OS(C)(=O)=O)cc1)", R"(4-[(methanesulfonyl)oxy]benzoic acid)"},
+      {R"(OC(=O)CCOP(=O)(OC)OC)", R"(3-[(dimethoxyphosphoryl)oxy]propanoic acid)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -132,7 +153,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1cc2ccc3cccc4ccc(c1)c2c34", "NN", "c1ccc(N=Nc2ccccc2)cc1",
+  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)OC(C)=O", "c1cc2ccc3cccc4ccc(c1)c2c34", "c1ccc(N=Nc2ccccc2)cc1", "COP(=S)(OC)OC",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
