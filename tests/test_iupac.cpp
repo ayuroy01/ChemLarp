@@ -141,6 +141,17 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(NC(=NO)c1ccccc1)", R"(N'-hydroxybenzenecarboximidamide)"},
       {R"(OC(=O)c1ccc(OS(C)(=O)=O)cc1)", R"(4-[(methanesulfonyl)oxy]benzoic acid)"},
       {R"(OC(=O)CCOP(=O)(OC)OC)", R"(3-[(dimethoxyphosphoryl)oxy]propanoic acid)"},
+      {R"(CC(=O)OC(C)=O)", R"(acetic anhydride)"},
+      {R"(CCC(=O)OC(C)=O)", R"(acetic propanoic anhydride)"},
+      {R"(COP(=O)(O)OP(=O)(O)O)", R"(methyl trihydrogen diphosphate)"},
+      {R"(Nc1ncnc2c1ncn2C1OC(COP(=O)(O)OP(=O)(O)OP(=O)(O)O)C(O)C1O)", R"([5-(6-amino-9H-purin-9-yl)-3,4-dihydroxyoxolan-2-yl]methyl tetrahydrogen triphosphate)"},
+      {R"(OC(=O)CCOP(=O)(O)OP(=O)(O)O)", R"(3-{[hydroxy(phosphonooxy)phosphoryl]oxy}propanoic acid)"},
+      {R"(COC1=C(C=C(C=C1)C(=O)NNC(=O)C2=CC(=CC=C2)O)OC)", R"(N'-(3-hydroxybenzoyl)-3,4-dimethoxybenzohydrazide)"},
+      {R"(CCOC1=CC=C(C=C1)NC(=S)NC(=O)C(C)(C)C)", R"(N-[(4-ethoxyphenyl)carbamothioyl]-2,2-dimethylpropanamide)"},
+      {R"(C[Si](C)(C)c1ccccc1)", R"(trimethyl(phenyl)silane)"},
+      {R"(CC(C)(C)[Si](C)(C)OCC(=O)O)", R"(2-{[dimethyl(2-methylpropan-2-yl)silyl]oxy}acetic acid)"},
+      {R"(OCCOS(=O)(=O)O)", R"(2-hydroxyethyl hydrogen sulfate)"},
+      {R"(C(C(C(=O)O)N)S(=O)O)", R"(2-amino-3-sulfinopropanoic acid)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -153,7 +164,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)OC(C)=O", "c1cc2ccc3cccc4ccc(c1)c2c34", "c1ccc(N=Nc2ccccc2)cc1", "COP(=S)(OC)OC",
+  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "c1cc2ccc3cccc4ccc(c1)c2c34", "c1ccc(N=Nc2ccccc2)cc1", "COP(=S)(OC)OC",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
