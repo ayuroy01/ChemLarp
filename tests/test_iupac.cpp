@@ -171,6 +171,16 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(O=C1OCCCCCCCCCCC=Cc2ccccc12)", R"(3-oxabicyclo[14.4.0]icosa-1(20),14,16,18-tetraen-2-one)"},
       {R"(C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2)", R"(21,22,23,24-tetraazapentacyclo[16.2.1.1^{3,6}.1^{8,11}.1^{13,16}]tetracosa-1(20),2,4,6(24),7,9,11(23),12,14,16,18-undecaene)"},
       {R"(C1C2CC3CC1CC(C2)O3)", R"(2-oxatricyclo[3.3.1.1^{3,7}]decane)"},
+      {R"(CCN1C(=O)/C(=C/C2=CC=C(C=C2)OCC#C)/SC1=NC3=CC=C(C=C3)OC)", R"(3-ethyl-2-[(4-methoxyphenyl)imino]-5-((Z)-{4-[(prop-2-yn-1-yl)oxy]phenyl}methylidene)-1,3-thiazolidin-4-one)"},
+      {R"(CC1=CC2=C(C=C1)N(C(=NC(=O)C3=CC=CC=C3Cl)S2)C)", R"(2-chloro-N-(3,6-dimethyl-2,3-dihydro-1,3-benzothiazol-2-ylidene)benzamide)"},
+      {R"(C1=CC(=CC(=C1)[N+](=O)[O-])C=NN2C=NN=C2S)", R"(4-{[(3-nitrophenyl)methylidene]amino}-4H-1,2,4-triazole-3-thiol)"},
+      {R"(CC(C)=NNC(N)=O)", R"(N-[(propan-2-ylidene)amino]urea)"},
+      {R"(c1ccccc1P(=O)(c1ccccc1)c1ccccc1)", R"(triphenyl-λ5-phosphanone)"},
+      {R"(c1ccccc1P(c1ccccc1)c1ccccc1)", R"(triphenylphosphane)"},
+      {R"(CP(=O)(O)c1ccccc1)", R"(methyl(phenyl)phosphinic acid)"},
+      {R"(CCOP(=S)(OCC)Oc1ccc(cc1)[N+](=O)[O-])", R"(O,O-diethyl O-(4-nitrophenyl) phosphorothioate)"},
+      {R"(COP(=S)(OC)SCC(=O)OC)", R"(methyl 2-[(dimethoxyphosphorothioyl)sulfanyl]acetate)"},
+      {R"(CCOP(=O)(OCC)SCCN(CC)CC)", R"(S-[2-(diethylamino)ethyl] O,O-diethyl phosphorothioate)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -183,7 +193,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "COP(=S)(OC)OC",
+  for (const char* smiles : {"CC[B](C)C", "CCO.CCCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
