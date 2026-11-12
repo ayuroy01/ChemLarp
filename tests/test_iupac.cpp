@@ -253,6 +253,14 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"COP(=O)(O)OP(=O)(O)OC", "[hydroxy(methoxy)phosphoryl] methyl hydrogen phosphate"},
       {"COP(=O)(O)OP(=O)(O)OP(=O)(O)OC", "bis[hydroxy(methoxy)phosphoryl] hydrogen phosphate"},
       {"NCCOP(=O)(O)OP(=O)(O)OCC", "2-aminoethyl [ethoxy(hydroxy)phosphoryl] hydrogen phosphate"},
+      // ring phosphorus: Hantzsch-Widman and fusion names, lambda5 convention (P-22.2.2, P-25.3, P-14.1.3)
+      {"C1COP(=O)(O)OC1", "2-hydroxy-2-oxo-1,3,2λ5-dioxaphosphinane"},
+      {"C1CNP(=O)(OC1)N(CCCl)CCCl", "N,N-bis(2-chloroethyl)-2-oxo-1,3,2λ5-oxazaphosphinan-2-amine"},
+      {"C1CCP(c2ccccc2)CC1", "1-phenylphosphinane"},
+      {"C1C2C(C(C(O2)N3C=NC4=C(N=CN=C43)N)O)OP(=O)(O1)O",
+       "6-(6-amino-9H-purin-9-yl)-2-oxo-4a,6,7,7a-tetrahydro-4H-2λ5-furo[3,2-d][1,3,2]dioxaphosphinine-2,7-diol"},
+      {"C1(C(C(C2C(C1O)OP(=O)(O2)O)O)O)O", "2-oxo-3a,4,5,6,7,7a-hexahydro-1,3,2λ5-benzodioxaphosphole-2,4,5,6,7-pentaol"},
+      {"CC1(C(COP(=O)(OP(=O)(O1)O)O)O)CO", "6-(hydroxymethyl)-6-methyl-2,4-dioxo-1,3,5,2λ5,4λ5-trioxadiphosphocane-2,4,7-triol"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -265,7 +273,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "C1COP(=O)(O)O1", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
+  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "C1=CC=CP1C", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)C1(CC1)c1ccccc21"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);

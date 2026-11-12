@@ -432,7 +432,7 @@ enum class Cls : int {
   SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
-  Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, None = 999
+  Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, RingP = 530, None = 999
 };
 
 bool is_acyl(Cls c) {
@@ -575,7 +575,8 @@ class Namer {
   std::vector<char> amineN_, amideN_, nitro_, imineC_, imineN_, cationN_, ringCat_, anionO_;
   std::vector<char> hydrN_, hydrN2_, hydroxamO_;
   std::vector<char> amidN_;  // imino nitrogen of an amidine or guanidine
-  std::vector<char> lambdaS_;   // ring sulfur with 1 or 2 oxo groups (lambda4 / lambda6)
+  std::vector<char> lambdaS_;   // ring sulfur with 1 or 2 oxo groups (lambda4 / lambda6); ring P(=X) (5: lambda5)
+  std::string lambda_tag(int a) const { return lambdaS_[a] == 5 ? "λ5" : lambdaS_[a] == 1 ? "λ4" : "λ6"; }
   std::vector<char> thioP_;     // sulfur of a thiophosphate (P=S or P-S-C)
   std::vector<int> hzPartner_;  // hydrazine / hydrazone nitrogens: the other nitrogen, else -1
   std::vector<int> azoPartner_;  // R-N=N-R': the other nitrogen, else -1
@@ -1103,7 +1104,53 @@ bool Namer::perceive() {
       else return fail("unsupported multiple bond at " + sym(a));
     }
     if (A.z == 15) {  // phosphanes, phosphine oxides, phosphinic acids, thiophosphates
-      if (A.ring) return fail("cyclic phosphorus compound at " + sym(a));
+      if (A.ring) {
+        // ring phosphorus with two single ring bonds and one exocyclic substituent (lambda3), or with
+        // an exocyclic =O / =S as well (lambda5, "2-oxo-1,3,2lambda5-dioxaphosphinan-2-ol"); in an
+        // unsaturated ring system only between two ring O/S atoms, where it can carry no double bond
+        int rb = 0, exo = 0;
+        bool between_chalcogens = true;
+        for (std::size_t k = 0; k < A.nb.size(); ++k) {
+          const int b = A.nb[k];
+          if (ringbond_[a][k]) {
+            ++rb;
+            if (A.bo[k] != 1 || A.ab[k]) return fail("cyclic phosphorus compound at " + sym(a));
+            between_chalcogens &= at_[b].z == 8 || at_[b].z == 16;
+          } else if (A.bo[k] == 1) {
+            ++exo;
+            if (at_[b].z == 8 && deg(b) == 2 && at_[b].ring) return fail("cyclic phosphorus compound at " + sym(a));
+          }
+        }
+        bool unsat = false;
+        {
+          std::vector<char> seen(n(), 0);
+          std::vector<int> st = {a};
+          seen[a] = 1;
+          while (!st.empty()) {
+            const int x = st.back();
+            st.pop_back();
+            for (std::size_t k = 0; k < at_[x].nb.size(); ++k) {
+              if (!ringbond_[x][k]) continue;
+              unsat |= at_[x].bo[k] != 1 || at_[x].ab[k];
+              const int y = at_[x].nb[k];
+              if (!seen[y]) seen[y] = 1, st.push_back(y);
+            }
+          }
+        }
+        if (rb != 2 || exo + A.h != 1 || dO_.size() + dS_.size() > 1 || (unsat && !between_chalcogens) || A.q != 0)
+          return fail("cyclic phosphorus compound at " + sym(a));
+        if (!dO_.empty() || !dS_.empty()) lambdaS_[a] = 5;
+        for (int b : dO_) okO[b] = 1;
+        for (int b : dS_) thioP_[b] = 1;
+        for (int b : single) {
+          if (ringbond_[a][static_cast<std::size_t>(std::find(A.nb.begin(), A.nb.end(), b) - A.nb.begin())]) continue;
+          if (is_Ominus(b)) anionO_[b] = 3;
+          else if (at_[b].z == 8) okO[b] = 1;
+          else if (at_[b].z == 16) thioP_[b] = 1;
+        }
+        acyl_[a] = Cls::RingP;
+        continue;
+      }
       int nC = 0, nOH = 0, nOR = 0, nSR = 0, other = 0;
       for (int b : single) {
         if (at_[b].z == 6) ++nC;
@@ -1517,7 +1564,7 @@ bool Namer::perceive() {
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
           const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl || acyl_[b] == Cls::SulfamicAcid ||
                                                     acyl_[b] == Cls::SulfamateAnion);
-          const bool n_amino = at_[b].z == 7 && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
+          const bool n_amino = (at_[b].z == 7 || acyl_[b] == Cls::RingP) && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
           if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
@@ -1703,7 +1750,7 @@ bool Namer::rings() {
           bool dbl = false;
           for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
             if (ringbond[a][k]) ++rdeg, dbl |= at_[a].bo[k] == 2;
-          const bool inherent = ((at_[a].z == 8 || at_[a].z == 16) && rdeg == 2) || (at_[a].z == 7 && rdeg == 3);
+          const bool inherent = ((at_[a].z == 8 || at_[a].z == 16 || at_[a].z == 15) && rdeg == 2) || (at_[a].z == 7 && rdeg == 3);
           if (inherent) continue;
           R.matchable.push_back(a);
           if (!dbl) R.X.push_back(a);
@@ -2618,23 +2665,26 @@ bool Namer::hantzsch_widman(RingSys& R, bool& mancude) {
     }
     if (static_cast<int>(cyc.size()) != m) return true;
   }
-  bool saturated = true, hasN = false;
+  bool saturated = true, hasN = false, hasP = false;
   for (int i = 0; i < m; ++i) {
     const int a = cyc[i];
-    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return true;
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16 && at_[a].z != 15) return true;
     hasN |= at_[a].z == 7;
+    hasP |= at_[a].z == 15;
     if (order(a, cyc[(i + 1) % m]) > 1) saturated = false;
   }
-  int senior_z = 7;
+  int senior_z = 15;  // O > S > N > P (P-22.2.2.1.3)
   for (int a : cyc) {
     if (at_[a].z == 8) senior_z = 8;
     if (at_[a].z == 16 && senior_z != 8) senior_z = 16;
+    if (at_[a].z == 7 && senior_z == 15) senior_z = 7;
   }
   static const char* sat_n[] = {"", "", "", "iridine", "etidine", "olidine", "inane", "epane", "ocane", "onane", "ecane"};
   static const char* sat_o[] = {"", "", "", "irane", "etane", "olane", "ane", "epane", "ocane", "onane", "ecane"};
   static const char* uns_n[] = {"", "", "", "irine", "ete", "ole", "ine", "epine", "ocine", "onine", "ecine"};
   static const char* uns_o[] = {"", "", "", "irene", "ete", "ole", "ine", "epine", "ocine", "onine", "ecine"};
-  const std::string stem = saturated ? (hasN ? sat_n[m] : sat_o[m]) : (hasN ? uns_n[m] : uns_o[m]);
+  std::string stem = saturated ? (hasN ? sat_n[m] : sat_o[m]) : (hasN ? uns_n[m] : uns_o[m]);
+  if (m == 6 && hasP) stem = saturated ? "inane" : "inine";  // six-membered ring, last-cited P (6C)
   for (int st = 0; st < m; ++st)
     for (int dir : {1, -1}) {
       std::vector<int> o;
@@ -2644,7 +2694,7 @@ bool Namer::hantzsch_widman(RingSys& R, bool& mancude) {
       for (int i = 0; i < m; ++i) L.push_back(std::to_string(i + 1));
       std::string locs, pre;
       int nhet = 0;
-      for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}}) {
+      for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}, {15, "phospha"}}) {
         std::vector<std::string> l;
         for (int i = 0; i < m; ++i)
           if (at_[o[i]].z == z) l.push_back(L[i]);
@@ -2673,7 +2723,7 @@ struct Component {
   std::vector<int> cyc;                       // atoms in ring order
   std::vector<std::vector<int>> numberings;   // standard numberings (cyclic orders, locant 1 first)
   bool carbocycle = true, benzene = false;
-  int size = 0, nN = 0, nO = 0, nS = 0;
+  int size = 0, nN = 0, nO = 0, nS = 0, nP = 0;
   std::string name, prefix;                   // "pyridine"/"pyrido", "1,3-thiazole"/"[1,3]thiazolo"
   std::string fusion_base;                    // the name as a base component: "pyridine", "[1,3]thiazole"
   std::string hw_bare;                        // name without locants, for benzo names: "oxazole"
@@ -2689,8 +2739,9 @@ Component Namer::ring_component(const std::vector<int>& cyc) const {
     c.nN += at_[a].z == 7;
     c.nO += at_[a].z == 8;
     c.nS += at_[a].z == 16;
+    c.nP += at_[a].z == 15;
   }
-  c.carbocycle = c.nN + c.nO + c.nS == 0;
+  c.carbocycle = c.nN + c.nO + c.nS + c.nP == 0;
   c.benzene = c.carbocycle && c.size == 6;
   // standard numberings: heteroatoms as low as possible, then O, S, N in that order
   std::vector<std::vector<double>> keys;
@@ -2701,12 +2752,12 @@ Component Namer::ring_component(const std::vector<int>& cyc) const {
       for (int i = 0; i < c.size; ++i) o.push_back(c.cyc[((st + dir * i) % c.size + c.size) % c.size]);
       std::vector<double> key;
       {
-        const int senior_z = c.nO ? 8 : c.nS ? 16 : 7;  // locant 1 to the senior heteroatom (P-22.2.2.1.3)
+        const int senior_z = c.nO ? 8 : c.nS ? 16 : c.nN ? 7 : 15;  // locant 1 to the senior heteroatom (P-22.2.2.1.3)
         key.push_back(c.carbocycle || at_[o[0]].z == senior_z ? 0 : 1);
       }
       for (int i = 0; i < c.size; ++i)
         if (at_[o[i]].z != 6) key.push_back(i + 1);
-      for (int z : {8, 16, 7})
+      for (int z : {8, 16, 7, 15})
         for (int i = 0; i < c.size; ++i)
           if (at_[o[i]].z == z) key.push_back(i + 1);
       keys.push_back(key);
@@ -2719,7 +2770,7 @@ Component Namer::ring_component(const std::vector<int>& cyc) const {
   std::map<int, std::vector<int>> hl;
   for (int i = 0; i < c.size; ++i)
     if (at_[o[i]].z != 6) hl[at_[o[i]].z].push_back(i + 1);
-  for (int z : {8, 16, 7})
+  for (int z : {8, 16, 7, 15})
     for (int l : hl[z]) c.het_locs.push_back(l);
   if (c.carbocycle) {
     c.name = c.benzene ? "benzene" : "cyclo" + alkane_stem(c.size) + "ene";
@@ -2728,8 +2779,8 @@ Component Namer::ring_component(const std::vector<int>& cyc) const {
     return c;
   }
   std::string key = std::to_string(c.size) + ":";
-  for (int z : {8, 16, 7})
-    for (int l : hl[z]) key += std::string(1, z == 8 ? 'O' : z == 16 ? 'S' : 'N') + std::to_string(l);
+  for (int z : {8, 16, 7, 15})
+    for (int l : hl[z]) key += std::string(1, z == 8 ? 'O' : z == 16 ? 'S' : z == 7 ? 'N' : 'P') + std::to_string(l);
   static const std::map<std::string, std::pair<const char*, const char*>> retained = {
       {"6:N1", {"pyridine", "pyrido"}},     {"6:N1N3", {"pyrimidine", "pyrimido"}}, {"6:N1N4", {"pyrazine", "pyrazino"}},
       {"6:N1N2", {"pyridazine", "pyridazino"}}, {"6:O1", {"pyran", "pyrano"}},   {"6:S1", {"thiopyran", "thiopyrano"}},
@@ -2744,10 +2795,10 @@ Component Namer::ring_component(const std::vector<int>& cyc) const {
   // Hantzsch-Widman name of the mancude ring
   static const char* uns_n[] = {"", "", "", "irine", "ete", "ole", "ine", "epine", "ocine"};
   static const char* uns_o[] = {"", "", "", "irene", "ete", "ole", "ine", "epine", "ocine"};
-  const std::string stem = c.nN ? uns_n[c.size] : uns_o[c.size];
+  const std::string stem = c.size == 6 && c.nP ? "inine" : c.nN ? uns_n[c.size] : uns_o[c.size];
   std::string pre, locs;
   int nhet = 0;
-  for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}}) {
+  for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}, {15, "phospha"}}) {
     if (hl[z].empty()) continue;
     for (int l : hl[z]) locs += (locs.empty() ? "" : ",") + std::to_string(l), ++nhet;
     std::string w = multiplier(static_cast<int>(hl[z].size()), false) + word;
@@ -2773,7 +2824,7 @@ bool Namer::fusion_bicycle(RingSys& R) {
     for (std::size_t k = 0; k < at_[a].nb.size(); ++k) d += ringbond_[a][k] && members.count(at_[a].nb[k]);
     if (d == 3) heads.push_back(a);
     else if (d != 2) return false;
-    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16 && at_[a].z != 15) return false;
   }
   if (heads.size() != 2 || order(heads[0], heads[1]) == 0) return false;
   const int f1 = heads[0], f2 = heads[1];
@@ -2808,8 +2859,10 @@ bool Namer::fusion_bicycle(RingSys& R) {
   // base component (FR-3.1): nitrogenous; senior heteroatom; larger ring; more heteroatoms; variety;
   // more heteroatoms early in O, S, N; lower heteroatom locants
   auto seniority = [](const Component& c) {
-    std::vector<double> v = {double(c.nN > 0), double(c.nN == 0 && c.nO > 0), double(c.nN == 0 && c.nO == 0 && c.nS > 0), double(c.size),
-                             double(c.nN + c.nO + c.nS), double((c.nN > 0) + (c.nO > 0) + (c.nS > 0)), double(c.nO), double(c.nS), double(c.nN)};
+    std::vector<double> v = {double(c.nN > 0), double(c.nN == 0 && c.nO > 0), double(c.nN == 0 && c.nO == 0 && c.nS > 0),
+                             double(c.nN == 0 && c.nO == 0 && c.nS == 0 && c.nP > 0), double(c.size),
+                             double(c.nN + c.nO + c.nS + c.nP), double((c.nN > 0) + (c.nO > 0) + (c.nS > 0) + (c.nP > 0)),
+                             double(c.nO), double(c.nS), double(c.nN), double(c.nP)};
     for (int l : c.het_locs) v.push_back(-l);
     return v;
   };
@@ -2918,7 +2971,7 @@ bool Namer::fusion_bicycle(RingSys& R) {
         nm.key.push_back(-1);
       };
       add(het);
-      for (int z : {8, 16, 7}) {
+      for (int z : {8, 16, 7, 15}) {
         std::vector<std::string> v;
         for (std::size_t i = 0; i < seq.size(); ++i)
           if (at_[seq[i]].z == z) v.push_back(nm.L[i]);
@@ -2935,7 +2988,7 @@ bool Namer::fusion_bicycle(RingSys& R) {
     if (benzo_name) {
       const Component& h = *base;
       std::string locs;
-      for (int z : {8, 16, 7}) {
+      for (int z : {8, 16, 7, 15}) {
         std::vector<std::string> v;
         for (std::size_t i = 0; i < c.o.size(); ++i)
           if (at_[c.o[i]].z == z) v.push_back(c.L[i]);
@@ -3048,7 +3101,7 @@ bool Namer::build_fused(const std::vector<std::vector<int>>& rings, FusedSys& F)
   for (const auto& [a, rs] : F.rings_of) {
     F.atoms.push_back(a);
     if (rs.size() > 3) return fail("atom common to four rings at " + sym(a));
-    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16 && at_[a].z != 15) return false;
   }
   F.radj.assign(nr, {});
   for (int r = 0; r < nr; ++r)
@@ -3239,7 +3292,7 @@ bool Namer::number_fused(const FusedSys& F, std::vector<FusedNumbering>& out) {
       else if (fusion_atom(nm.o[i])) fc.push_back(nm.L[i]);
     }
     add(het);
-    for (int z : {8, 16, 7}) {
+    for (int z : {8, 16, 7, 15}) {
       std::vector<std::string> v;
       for (std::size_t i = 0; i < nm.o.size(); ++i)
         if (at_[nm.o[i]].z == z) v.push_back(nm.L[i]);
@@ -3346,20 +3399,23 @@ bool Namer::fusion_polycycle(RingSys& R) {
   // FR-3.1: nitrogen; else the senior heteroatom; more rings; larger rings at the first difference;
   // more heteroatoms; more variety; more O, S, N in that order; lower heteroatom locants
   auto unit_seniority = [&](const std::map<int, std::string>& loc, const std::vector<int>& rs, double rank) {
-    int nN = 0, nO = 0, nS = 0;
+    int nN = 0, nO = 0, nS = 0, nP = 0;
     std::vector<double> hl, sizes;
     for (const auto& [a, l] : loc) {
       nN += at_[a].z == 7;
       nO += at_[a].z == 8;
       nS += at_[a].z == 16;
+      nP += at_[a].z == 15;
       if (at_[a].z != 6) hl.push_back(-locant_key(l));
     }
     for (int r : rs) sizes.push_back(static_cast<double>(rings[r].size()));
     std::sort(sizes.rbegin(), sizes.rend());
     std::sort(hl.rbegin(), hl.rend());
-    std::vector<double> v = {double(nN > 0), double(nN == 0 && nO > 0), double(nN == 0 && nO == 0 && nS > 0), double(rs.size())};
+    std::vector<double> v = {double(nN > 0), double(nN == 0 && nO > 0), double(nN == 0 && nO == 0 && nS > 0),
+                             double(nN == 0 && nO == 0 && nS == 0 && nP > 0), double(rs.size())};
     v.insert(v.end(), sizes.begin(), sizes.end());
-    v.insert(v.end(), {double(nN + nO + nS), double((nN > 0) + (nO > 0) + (nS > 0)), double(nO), double(nS), double(nN)});
+    v.insert(v.end(), {double(nN + nO + nS + nP), double((nN > 0) + (nO > 0) + (nS > 0) + (nP > 0)), double(nO), double(nS), double(nN),
+                       double(nP)});
     v.insert(v.end(), hl.begin(), hl.end());
     v.push_back(rank);
     return v;
@@ -3849,7 +3905,7 @@ bool Namer::von_baeyer_poly(RingSys& R) {
   int nbonds = 0;
   for (int i = 0; i < n; ++i) {
     const int a = V[i];
-    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16 && at_[a].z != 15) return false;
     for (std::size_t k = 0; k < at_[a].nb.size(); ++k) {
       auto it = idx.find(at_[a].nb[k]);
       if (ringbond_[a][k] && it != idx.end()) adj[i].push_back(it->second), ++nbonds;
@@ -4313,7 +4369,7 @@ bool Namer::spiro_fused(RingSys& R) {
       bool dbl = false;
       for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
         if (ringbond_[a][k] && as.count(at_[a].nb[k])) ++rd, dbl |= at_[a].bo[k] == 2;
-      const bool inherent = ((at_[a].z == 8 || at_[a].z == 16) && rd == 2) || (at_[a].z == 7 && rd == 3);
+      const bool inherent = ((at_[a].z == 8 || at_[a].z == 16 || at_[a].z == 15) && rd == 2) || (at_[a].z == 7 && rd == 3);
       if (inherent) continue;
       R.matchable.push_back(a);
       if (!dbl) R.X.push_back(a);
@@ -4441,7 +4497,7 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
     for (int x : o)
       if (at_[x].z != 6) all.push_back(L[x]);
     s.het = sorted_keys(all);
-    for (int z : {8, 16, 7}) {
+    for (int z : {8, 16, 7, 15}) {
       std::vector<std::string> l;
       for (int x : o)
         if (at_[x].z == z) l.push_back(L[x]);
@@ -4471,11 +4527,11 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
     if (c.kind == PKind::VonBaeyer || (c.kind == PKind::Carbocycle && rs_[c.rsys].nhetero > 0)) {
       (void)counted;
       std::vector<std::string> het, by_kind;
-      for (int z : {8, 16, 7})
+      for (int z : {8, 16, 7, 15})
         for (int x : o)
           if (at_[x].z == z) het.push_back(L[x]);
       s.het = sorted_keys(het);
-      for (int z : {8, 16, 7}) {
+      for (int z : {8, 16, 7, 15}) {
         std::vector<std::string> l;
         for (int x : o)
           if (at_[x].z == z) l.push_back(L[x]);
@@ -4514,10 +4570,11 @@ std::string Namer::lambda_name(std::string name, const Cand& c, const std::vecto
   const auto L = locants(c, o);
   for (int a : o) {
     if (!lambdaS_[a]) continue;
-    const std::string tag = L[a] + (lambdaS_[a] == 1 ? "λ4" : "λ6");
+    const std::string tag = L[a] + lambda_tag(a);
     std::size_t end = 0;
-    while (end < name.size() && ((name[end] >= '0' && name[end] <= '9') || name[end] == ',' || (name[end] >= 'a' && name[end] <= 'z' && end > 0 &&
-                                                                                                  name[end - 1] >= '0' && name[end - 1] <= '9')))
+    // the leading locant list, including earlier lambda tags ("1,3,5,2λ5,4-")
+    while (end < name.size() && ((name[end] >= '0' && name[end] <= '9') || name[end] == ',' || static_cast<unsigned char>(name[end]) >= 0x80 ||
+                                 (name[end] >= 'a' && name[end] <= 'z' && end > 0 && name[end - 1] >= '0' && name[end - 1] <= '9')))
       ++end;
     bool done = false;
     if (end > 0 && end < name.size() && name[end] == '-') {
@@ -4583,14 +4640,14 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
   if (c.kind == PKind::VonBaeyer || (c.kind == PKind::Carbocycle && rs_[c.rsys].nhetero > 0)) {
     const auto L = locants(c, o);
     std::string rep_prefixes;
-    for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}}) {
+    for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}, {15, "phospha"}}) {
       std::vector<std::string> l;
       for (int x : o)
         if (at_[x].z == z) l.push_back(L[x]);
       if (l.empty()) continue;
       for (auto& x : l)
         for (int a2 : o)
-          if (at_[a2].z == 16 && lambdaS_[a2] && L[a2] == x) x += lambdaS_[a2] == 1 ? "λ4" : "λ6";
+          if (lambdaS_[a2] && L[a2] == x) x += lambda_tag(a2);
       rep_prefixes += (rep_prefixes.empty() ? "" : "-") + join_locants(l) + "-" + multiplier(static_cast<int>(l.size()), false) + word;
     }
     const RingSys& R = rs_[c.rsys];
