@@ -218,6 +218,17 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"NC(=O)NN=CC1=CC=C(C=C1)C(=O)O", "4-[(2-carbamoylhydrazinylidene)methyl]benzoic acid"},
       {"NNC(=O)NCC(=O)O", "2-(hydrazinecarboxamido)acetic acid"},
       {"CC(=O)NNC(=O)NCC(=O)OC", "methyl 2-(2-acetylhydrazine-1-carboxamido)acetate"},
+      // carbonic and carbamic acids, thio analogues, hydrogen esters and anions (P-65.2.1)
+      {"c1ccccc1NC(=O)O", "N-phenylcarbamic acid"},
+      {"C1=CC=C(C=C1)COC(=O)O", "benzyl hydrogen carbonate"},
+      {"CN(C)C(=S)SC", "methyl N,N-dimethylcarbamodithioate"},
+      {"CN(C)C(=S)[S-].[Na+]", "sodium N,N-dimethylcarbamodithioate"},
+      {"CCOC(=S)S", "O-ethyl S-hydrogen carbonodithioate"},
+      {"CN(C)C(=O)SC", "S-methyl N,N-dimethylcarbamothioate"},
+      {"COC(=S)OC", "O,O-dimethyl carbonothioate"},
+      {"OC(=O)NCC(=O)O", "2-(carboxyamino)acetic acid"},
+      {"CN(CC(=O)O)C(=S)SC", "2-{methyl[(methylsulfanyl)carbonothioyl]amino}acetic acid"},
+      {"CCOC(=S)SCC(=O)O", "2-[(ethoxycarbonothioyl)sulfanyl]acetic acid"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

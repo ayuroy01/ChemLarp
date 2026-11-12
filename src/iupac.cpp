@@ -427,8 +427,8 @@ const std::vector<SmartsQuery>& template_queries() {
 // Seniority of classes (P-41), lower = more senior.
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
-  Carboxylate = -60, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
-  Acid = 10, SulfonicAcid = 20, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
+  Carboxylate = -60, CarbonicAnion = -55, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
+  Acid = 10, CarbonicAcid = 15, SulfonicAcid = 20, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
   SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
@@ -586,6 +586,7 @@ class Namer {
   std::vector<char> pseudo_, pseudoIn_;
   // semicarbazides R2N-C(=O/S)-NR-NR2: the carbonyl carbon; acyl groups on their hydrazine nitrogens
   std::vector<char> semC_, acylSub_;
+  std::vector<char> carbX_;  // O and S atoms on a carbonic or carbamic acid carbon (acid, ester or anion)
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
   std::vector<RingSys> rs_;
@@ -686,6 +687,8 @@ class Namer {
   std::optional<Named> build_sub(Mode mode, int root, int from, int link = -1, const std::string& word = "carbonyl");
   std::optional<Named> sulfonyl_name(int S, int from);
   std::optional<Named> acyl_name(int c, int from);
+  char carbonic_kind(int c, int h) const;
+  std::optional<std::pair<std::string, std::vector<Key>>> carbonic_name(int c);
   std::optional<Named> ligands(const std::vector<int>& xs, int n_atom, const std::string& tail);
 };
 
@@ -1248,13 +1251,33 @@ bool Namer::perceive() {
     if (at_[a].z == 6) visit.push_back(a);
   for (int a = 0; a < n(); ++a)
     if (at_[a].z != 6) visit.push_back(a);
+  carbX_.assign(n(), 0);
+  // carbonic and carbamic acids, their esters, thioesters and anions: C(=O/S)(X)(Y), X and Y each
+  // a plain amine nitrogen, OH/SH, O-/S- or OR/SR, with at most one nitrogen
+  auto classify_carbonic = [&](int c, const std::vector<int>& hs) {
+    if (at_[c].ring || hs.size() != 2) return false;
+    int nN = 0, nH = 0, nM = 0;
+    for (int h : hs) {
+      const char k = carbonic_kind(c, h);
+      if (!k) return false;
+      nN += k == 'N', nH += k == 'H', nM += k == '-';
+    }
+    if (nN > 1) return false;
+    acyl_[c] = nM ? Cls::CarbonicAnion : nH ? Cls::CarbonicAcid : nN ? Cls::Carbamate : Cls::Carbonate;
+    for (int h : hs) {
+      if (at_[h].z == 7) amideN_[h] = 1;
+      else carbX_[h] = 1;
+    }
+    carbX_[dO(c) >= 0 ? dO(c) : dS(c)] = 1;
+    return true;
+  };
   for (int a : visit) {
     const NAtom& A = at_[a];
     int val = A.h;
     for (int o : A.bo) val += o;
     if (pseudoIn_[a]) continue;
     if (pseudo_[a]) continue;
-    if (A.q != 0 && !nitro_[a] && !nitroO[a] && !cationN_[a] && !ringCat_[a] && !anionO_[a])
+    if (A.q != 0 && !nitro_[a] && !nitroO[a] && !cationN_[a] && !ringCat_[a] && !anionO_[a] && !(carbX_[a] && A.q == -1))
       return fail("charged atom " + sym(a) + " (ion type not covered)");
     switch (A.z) {
       case 6: {
@@ -1302,7 +1325,7 @@ bool Namer::perceive() {
           else if (hs.size() == 2 && plainN(hs[0]) && plainN(hs[1])) acyl_[a] = Cls::Thiourea, amideN_[hs[0]] = amideN_[hs[1]] = 1;
           else if (hs.size() == 2 && ((plainN(hs[0]) && at_[hs[1]].z == 7 && at_[hs[1]].ring) || (plainN(hs[1]) && at_[hs[0]].z == 7 && at_[hs[0]].ring)))
             acyl_[a] = Cls::Thioamide, amideN_[at_[hs[0]].ring ? hs[1] : hs[0]] = 1;
-          else return fail("thiocarbonyl ester, acid or halide at " + sym(a));
+          else if (!classify_carbonic(a, hs)) return fail("thiocarbonyl ester, acid or halide at " + sym(a));
           if (acyl_[a] == Cls::Thioamide && A.h > 1) return fail("unsupported thioformamide at " + sym(a));
           break;
         }
@@ -1440,7 +1463,7 @@ bool Namer::perceive() {
             } else if (plainN(x) && plainN(y)) {
               acyl_[a] = Cls::Urea;
               amideN_[x] = amideN_[y] = 1;
-            } else return fail("carbonic acid derivative (carbonic or carbamic acid, halide, ...) at " + sym(a));
+            } else if (!classify_carbonic(a, hs)) return fail("carbonic acid derivative (carbonic or carbamic acid, halide, ...) at " + sym(a));
           } else return fail("unsupported carbonyl group at " + sym(a));
         } else if (nd > 1) return fail("unsupported carbon " + sym(a));
         break;
@@ -1468,7 +1491,7 @@ bool Namer::perceive() {
         break;
       }
       case 8: {
-        if (nitroO[a] || okO[a] || anionO_[a] || hydroxamO_[a] || nO_[a]) break;
+        if (nitroO[a] || okO[a] || anionO_[a] || hydroxamO_[a] || nO_[a] || carbX_[a]) break;
         {
           bool oxime = false;
           for (int b : A.nb) oxime |= imineN_[b] != 0;
@@ -1487,7 +1510,7 @@ bool Namer::perceive() {
       case 14:
         break;  // checked above
       case 16: {
-        if (A.arom || acyl_[a] != Cls::None || lambdaS_[a] || thioP_[a]) break;
+        if (A.arom || acyl_[a] != Cls::None || lambdaS_[a] || thioP_[a] || carbX_[a]) break;
         if (deg(a) == 1 && A.bo[0] == 2 && at_[A.nb[0]].z == 6) break;  // thiocarbonyl
         if (val != 2) return fail("sulfur " + sym(a) + " in a higher oxidation state (sulfoxides, sulfones, sulfonic acids)");
         if (deg(a) == 0) return fail("hydrogen sulfide");
@@ -1705,6 +1728,103 @@ std::optional<Named> Namer::build_sub(Mode mode, int root, int from, int link, c
 }
 
 // Acyl prefix of carbonyl carbon c (its =O implied), reached from `from`.
+// one single-bonded neighbour h of a carbonic acid carbon c: 'N' plain amine nitrogen, 'H' OH or SH,
+// '-' O- or S-, 'R' OR or SR with a plain carbon R; 0 for anything else
+char Namer::carbonic_kind(int c, int h) const {
+  const NAtom& H = at_[h];
+  if (H.ring || H.arom) return 0;
+  if (H.z == 7) {
+    if (H.q != 0 || nitro_[h] || pseudo_[h] || hzPartner_[h] >= 0) return 0;
+    for (std::size_t k = 0; k < H.nb.size(); ++k) {
+      const int y = H.nb[k];
+      if (y == c) continue;
+      if (H.bo[k] != 1 || at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) return 0;
+    }
+    return 'N';
+  }
+  if (H.z != 8 && H.z != 16) return 0;
+  if (deg(h) == 1 && H.q == 0 && H.h == 1) return 'H';
+  if (deg(h) == 1 && H.q == -1 && H.h == 0) return '-';
+  if (deg(h) == 2 && H.q == 0) {
+    const int y = H.nb[0] == c ? H.nb[1] : H.nb[0];
+    if (at_[y].z == 6 && dO(y) < 0 && dS(y) < 0 && pseudoIn_[y] == 0) return 'R';
+  }
+  return 0;
+}
+
+// functional class names of carbonic and carbamic acids and their thio analogues (P-65.2.1.2,
+// P-65.2.1.5): "N-phenylcarbamic acid", "benzyl hydrogen carbonate", "methyl dimethylcarbamodithioate",
+// "S-methyl N,N-dimethylcarbamothioate", "O-ethyl S-hydrogen carbonodithioate", "N,N-dimethylcarbamodithioate"
+std::optional<std::pair<std::string, std::vector<Key>>> Namer::carbonic_name(int c) {
+  const int X = dO(c) >= 0 ? dO(c) : dS(c);
+  int N = -1, nS = at_[X].z == 16, nch = 1;
+  std::vector<int> chal;
+  for (int h : at_[c].nb) {
+    if (h == X || at_[h].z == 6) continue;
+    if (at_[h].z == 7) N = h;
+    else chal.push_back(h), ++nch, nS += at_[h].z == 16;
+  }
+  const bool letters = nS > 0 && nS < nch;
+  static const char* thio[] = {"", "othio", "odithio", "otrithio"};
+  const std::string base = std::string(N >= 0 ? "carbam" : "carbon") + thio[nS];
+  std::vector<Key> extra;
+  std::string npart;
+  if (N >= 0) {
+    std::vector<std::pair<std::string, Named>> e;
+    for (int x : at_[N].nb) {
+      if (x == c) continue;
+      auto R = sub(x, N, 1);
+      if (!R) return std::nullopt;
+      extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+      e.push_back({"N", *R});
+    }
+    npart = format_prefixes(e, false);
+  }
+  std::map<std::string, std::vector<std::string>> by;  // organyl -> locant letters
+  std::vector<std::string> hyd;
+  bool anion = false;
+  for (int h : chal) {
+    const std::string L = at_[h].z == 8 ? "O" : "S";
+    if (at_[h].q == -1) {
+      anion = true;
+    } else if (deg(h) == 1) {
+      hyd.push_back(L);
+    } else {
+      const int r = at_[h].nb[0] == c ? at_[h].nb[1] : at_[h].nb[0];
+      auto R = sub(r, h, 1);
+      if (!R) return std::nullopt;
+      extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+      by[R->text[0] == '(' ? enclose(R->text) : R->text].push_back(L);
+    }
+  }
+  if (by.empty() && !anion) {  // the free acid
+    if (letters) {
+      fail("thio acid with O/S isomers at " + sym(c));
+      return std::nullopt;
+    }
+    return std::pair{npart + base + "ic acid", extra};
+  }
+  std::vector<std::string> parts;
+  std::vector<std::pair<std::string, std::vector<std::string>>> orgs(by.begin(), by.end());
+  std::sort(orgs.begin(), orgs.end(), [](const auto& a, const auto& b) { return alpha_key(a.first) < alpha_key(b.first); });
+  for (auto& [org, ls] : orgs) {
+    std::sort(ls.begin(), ls.end());
+    std::string loc;
+    for (const auto& l : ls) loc += (loc.empty() ? "" : ",") + l;
+    std::string t = org;
+    if (ls.size() == 2) t = (org[0] == '(' || org[0] == '[' || has_digit(org)) ? "bis" + enclose(org) : "di" + org;
+    parts.push_back(letters ? loc + "-" + t : t);
+  }
+  if (!hyd.empty()) {
+    std::string loc;
+    for (const auto& l : hyd) loc += (loc.empty() ? "" : ",") + l;
+    parts.push_back((letters ? loc + "-" : "") + (hyd.size() == 2 ? "dihydrogen" : "hydrogen"));
+  }
+  std::string out;
+  for (const auto& p : parts) out += p + " ";
+  return std::pair{out + npart + base + "ate", extra};
+}
+
 std::optional<Named> Namer::acyl_name(int c, int from) {
   const int o = dO(c);
   std::vector<int> others;
@@ -1715,6 +1835,12 @@ std::optional<Named> Namer::acyl_name(int c, int from) {
   const int x = others[0];
   if (at_[x].ring) return build_sub(Mode::Carbonyl, c, from, x);
   if (at_[x].z == 6) return build_sub(Mode::Oyl, c, from);
+  if (is_OH(x) && acyl_[c] == Cls::CarbonicAcid) return Named{"carboxy", false, {}};  // -NH-COOH: (carboxyamino)
+  if (at_[x].z == 16 && at_[x].q == 0 && (acyl_[c] == Cls::CarbonicAcid || acyl_[c] == Cls::Carbonate || acyl_[c] == Cls::Carbamate)) {
+    auto R = sub(x, c, 1);  // (methylsulfanyl)carbonyl, sulfanylcarbonyl
+    if (!R) return std::nullopt;
+    return Named{(R->compound ? enclose(R->text) : R->text) + "carbonyl", true, R->stereo};
+  }
   if (at_[x].z == 8 && deg(x) == 2) {  // alkoxycarbonyl
     auto alk = sub(x, c, 1);
     if (!alk) return std::nullopt;
@@ -2045,7 +2171,10 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         if (ends_with(t, "acetyl")) t = t.substr(0, t.size() - 6) + "acetamido";
         else if (ends_with(t, "formyl")) t = t.substr(0, t.size() - 6) + "formamido";
         else if (ends_with(t, "oyl")) t = t.substr(0, t.size() - 3) + "amido";
-        else if (ends_with(t, "carbonyl")) t = t.substr(0, t.size() - 8) + "carboxamido";
+        else if (ends_with(t, "carbonyl") && acyl_[others[0]] != Cls::CarbonicAcid && acyl_[others[0]] != Cls::Carbonate &&
+                 acyl_[others[0]] != Cls::Carbamate)
+          t = t.substr(0, t.size() - 8) + "carboxamido";
+        else if (t == "carboxy") return Named{"carboxyamino", true, ac->stereo};
         else return Named{enclose(t) + "amino", true, ac->stereo};
         return Named{t, ac->compound, ac->stereo};
       }
@@ -2065,7 +2194,19 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       if ((acyl_[q] == Cls::AcylSub || acyl_[q] == Cls::Semicarbazide || acyl_[q] == Cls::ThioSemicarbazide) && at_[from].z == 6)
         return fail_n("hydrazine acyl group reached from carbon at " + sym(q));
-      if (acyl_[q] == Cls::Thioamide || acyl_[q] == Cls::Thiourea || acyl_[q] == Cls::ThioSemicarbazide) {  // carbamothioyl, from the carbon side only
+      if (dS(q) >= 0 && (acyl_[q] == Cls::Carbonate || acyl_[q] == Cls::CarbonicAcid || acyl_[q] == Cls::Carbamate)) {
+        // (methylsulfanyl)carbonothioyl, ethoxycarbonothioyl, sulfanylcarbonothioyl
+        int h = -1;
+        for (int x : A.nb)
+          if (x != from && x != dS(q) && at_[x].z != 7) h = x;
+        if (h >= 0) {
+          auto R = sub(h, q, 1);
+          if (!R) return std::nullopt;
+          return Named{(R->compound ? enclose(R->text) : R->text) + "carbonothioyl", true, R->stereo};
+        }
+      }
+      if (acyl_[q] == Cls::Thioamide || acyl_[q] == Cls::Thiourea || acyl_[q] == Cls::ThioSemicarbazide ||
+          (dS(q) >= 0 && acyl_[q] == Cls::Carbamate)) {  // carbamothioyl, from the carbon side only
         int N = -1;
         for (int x : A.nb)
           if (x != from && at_[x].z == 7 && amideN_[x]) N = x;
@@ -4623,7 +4764,7 @@ std::optional<Built> Namer::build(const Spec& sp) {
       if (!sp.region[a] || at_[a].z != 6 || at_[a].ring) continue;
       const Cls k = acyl_[a];
       if ((k == Cls::Acid || k == Cls::Carboxylate || k == Cls::Anhydride || k == Cls::Nitrile || k == Cls::Carbonate || k == Cls::Carbamate || k == Cls::Urea || k == Cls::Thiourea ||
-           k == Cls::Semicarbazide || k == Cls::ThioSemicarbazide || k == Cls::AcylSub) && !PA(a))
+           k == Cls::Semicarbazide || k == Cls::ThioSemicarbazide || k == Cls::AcylSub || k == Cls::CarbonicAcid || k == Cls::CarbonicAnion) && !PA(a))
         continue;
       E[a] = 1;
     }
@@ -4741,13 +4882,13 @@ std::optional<std::string> Namer::run() {
   };
   for (int a = 0; a < n(); ++a) {
     if (acyl_[a] != Cls::None && static_cast<int>(acyl_[a]) < 500) senior(acyl_[a]);
-    if (is_OH(a) && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Acid) senior(Cls::Alcohol);
-    if (is_SH(a)) senior(Cls::Thiol);
+    if (is_OH(a) && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Acid && !carbX_[a]) senior(Cls::Alcohol);
+    if (is_SH(a) && !carbX_[a]) senior(Cls::Thiol);
     if (pseudo_[a] == Hydroperoxy) senior(Cls::Peroxol);
     if (amineN_[a]) senior(Cls::Amine);
     if (cationN_[a]) senior(Cls::Ammonium);
     if (ringCat_[a]) senior(Cls::RingCation);
-    if (anionO_[a] && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Carboxylate) senior(Cls::Olate);
+    if (anionO_[a] && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Carboxylate && !carbX_[a]) senior(Cls::Olate);
     if (imineC_[a]) senior(Cls::Imine);
     if (hzPartner_[a] >= 0) senior(Cls::Hydrazine);
   }
@@ -4936,11 +5077,16 @@ std::optional<std::string> Namer::run() {
       if (err_.empty()) err_ = "guanidine could not be named";
       return std::nullopt;
     }
-  } else if (principal == Cls::Carbonate || principal == Cls::Carbamate || principal == Cls::Urea || principal == Cls::Thiourea) {
+  } else if (principal == Cls::Carbonate || principal == Cls::Carbamate || principal == Cls::Urea || principal == Cls::Thiourea ||
+             principal == Cls::CarbonicAcid || principal == Cls::CarbonicAnion) {
     // functional class names of carbonic acid derivatives (P-65.2.1): "dimethyl carbonate",
     // "ethyl N-methylcarbamate", "N-methyl-N'-phenylurea"
     for (int C = 0; C < n(); ++C) {
       if (acyl_[C] != principal) continue;
+      if (principal != Cls::Urea && principal != Cls::Thiourea) {
+        if (auto r = carbonic_name(C)) finish(Built{}, r->first, r->second);
+        continue;
+      }
       std::vector<int> os, ns;
       for (int x : at_[C].nb) {
         if (at_[x].z == 8 && deg(x) == 2) os.push_back(x);
@@ -4989,19 +5135,6 @@ std::optional<std::string> Namer::run() {
         finish(Built{}, npart + (principal == Cls::Urea ? "urea" : "thiourea"), extra);
         continue;
       }
-      if (principal == Cls::Carbamate) {
-        std::vector<std::pair<std::string, Named>> e;
-        for (const auto& nm : nsubs[0]) e.push_back({"N", nm});
-        npart = format_prefixes(e, false);
-      }
-      std::sort(organyls.begin(), organyls.end(), [](const std::string& a, const std::string& b) { return alpha_key(a) < alpha_key(b); });
-      std::string alk;
-      if (organyls.size() == 2 && organyls[0] == organyls[1]) {
-        alk = (organyls[0][0] == '(' || organyls[0][0] == '[' || has_digit(organyls[0])) ? "bis" + enclose(organyls[0]) : "di" + organyls[0];
-      } else {
-        for (const auto& o : organyls) alk += (alk.empty() ? "" : " ") + o;
-      }
-      finish(Built{}, alk + " " + npart + (principal == Cls::Carbonate ? "carbonate" : "carbamate"), extra);
     }
     if (!result) {
       if (err_.empty()) err_ = "carbonic acid derivative could not be named";
