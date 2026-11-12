@@ -1,6 +1,6 @@
 // IUPAC names (2013 Recommendations). Every expected name was checked by parsing it back with
 // OPSIN 2.8 (py2opsin) and comparing the InChIKey with the input structure (RDKit); the corpus
-// harness does the same on 7,000 PubChem structures, including salts and zwitterions (see ARCHITECTURE.md).
+// harness does the same on 15,000 PubChem structures, including salts and zwitterions (see ARCHITECTURE.md).
 #include <string>
 #include <utility>
 #include <vector>
@@ -108,6 +108,18 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(c1ncc2[nH]ccc2n1)", R"(5H-pyrrolo[3,2-d]pyrimidine)"},
       {R"(c1ccc2nonc2c1)", R"(2,1,3-benzoxadiazole)"},
       {R"(CCOC(=O)N1CCN(CC1)C(=S)NC2=CC3=NSN=C3C=C2)", R"(ethyl 4-[(2,1,3-benzothiadiazol-5-yl)carbamothioyl]piperazine-1-carboxylate)"},
+      {R"(c1ccc2c(c1)[nH]c1ncccc12)", R"(9H-pyrido[2,3-b]indole)"},
+      {R"(c1ccc2c(c1)nc1ccccn12)", R"(pyrido[1,2-a]benzimidazole)"},
+      {R"(O=c1ccc2cc3ccoc3cc2o1)", R"(7H-furo[3,2-g][1]benzopyran-7-one)"},
+      {R"(c1ccc2c(c1)sc1ncncc12)", R"([1]benzothieno[2,3-d]pyrimidine)"},
+      {R"(c1ccc2cc3cc4ccccc4cc3cc2c1)", R"(tetracene)"},
+      {R"(c1ccc2c(c1)ccc1c3ccccc3ccc21)", R"(chrysene)"},
+      {R"(C1=CC=CC2=C1C=1C(=CC=N2)C2=CC=CC=C2N1)", R"(indolo[3,2-d][1]benzazepine)"},
+      {R"(C1=CC=C2C(=C1)OC3=CC=CC=C3C4=C(O2)C=CC=C4)", R"(dibenzo[b,e][1,4]benzodioxocine)"},
+      {R"(C1=NN2C=NN=C2SC1)", R"(7H-[1,2,4]triazolo[3,4-b][1,3,4]thiadiazine)"},
+      {R"(C1Cc2c(sc3ncnc(N)c23)C1)", R"(6,7-dihydro-5H-cyclopenta[4,5]thieno[2,3-d]pyrimidin-4-amine)"},
+      {R"(Clc1ccc2c(c1)C(c1ccccc1)=NCc1nncn1-2)", R"(8-chloro-6-phenyl-4H-[1,2,4]triazolo[4,3-a][1,4]benzodiazepine)"},
+      {R"(CN1CCN(CC1)C1=Nc2ccccc2Sc2ccc(C)cc12)", R"(2-methyl-11-(4-methylpiperazin-1-yl)benzo[b][1,4]benzothiazepine)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -120,7 +132,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1ccc2c(c1)ccc1c3ccccc3ccc21", "NN", "c1ccc(N=Nc2ccccc2)cc1",
+  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1cc2ccc3cccc4ccc(c1)c2c34", "NN", "c1ccc(N=Nc2ccccc2)cc1",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
