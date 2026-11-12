@@ -430,9 +430,9 @@ enum class Cls : int {
   Carboxylate = -60, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
   Acid = 10, SulfonicAcid = 20, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
   SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
-  PhosThio = 75, SulfonylHalide = 76, Amide = 80, Thioamide = 90, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
+  PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
-  Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, None = 999
+  Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, None = 999
 };
 
 bool is_acyl(Cls c) {
@@ -584,6 +584,8 @@ class Namer {
   // the other atoms of the group are flagged in pseudoIn_
   enum Pseudo : char { PNone, Nitroso, Azido, Isocyanato, Isothiocyanato, Cyanato, Thiocyanato, Hydroperoxy, Peroxy };
   std::vector<char> pseudo_, pseudoIn_;
+  // semicarbazides R2N-C(=O/S)-NR-NR2: the carbonyl carbon; acyl groups on their hydrazine nitrogens
+  std::vector<char> semC_, acylSub_;
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
   std::vector<RingSys> rs_;
@@ -901,6 +903,26 @@ bool Namer::perceive() {
   nO_.assign(n(), 0);
   hydrN2_.assign(n(), 0);
   hydroxamO_.assign(n(), 0);
+  semC_.assign(n(), 0);
+  acylSub_.assign(n(), 0);
+  // H2N-C(=O)- or H2N-C(=S)- on nitrogen X, its other nitrogen acyclic with only plain carbons
+  auto carbamoylC = [&](int y, int X) {
+    if (at_[y].z != 6 || at_[y].ring || (dO(y) < 0 && dS(y) < 0)) return -1;
+    const int dx = dO(y) >= 0 ? dO(y) : dS(y);
+    int na = -1, het = 0;
+    for (int w : at_[y].nb) {
+      if (w == dx || at_[w].z == 6) continue;
+      ++het;
+      if (w != X) na = w;
+    }
+    if (het != 2 || na < 0 || at_[na].z != 7 || at_[na].ring || at_[na].arom || at_[na].q != 0) return -1;
+    for (std::size_t k = 0; k < at_[na].nb.size(); ++k) {
+      const int w = at_[na].nb[k];
+      if (at_[na].bo[k] != 1) return -1;
+      if (w != y && (at_[w].z != 6 || dO(w) >= 0 || dS(w) >= 0)) return -1;
+    }
+    return na;
+  };
   for (int N = 0; N < n(); ++N) {
     const NAtom& A = at_[N];
     if (A.z != 7 || A.ring || A.arom || A.q != 0) continue;
@@ -924,6 +946,9 @@ bool Namer::perceive() {
       continue;
     }
     if (at_[other].z != 7 || at_[other].ring || at_[other].arom || at_[other].q != 0) continue;
+    bool semi = false;  // 1-acyl semicarbazide: named from the carboxamide (P-41: amides before hydrazides)
+    for (int y : at_[other].nb) semi |= y != N && carbamoylC(y, other) >= 0;
+    if (semi) continue;
     bool ok = true;
     for (std::size_t k = 0; k < at_[other].nb.size(); ++k) {
       const int y = at_[other].nb[k];
@@ -946,11 +971,19 @@ bool Namer::perceive() {
       const int M = at_[N].nb[k];
       if (at_[N].bo[k] != 1 || M < N || !plain_sp3_N(M)) continue;
       bool ok = true;
-      int dbl = 0;
+      int dbl = 0, nsemi = 0, nacyl = 0;
       for (int X : {N, M})
         for (std::size_t j = 0; j < at_[X].nb.size(); ++j) {
           const int y = at_[X].nb[j];
           if (y == N || y == M) continue;
+          if (at_[X].bo[j] == 1 && carbamoylC(y, X) >= 0) {
+            ++nsemi;
+            continue;
+          }
+          if (at_[X].bo[j] == 1 && plain_acyl(y)) {
+            ++nacyl;
+            continue;
+          }
           if (at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) ok = false;
           if (at_[X].bo[j] == 2) {
             ++dbl;
@@ -960,9 +993,16 @@ bool Namer::perceive() {
             ok = false;
           }
         }
-      if (!ok || dbl > 1) continue;
+      if (!ok || dbl > 1 || nsemi > 1 || (nacyl > 0 && nsemi == 0)) continue;
       hzPartner_[N] = M;
       hzPartner_[M] = N;
+      for (int X : {N, M})
+        for (std::size_t j = 0; j < at_[X].nb.size(); ++j) {
+          const int y = at_[X].nb[j];
+          if (y == N || y == M || at_[X].bo[j] != 1) continue;
+          if (carbamoylC(y, X) >= 0) semC_[y] = 1;
+          else if (plain_acyl(y)) acylSub_[y] = 1;
+        }
     }
   }
   for (int N = 0; N < n(); ++N) {  // azo compounds R-N=N-R'
@@ -1219,6 +1259,16 @@ bool Namer::perceive() {
     switch (A.z) {
       case 6: {
         if (val != 4) return fail("carbon " + sym(a) + " with unusual valence (radical or carbene)");
+        if (semC_[a]) {
+          acyl_[a] = dS(a) >= 0 ? Cls::ThioSemicarbazide : Cls::Semicarbazide;
+          for (int b : A.nb)
+            if (at_[b].z == 7 && hzPartner_[b] < 0) amideN_[b] = 1;
+          break;
+        }
+        if (acylSub_[a]) {
+          acyl_[a] = Cls::AcylSub;
+          break;
+        }
         int nd = 0, nt = 0, imN = -1, nS = 0;
         for (std::size_t k = 0; k < A.nb.size(); ++k) {
           const int b = A.nb[k];
@@ -1677,6 +1727,12 @@ std::optional<Named> Namer::acyl_name(int c, int from) {
     if (xs.empty()) return Named{"carbamoyl", false, {}};
     return ligands(xs, x, "carbamoyl");
   }
+  if (at_[x].z == 7 && hzPartner_[x] >= 0 && acyl_[c] == Cls::Semicarbazide) {  // hydrazinecarbonyl
+    auto R = sub(x, c, 1);
+    if (!R) return std::nullopt;
+    if (R->text == "hydrazinyl") return Named{"hydrazinecarbonyl", true, R->stereo};
+    if (ends_with(R->text, "hydrazin-1-yl")) return Named{R->text.substr(0, R->text.size() - 13) + "hydrazine-1-carbonyl", true, R->stereo};
+  }
   return fail_n("unsupported acyl group at " + sym(c));
 }
 
@@ -2007,7 +2063,9 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         if (plainN != 2) return fail_n("unsupported amidine substituent at " + sym(q));
         return Named{"carbamimidoyl", false, {}};
       }
-      if (acyl_[q] == Cls::Thioamide || acyl_[q] == Cls::Thiourea) {  // carbamothioyl, from the carbon side only
+      if ((acyl_[q] == Cls::AcylSub || acyl_[q] == Cls::Semicarbazide || acyl_[q] == Cls::ThioSemicarbazide) && at_[from].z == 6)
+        return fail_n("hydrazine acyl group reached from carbon at " + sym(q));
+      if (acyl_[q] == Cls::Thioamide || acyl_[q] == Cls::Thiourea || acyl_[q] == Cls::ThioSemicarbazide) {  // carbamothioyl, from the carbon side only
         int N = -1;
         for (int x : A.nb)
           if (x != from && at_[x].z == 7 && amideN_[x]) N = x;
@@ -4564,7 +4622,8 @@ std::optional<Built> Namer::build(const Spec& sp) {
     for (int a = 0; a < n(); ++a) {
       if (!sp.region[a] || at_[a].z != 6 || at_[a].ring) continue;
       const Cls k = acyl_[a];
-      if ((k == Cls::Acid || k == Cls::Carboxylate || k == Cls::Anhydride || k == Cls::Nitrile || k == Cls::Carbonate || k == Cls::Carbamate || k == Cls::Urea || k == Cls::Thiourea) && !PA(a))
+      if ((k == Cls::Acid || k == Cls::Carboxylate || k == Cls::Anhydride || k == Cls::Nitrile || k == Cls::Carbonate || k == Cls::Carbamate || k == Cls::Urea || k == Cls::Thiourea ||
+           k == Cls::Semicarbazide || k == Cls::ThioSemicarbazide || k == Cls::AcylSub) && !PA(a))
         continue;
       E[a] = 1;
     }
@@ -4775,6 +4834,38 @@ std::optional<std::string> Namer::run() {
     }
     if (!result) {
       if (err_.empty()) err_ = "phosphorus acid derivative could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::Semicarbazide || principal == Cls::ThioSemicarbazide) {
+    // semicarbazides and semicarbazones as hydrazine-1-carboxamides (P-68.3.1.2.2):
+    // "2-(propan-2-ylidene)hydrazine-1-carboxamide", "N-phenylhydrazine-1-carbothioamide"
+    int nsemi = 0;
+    for (int C = 0; C < n(); ++C) nsemi += acyl_[C] == principal;
+    for (int C = 0; C < n() && nsemi == 1; ++C) {
+      if (acyl_[C] != principal) continue;
+      int Na = -1, Nh = -1;
+      for (int x : at_[C].nb)
+        if (at_[x].z == 7) (hzPartner_[x] >= 0 ? Nh : Na) = x;
+      if (Na < 0 || Nh < 0) break;
+      const int Nz = hzPartner_[Nh];
+      std::vector<std::pair<std::string, Named>> e;
+      std::vector<Key> extra;
+      bool ok = true;
+      for (auto [X, loc] : {std::pair{Na, "N"}, std::pair{Nh, "1"}, std::pair{Nz, "2"}})
+        for (std::size_t k = 0; k < at_[X].nb.size() && ok; ++k) {
+          const int y = at_[X].nb[k];
+          if (y == C || y == Nh || y == Nz) continue;
+          auto R = sub(y, X, at_[X].bo[k]);
+          if (!R) { ok = false; break; }
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          e.push_back({loc, *R});
+        }
+      if (!ok) break;
+      const std::string word = principal == Cls::Semicarbazide ? "carboxamide" : "carbothioamide";
+      finish(Built{}, e.empty() ? "hydrazine" + word : format_prefixes(e, false) + "hydrazine-1-" + word, extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "semicarbazide could not be named";
       return std::nullopt;
     }
   } else if (principal == Cls::Hydrazine) {

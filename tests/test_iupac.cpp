@@ -174,7 +174,7 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CCN1C(=O)/C(=C/C2=CC=C(C=C2)OCC#C)/SC1=NC3=CC=C(C=C3)OC)", R"(3-ethyl-2-[(4-methoxyphenyl)imino]-5-((Z)-{4-[(prop-2-yn-1-yl)oxy]phenyl}methylidene)-1,3-thiazolidin-4-one)"},
       {R"(CC1=CC2=C(C=C1)N(C(=NC(=O)C3=CC=CC=C3Cl)S2)C)", R"(2-chloro-N-(3,6-dimethyl-2,3-dihydro-1,3-benzothiazol-2-ylidene)benzamide)"},
       {R"(C1=CC(=CC(=C1)[N+](=O)[O-])C=NN2C=NN=C2S)", R"(4-{[(3-nitrophenyl)methylidene]amino}-4H-1,2,4-triazole-3-thiol)"},
-      {R"(CC(C)=NNC(N)=O)", R"(N-[(propan-2-ylidene)amino]urea)"},
+      {R"(CC(C)=NNC(N)=O)", R"(2-(propan-2-ylidene)hydrazine-1-carboxamide)"},
       {R"(c1ccccc1P(=O)(c1ccccc1)c1ccccc1)", R"(triphenyl-λ5-phosphanone)"},
       {R"(c1ccccc1P(c1ccccc1)c1ccccc1)", R"(triphenylphosphane)"},
       {R"(CP(=O)(O)c1ccccc1)", R"(methyl(phenyl)phosphinic acid)"},
@@ -210,6 +210,14 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"N#COc1ccccc1", "cyanatobenzene"},
       {"CC1=CC=C(N=C=O)C=C1", "1-isocyanato-4-methylbenzene"},
       {"S=C=NCC1=CC=CC=C1", "(isothiocyanatomethyl)benzene"},
+      // semicarbazides and semicarbazones as hydrazinecarboxamides (P-68.3.1.2.2)
+      {"NC(=O)NN", "hydrazinecarboxamide"},
+      {"NC(=S)NNc1ccccc1", "2-phenylhydrazine-1-carbothioamide"},
+      {"CNC(=S)NN=C(C)C", "N-methyl-2-(propan-2-ylidene)hydrazine-1-carbothioamide"},
+      {"C1=CC=C(C=C1)NC(=S)NNC(=O)C2=CC=CC=C2Cl", "2-(2-chlorobenzoyl)-N-phenylhydrazine-1-carbothioamide"},
+      {"NC(=O)NN=CC1=CC=C(C=C1)C(=O)O", "4-[(2-carbamoylhydrazinylidene)methyl]benzoic acid"},
+      {"NNC(=O)NCC(=O)O", "2-(hydrazinecarboxamido)acetic acid"},
+      {"CC(=O)NNC(=O)NCC(=O)OC", "methyl 2-(2-acetylhydrazine-1-carboxamido)acetate"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
