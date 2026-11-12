@@ -294,3 +294,47 @@ TEST(conformer_error_vectors) {
   CHECK(embed_smiles(st, "[Fe+2].[Cl-].[Cl-]", d2) < 0);
   CHECK(d2.contains(DiagCode::NoForceFieldType));
 }
+
+// Stereo that no real structure can have: the norbornane bridgeheads below are
+// written with the impossible relative configuration (RDKit's embedder refuses
+// this SMILES). The embedder used to return an inverted structure (the CH2
+// bridge pulled through the ring, a C-C-C angle near 178 degrees) and call the
+// stereo reproduced; it now returns a real norbornane and says which part of
+// the specification could not be met.
+TEST(embed_rejects_inverted_structures) {
+  auto worst_angle = [](const ChemicalSystemState& st, std::uint32_t sp) {
+    const Species& s = st.species[sp];
+    double worst = 0;
+    for (std::uint32_t g = s.atom_begin; g < s.atom_begin + s.atom_count; ++g) {
+      const auto nb = st.adjacency.neighbors(g);
+      if (st.atoms.element[g] != 6 || nb.size() != 4) continue;
+      for (std::size_t i = 0; i < 4; ++i)
+        for (std::size_t j = i + 1; j < 4; ++j) {
+          const double ux = st.atoms.x[nb[i]] - st.atoms.x[g], uy = st.atoms.y[nb[i]] - st.atoms.y[g], uz = st.atoms.z[nb[i]] - st.atoms.z[g];
+          const double vx = st.atoms.x[nb[j]] - st.atoms.x[g], vy = st.atoms.y[nb[j]] - st.atoms.y[g], vz = st.atoms.z[nb[j]] - st.atoms.z[g];
+          const double c = (ux * vx + uy * vy + uz * vz) / std::sqrt((ux * ux + uy * uy + uz * uz) * (vx * vx + vy * vy + vz * vz));
+          worst = std::max(worst, std::acos(std::max(-1.0, std::min(1.0, c))) * 180.0 / 3.141592653589793);
+        }
+    }
+    return worst;
+  };
+  {
+    ChemicalSystemState st;
+    Diagnostics d;
+    EmbedResult r;
+    const auto sp = embed_smiles(st, "C[C@@H]1C[C@@H]2CC[C@@H]1C2", d, &r);  // impossible bridgeheads
+    CHECK(sp >= 0);
+    CHECK(worst_angle(st, static_cast<std::uint32_t>(sp)) < 150.0);
+    CHECK(r.stereo_centres_ok < r.stereo_centres);
+    CHECK(d.contains(DiagCode::StereoLost));
+  }
+  {
+    ChemicalSystemState st;
+    Diagnostics d;
+    EmbedResult r;
+    const auto sp = embed_smiles(st, "C[C@@H]1C[C@@H]2CC[C@H]1C2", d, &r);  // the real configuration
+    CHECK(sp >= 0);
+    CHECK_EQ(r.stereo_centres_ok, r.stereo_centres);
+    CHECK(!d.contains(DiagCode::StereoLost));
+  }
+}

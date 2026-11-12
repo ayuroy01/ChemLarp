@@ -513,6 +513,31 @@ std::int32_t add_explicit_hydrogens(ChemicalSystemState& st, std::uint32_t sp, D
 
 // ---- embedding ---------------------------------------------------------------
 
+namespace {
+// Largest bond angle (degrees) at any 4-coordinate carbon. Real sp3 carbons stay
+// far below 150 degrees even in strained cages; above it the structure is
+// inverted (a bridge pulled through its ring), which happens when the requested
+// stereo cannot exist, e.g. an impossible bridgehead pair in norbornane.
+double worst_sp3_carbon_angle(const ChemicalSystemState& st, const Species& s) {
+  double worst = 0.0;
+  for (std::uint32_t g = s.atom_begin; g < s.atom_begin + s.atom_count; ++g) {
+    if (st.atoms.element[g] != 6) continue;
+    const auto nb = st.adjacency.neighbors(g);
+    if (nb.size() != 4) continue;
+    for (std::size_t i = 0; i < 4; ++i)
+      for (std::size_t j = i + 1; j < 4; ++j) {
+        const double ux = st.atoms.x[nb[i]] - st.atoms.x[g], uy = st.atoms.y[nb[i]] - st.atoms.y[g], uz = st.atoms.z[nb[i]] - st.atoms.z[g];
+        const double vx = st.atoms.x[nb[j]] - st.atoms.x[g], vy = st.atoms.y[nb[j]] - st.atoms.y[g], vz = st.atoms.z[nb[j]] - st.atoms.z[g];
+        const double c = (ux * vx + uy * vy + uz * vz) /
+                         std::sqrt((ux * ux + uy * uy + uz * uz) * (vx * vx + vy * vy + vz * vz) + 1e-300);
+        worst = std::max(worst, std::acos(std::clamp(c, -1.0, 1.0)) / kDeg);
+      }
+  }
+  return worst;
+}
+constexpr double kMaxSp3CarbonAngle = 150.0;
+}  // namespace
+
 EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics& diag, const EmbedOptions& opt) {
   EmbedResult res;
   const Species s = st.species[sp];
@@ -573,7 +598,7 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
   EmbedResult best;
   std::size_t best_ok = 0;
   double best_energy = 1e300;
-  int complete = 0;
+  int complete = 0, inverted = 0;
   const int wanted = opt.minimize ? std::max(1, opt.candidates) : 1;
   for (int a = 0; a < opt.max_attempts && complete < wanted; ++a) {
     std::mt19937_64 rng(opt.seed * 1000003ULL + static_cast<std::uint64_t>(a) * 7919ULL);
@@ -586,6 +611,10 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
     if (opt.minimize) {
       Diagnostics quiet;  // per-attempt warnings are summarised below
       cur.uff = uff_minimize(st, sp, quiet, opt.uff);
+    }
+    if (opt.minimize && worst_sp3_carbon_angle(st, s) > kMaxSp3CarbonAngle) {
+      ++inverted;
+      continue;  // inverted geometry: not a real structure
     }
     score_stereo(cur);
     const std::size_t ok = cur.stereo_centres_ok + cur.stereo_bonds_ok;
@@ -604,9 +633,15 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
     if (ok == cur.stereo_centres + cur.stereo_bonds) ++complete;
   }
   if (best_xyz.empty()) {
-    diag.error(DiagCode::EmbeddingFailed, "distance geometry found no coordinates with the requested chirality after " +
-                                              std::to_string(res.attempts) + " attempts")
-        .on_species(sp);
+    if (inverted > 0)
+      diag.error(DiagCode::EmbeddingFailed,
+                 "the requested stereochemistry cannot exist in 3D: every structure that has it is inverted (an sp3 carbon "
+                 "bent past 150 degrees), as with an impossible bridgehead configuration; check the @/@@ marks")
+          .on_species(sp);
+    else
+      diag.error(DiagCode::EmbeddingFailed, "distance geometry found no coordinates with the requested chirality after " +
+                                                std::to_string(res.attempts) + " attempts")
+          .on_species(sp);
     return res;
   }
   const int attempts = res.attempts;
@@ -621,7 +656,10 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
     diag.warn(DiagCode::StereoLost, "3D structure reproduces " + std::to_string(res.stereo_centres_ok) + "/" +
                                         std::to_string(res.stereo_centres) + " stereocentres and " +
                                         std::to_string(res.stereo_bonds_ok) + "/" + std::to_string(res.stereo_bonds) +
-                                        " stereo double bonds")
+                                        " stereo double bonds" +
+                                        (inverted > 0 ? "; the full specification only gave inverted (impossible) "
+                                                        "structures, so the closest real one is returned"
+                                                      : ""))
         .on_species(sp);
   res.ok = true;
   return res;
