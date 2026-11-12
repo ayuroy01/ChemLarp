@@ -8,8 +8,9 @@
 //    Hantzsch-Widman heteromonocycles and fused systems with fixed numbering
 //    (pyridine ... purine, naphthalene, indole, quinoline, carbazole,
 //    cyclopenta[a]phenanthrene, ...) whose saturation is expressed by indicated
-//    hydrogen and hydro prefixes, and bicyclic von Baeyer systems
-//    (bicyclo[2.2.1]heptane, 8-azabicyclo[3.2.1]octane, ...);
+//    hydrogen and hydro prefixes; any ortho-fused bicycle of 5-8 membered
+//    rings by fusion nomenclature; Hantzsch-Widman heteromonocycles; bicyclic
+//    von Baeyer and monospiro systems (bicyclo[2.2.1]heptane, spiro[4.5]decane);
 //  - principal characteristic groups as suffixes in the order of P-41
 //    (carboxylic and sulfonic acids, esters, amides and sulfonamides, nitriles,
 //    aldehydes, ketones, alcohols, thiols, amines, imines), the rest as
@@ -25,8 +26,8 @@
 //    acid, benzoic acid, phenol, aniline, benzaldehyde, benzonitrile, ...);
 //  - CIP stereodescriptors (R/S, E/Z) on parent and substituent atoms.
 //
-// A structure outside this scope (fused ring systems without a built-in parent,
-// spiro and tricyclic systems, hydrazines, polyphosphates, ...) gets
+// A structure outside this scope (fused systems of three or more rings without a
+// built-in parent, spiro systems with fused components, tricyclic bridged systems, hydrazines, polyphosphates, ...) gets
 // no name and a NamingUnsupported diagnostic saying why: the namer never guesses.
 
 #include <cstdint>

@@ -96,6 +96,18 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(NC(N)=NCCCC(N)C(=O)O)", R"(2-amino-5-carbamimidamidopentanoic acid)"},
       {R"(CNC(=N)N)", R"(N-methylguanidine)"},
       {R"(CN(CC(=O)O)C(=N)N)", R"(2-[carbamimidoyl(methyl)amino]acetic acid)"},
+      {R"(C1SCCCS1)", R"(1,3-dithiane)"},
+      {R"(C1CC2(CCN1)CCOC2)", R"(2-oxa-8-azaspiro[4.5]decane)"},
+      {R"(O=C1CCC2(CCCCC2)O1)", R"(1-oxaspiro[4.5]decan-2-one)"},
+      {R"(CN1CN(C(=S)SC1)C)", R"(3,5-dimethyl-1,3,5-thiadiazinane-2-thione)"},
+      {R"(c1cnc2sccc2c1)", R"(thieno[2,3-b]pyridine)"},
+      {R"(c1cnc2ccsc2c1)", R"(thieno[3,2-b]pyridine)"},
+      {R"(CC1=CN2C=CSC2=N1)", R"(6-methylimidazo[2,1-b][1,3]thiazole)"},
+      {R"(c1ccc2c(c1)CCCCC2)", R"(6,7,8,9-tetrahydro-5H-benzo[7]annulene)"},
+      {R"(c1ccc2c(c1)COCN2)", R"(1,4-dihydro-2H-3,1-benzoxazine)"},
+      {R"(c1ncc2[nH]ccc2n1)", R"(5H-pyrrolo[3,2-d]pyrimidine)"},
+      {R"(c1ccc2nonc2c1)", R"(2,1,3-benzoxadiazole)"},
+      {R"(CCOC(=O)N1CCN(CC1)C(=S)NC2=CC3=NSN=C3C=C2)", R"(ethyl 4-[(2,1,3-benzothiadiazol-5-yl)carbamothioyl]piperazine-1-carboxylate)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -108,8 +120,8 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1ccc2cc3ccccc3cc2c1C1CC12CC2", "NN", "c1ccc(N=Nc2ccccc2)cc1",
-                              "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)CCC2"}) {
+  for (const char* smiles : {"CC[Si](C)C", "CCO.CCCO", "CC(=O)Cl", "c1ccc2c(c1)ccc1c3ccccc3ccc21", "NN", "c1ccc(N=Nc2ccccc2)cc1",
+                              "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)c1ccccc12"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
     CHECK(!r.ok);

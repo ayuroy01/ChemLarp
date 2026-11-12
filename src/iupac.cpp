@@ -454,6 +454,10 @@ struct RingSys {
   std::vector<int> X;           // atoms saturated relative to the mancude parent
   std::vector<int> matchable;   // atoms that carry a double bond in the mancude parent
   int vb[3] = {0, 0, 0};        // von Baeyer bridge lengths
+  bool spiro = false;           // VonBaeyer kind used for a monospiro system: spiro[vb0.vb1]
+  std::vector<std::string> names;               // Template kind: parent name per numbering in `orders`
+  std::vector<std::vector<std::string>> locs;   // Template kind: locants per numbering
+  bool het_numbering = false;                   // numbering chosen by heteroatom locants first (Hantzsch-Widman)
 };
 
 struct Spec {
@@ -593,6 +597,10 @@ class Namer {
   std::vector<std::string> locants(const Cand& c, const std::vector<int>& o) const;
   bool perfect_matching(std::vector<int> atoms) const;
   bool von_baeyer(RingSys& R);
+  bool spiro_system(RingSys& R);
+  bool hantzsch_widman(RingSys& R, bool& mancude);
+  bool fusion_bicycle(RingSys& R);
+  int order_index(const Cand& c, const std::vector<int>& o) const;
   void hydro(const Cand& c, const std::vector<std::string>& L, std::string& ind, std::vector<std::string>& hyd) const;
   std::optional<Built> assemble(const Spec& sp, const Cand& c, const std::vector<int>& o);
   std::string hydride(const Cand& c, const std::vector<int>& o, bool omit_unsat, bool& saturated) const;
@@ -1150,20 +1158,25 @@ bool Namer::rings() {
           if (ok) {
             R.templ = static_cast<int>(t);
             R.orders.push_back(o);
+            R.names.push_back(templates()[t].name);
+            R.locs.push_back(templates()[t].locants);
           }
         }
       }
-      if (R.orders.empty() && R.nrings == 2 && von_baeyer(R)) {
+      if (R.orders.empty() && R.nrings == 2 && (spiro_system(R) || von_baeyer(R))) {
         const int id = static_cast<int>(rs_.size());
         for (int a : atoms) ringsys_[a] = id;
         rs_.push_back(std::move(R));
         continue;
       }
+      bool generic_mancude = false;
+      if (R.orders.empty() && R.nrings == 1 && !hantzsch_widman(R, generic_mancude)) return false;
+      if (R.orders.empty() && R.nrings == 2 && fusion_bicycle(R)) generic_mancude = true;
       if (R.orders.empty())
         return fail(std::string(R.nrings == 1 ? "monocycle" : "ring system") + " of " + std::to_string(atoms.size()) +
                     " atoms without a supported parent name (fused, bridged, spiro, partially hydrogenated or uncommon heterocycle)");
       R.kind = PKind::Template;
-      R.mancude = templates()[R.templ].mancude;
+      R.mancude = R.templ >= 0 ? templates()[R.templ].mancude : generic_mancude;
       for (int a : atoms)
         for (std::size_t k = 0; k < at_[a].nb.size(); ++k)
           if (ringbond[a][k] && at_[a].nb[k] > a && at_[a].bo[k] == 2) ++R.unsat;
@@ -1179,6 +1192,7 @@ bool Namer::rings() {
           if (!dbl) R.X.push_back(a);
         }
         R.ih = static_cast<int>(R.matchable.size() % 2);
+        if (!R.ih && !perfect_matching(R.matchable)) return fail("ring system without a mancude parent of standard form");
       }
     }
     const int id = static_cast<int>(rs_.size());
@@ -1432,7 +1446,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         int N = -1;
         for (int x : A.nb)
           if (x != from && at_[x].z == 7 && amideN_[x]) N = x;
-        if (N < 0 || (acyl_[q] == Cls::Thioamide && at_[from].z == 7)) return fail_n("thioacyl substituent at " + sym(q));
+        if (N < 0) return fail_n("thioacyl substituent at " + sym(q));
         std::vector<int> xs;
         for (int x : at_[N].nb)
           if (x != q) xs.push_back(x);
@@ -1485,6 +1499,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
     for (int b : at_[A].nb) {
       if (c.in[b] || b == sp.from) continue;
       if (at_[b].z == 6) return fail("acyl carbon " + sym(A) + " with a second carbon");
+      if (at_[b].ring) return fail("acyl group on a ring atom outside the parent at " + sym(A));
       used[b] = 1;
       if (acyl_[A] == Cls::Ester && at_[b].z == 8 && deg(b) == 2) c.ester_o.push_back({b, at});
       if (acyl_[A] == Cls::Hydrazide && at_[b].z == 7)
@@ -1615,10 +1630,21 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
   return true;
 }
 
+int Namer::order_index(const Cand& c, const std::vector<int>& o) const {
+  const auto& os = rs_[c.rsys].orders;
+  for (std::size_t i = 0; i < os.size(); ++i)
+    if (os[i] == o) return static_cast<int>(i);
+  return 0;
+}
+
 std::vector<std::string> Namer::locants(const Cand& c, const std::vector<int>& o) const {
   std::vector<std::string> L(n());
-  const bool templ = c.kind == PKind::Template;
-  for (std::size_t i = 0; i < o.size(); ++i) L[o[i]] = templ ? templates()[rs_[c.rsys].templ].locants[i] : std::to_string(i + 1);
+  if (c.kind == PKind::Template) {
+    const auto& lc = rs_[c.rsys].locs[static_cast<std::size_t>(order_index(c, o))];
+    for (std::size_t i = 0; i < o.size(); ++i) L[o[i]] = lc[i];
+  } else {
+    for (std::size_t i = 0; i < o.size(); ++i) L[o[i]] = std::to_string(i + 1);
+  }
   return L;
 }
 
@@ -1689,6 +1715,407 @@ bool Namer::von_baeyer(RingSys& R) {
   return true;
 }
 
+// Monospiro systems of two monocycles (P-24.2.1): spiro[4.5]decane, 1-oxa-8-azaspiro[4.5]decane.
+bool Namer::spiro_system(RingSys& R) {
+  int centre = -1;
+  auto rdeg = [&](int a) {
+    int d = 0;
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k) d += ringbond_[a][k];
+    return d;
+  };
+  for (int a : R.atoms) {
+    const int d = rdeg(a);
+    if (d == 4 && centre < 0) centre = a;
+    else if (d != 2) return false;
+  }
+  if (centre < 0) return false;
+  for (int a : R.atoms)
+    if (at_[a].arom) return fail("spiro system with an aromatic component at " + sym(a));
+  // the two rings, each walked from the centre
+  std::vector<std::vector<int>> rings;
+  std::set<int> seen;
+  for (std::size_t k = 0; k < at_[centre].nb.size(); ++k) {
+    const int first = at_[centre].nb[k];
+    if (!ringbond_[centre][k] || seen.count(first)) continue;
+    std::vector<int> path;
+    int prev = centre, cur = first;
+    while (cur != centre) {
+      path.push_back(cur);
+      seen.insert(cur);
+      int next = -1;
+      for (std::size_t j = 0; j < at_[cur].nb.size(); ++j)
+        if (ringbond_[cur][j] && at_[cur].nb[j] != prev) next = at_[cur].nb[j];
+      if (next < 0 || path.size() > R.atoms.size()) return false;
+      prev = cur;
+      cur = next;
+    }
+    rings.push_back(path);
+  }
+  if (rings.size() != 2) return false;
+  if (rings[0].size() > rings[1].size()) std::swap(rings[0], rings[1]);
+  R.kind = PKind::VonBaeyer;
+  R.spiro = true;
+  R.vb[0] = static_cast<int>(rings[0].size());
+  R.vb[1] = static_cast<int>(rings[1].size());
+  for (int swap : {0, 1}) {
+    if (swap && rings[0].size() != rings[1].size()) break;
+    const auto& small = rings[swap];
+    const auto& large = rings[1 - swap];
+    for (int d1 : {0, 1})
+      for (int d2 : {0, 1}) {
+        std::vector<int> o;
+        if (d1) o.insert(o.end(), small.rbegin(), small.rend());
+        else o.insert(o.end(), small.begin(), small.end());
+        o.push_back(centre);
+        if (d2) o.insert(o.end(), large.rbegin(), large.rend());
+        else o.insert(o.end(), large.begin(), large.end());
+        R.orders.push_back(o);
+      }
+  }
+  for (int x : R.atoms)
+    for (std::size_t k = 0; k < at_[x].nb.size(); ++k)
+      if (ringbond_[x][k] && at_[x].nb[k] > x && at_[x].bo[k] > 1) ++R.unsat;
+  return true;
+}
+
+// Hantzsch-Widman names of heteromonocycles with 3-10 members (P-22.2.2) that have no retained name.
+bool Namer::hantzsch_widman(RingSys& R, bool& mancude) {
+  const int m = static_cast<int>(R.atoms.size());
+  if (m < 3 || m > 10) return true;  // nothing to add; the caller reports the ring
+  std::vector<int> cyc = {R.atoms[0]};
+  {
+    std::set<int> in(R.atoms.begin(), R.atoms.end());
+    int prev = -1, cur = R.atoms[0];
+    while (static_cast<int>(cyc.size()) <= m) {
+      int next = -1;
+      for (std::size_t k = 0; k < at_[cur].nb.size(); ++k)
+        if (ringbond_[cur][k] && at_[cur].nb[k] != prev) {
+          next = at_[cur].nb[k];
+          break;
+        }
+      if (next < 0 || next == R.atoms[0]) break;
+      cyc.push_back(next);
+      prev = cur;
+      cur = next;
+    }
+    if (static_cast<int>(cyc.size()) != m) return true;
+  }
+  bool saturated = true, hasN = false;
+  for (int i = 0; i < m; ++i) {
+    const int a = cyc[i];
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return true;
+    hasN |= at_[a].z == 7;
+    if (order(a, cyc[(i + 1) % m]) > 1) saturated = false;
+  }
+  static const char* sat_n[] = {"", "", "", "iridine", "etidine", "olidine", "inane", "epane", "ocane", "onane", "ecane"};
+  static const char* sat_o[] = {"", "", "", "irane", "etane", "olane", "ane", "epane", "ocane", "onane", "ecane"};
+  static const char* uns_n[] = {"", "", "", "irine", "ete", "ole", "ine", "epine", "ocine", "onine", "ecine"};
+  static const char* uns_o[] = {"", "", "", "irene", "ete", "ole", "ine", "epine", "ocine", "onine", "ecine"};
+  const std::string stem = saturated ? (hasN ? sat_n[m] : sat_o[m]) : (hasN ? uns_n[m] : uns_o[m]);
+  for (int st = 0; st < m; ++st)
+    for (int dir : {1, -1}) {
+      std::vector<int> o;
+      for (int i = 0; i < m; ++i) o.push_back(cyc[((st + dir * i) % m + m) % m]);
+      std::vector<std::string> L;
+      for (int i = 0; i < m; ++i) L.push_back(std::to_string(i + 1));
+      std::string locs, pre;
+      int nhet = 0;
+      for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}}) {
+        std::vector<std::string> l;
+        for (int i = 0; i < m; ++i)
+          if (at_[o[i]].z == z) l.push_back(L[i]);
+        if (l.empty()) continue;
+        nhet += static_cast<int>(l.size());
+        std::sort(l.begin(), l.end(), [](const std::string& x, const std::string& y) { return locant_key(x) < locant_key(y); });
+        for (const auto& x : l) locs += (locs.empty() ? "" : ",") + x;
+        std::string w = multiplier(static_cast<int>(l.size()), false) + word;
+        if (!pre.empty() && pre.back() == 'a' && starts_with_vowel(w)) pre.pop_back();
+        pre += w;
+      }
+      if (pre.back() == 'a' && starts_with_vowel(stem)) pre.pop_back();
+      R.orders.push_back(o);
+      R.locs.push_back(L);
+      R.names.push_back((nhet > 1 ? locs + "-" : "") + pre + stem);
+    }
+  R.het_numbering = true;
+  mancude = !saturated;
+  return true;
+}
+
+// ---- fusion nomenclature for ortho-fused bicycles (P-25.3, FR-3 to FR-5) -----------------------
+
+// One ring of a fused system named as a monocyclic component.
+struct Component {
+  std::vector<int> cyc;                       // atoms in ring order
+  std::vector<std::vector<int>> numberings;   // standard numberings (cyclic orders, locant 1 first)
+  bool carbocycle = true, benzene = false;
+  int size = 0, nN = 0, nO = 0, nS = 0;
+  std::string name, prefix;                   // "pyridine"/"pyrido", "1,3-thiazole"/"[1,3]thiazolo"
+  std::string fusion_base;                    // the name as a base component: "pyridine", "[1,3]thiazole"
+  std::string hw_bare;                        // name without locants, for benzo names: "oxazole"
+  std::vector<int> het_locs;                  // heteroatom locants of the standard numbering, by element O, S, N
+};
+
+bool Namer::fusion_bicycle(RingSys& R) {
+  // two rings sharing one bond, members C, N, O, S, ring sizes 5-8
+  std::vector<int> heads;
+  for (int a : R.atoms) {
+    int d = 0;
+    for (std::size_t k = 0; k < at_[a].nb.size(); ++k) d += ringbond_[a][k];
+    if (d == 3) heads.push_back(a);
+    else if (d != 2) return false;
+    if (at_[a].z != 6 && at_[a].z != 7 && at_[a].z != 8 && at_[a].z != 16) return false;
+  }
+  if (heads.size() != 2 || order(heads[0], heads[1]) == 0) return false;
+  const int f1 = heads[0], f2 = heads[1];
+  std::vector<std::vector<int>> sides;  // atoms from f1 to f2, excluding both
+  for (std::size_t k = 0; k < at_[f1].nb.size(); ++k) {
+    if (!ringbond_[f1][k] || at_[f1].nb[k] == f2) continue;
+    std::vector<int> path;
+    int prev = f1, cur = at_[f1].nb[k];
+    while (cur != f2) {
+      path.push_back(cur);
+      int next = -1;
+      for (std::size_t j = 0; j < at_[cur].nb.size(); ++j)
+        if (ringbond_[cur][j] && at_[cur].nb[j] != prev) next = at_[cur].nb[j];
+      if (next < 0 || path.size() > R.atoms.size()) return false;
+      prev = cur;
+      cur = next;
+    }
+    sides.push_back(path);
+  }
+  if (sides.size() != 2) return false;
+  for (const auto& sd : sides)
+    if (sd.size() + 2 < 5 || sd.size() + 2 > 8) return fail("fused ring of fewer than five or more than eight members");
+
+  auto make = [&](const std::vector<int>& side) {
+    Component c;
+    c.cyc = {f1};
+    c.cyc.insert(c.cyc.end(), side.begin(), side.end());
+    c.cyc.push_back(f2);
+    c.size = static_cast<int>(c.cyc.size());
+    for (int a : c.cyc) {
+      c.nN += at_[a].z == 7;
+      c.nO += at_[a].z == 8;
+      c.nS += at_[a].z == 16;
+    }
+    c.carbocycle = c.nN + c.nO + c.nS == 0;
+    c.benzene = c.carbocycle && c.size == 6;
+    // standard numberings: heteroatoms as low as possible, then O, S, N in that order
+    std::vector<std::vector<double>> keys;
+    std::vector<std::vector<int>> all;
+    for (int st = 0; st < c.size; ++st)
+      for (int dir : {1, -1}) {
+        std::vector<int> o;
+        for (int i = 0; i < c.size; ++i) o.push_back(c.cyc[((st + dir * i) % c.size + c.size) % c.size]);
+        std::vector<double> key;
+        for (int i = 0; i < c.size; ++i)
+          if (at_[o[i]].z != 6) key.push_back(i + 1);
+        for (int z : {8, 16, 7})
+          for (int i = 0; i < c.size; ++i)
+            if (at_[o[i]].z == z) key.push_back(i + 1);
+        keys.push_back(key);
+        all.push_back(o);
+      }
+    const auto best = *std::min_element(keys.begin(), keys.end());
+    for (std::size_t i = 0; i < all.size(); ++i)
+      if (keys[i] == best) c.numberings.push_back(all[i]);
+    const auto& o = c.numberings[0];
+    std::map<int, std::vector<int>> hl;
+    for (int i = 0; i < c.size; ++i)
+      if (at_[o[i]].z != 6) hl[at_[o[i]].z].push_back(i + 1);
+    for (int z : {8, 16, 7})
+      for (int l : hl[z]) c.het_locs.push_back(l);
+    if (c.carbocycle) {
+      c.name = c.benzene ? "benzene" : "cyclo" + alkane_stem(c.size) + "ene";
+      c.prefix = c.benzene ? "benzo" : "cyclo" + alkane_stem(c.size) + "a";
+      c.fusion_base = c.name;
+      return c;
+    }
+    std::string key = std::to_string(c.size) + ":";
+    for (int z : {8, 16, 7})
+      for (int l : hl[z]) key += std::string(1, z == 8 ? 'O' : z == 16 ? 'S' : 'N') + std::to_string(l);
+    static const std::map<std::string, std::pair<const char*, const char*>> retained = {
+        {"6:N1", {"pyridine", "pyrido"}},     {"6:N1N3", {"pyrimidine", "pyrimido"}}, {"6:N1N4", {"pyrazine", "pyrazino"}},
+        {"6:N1N2", {"pyridazine", "pyridazino"}}, {"6:O1", {"pyran", "pyrano"}},   {"6:S1", {"thiopyran", "thiopyrano"}},
+        {"5:N1", {"pyrrole", "pyrrolo"}},     {"5:O1", {"furan", "furo"}},           {"5:S1", {"thiophene", "thieno"}},
+        {"5:N1N3", {"imidazole", "imidazo"}}, {"5:N1N2", {"pyrazole", "pyrazolo"}}, {"5:N1N2N3N4", {"tetrazole", "tetrazolo"}}};
+    if (auto it = retained.find(key); it != retained.end()) {
+      c.name = c.fusion_base = it->second.first;
+      c.prefix = it->second.second;
+      c.hw_bare = c.name;
+      return c;
+    }
+    // Hantzsch-Widman name of the mancude ring
+    static const char* uns_n[] = {"", "", "", "irine", "ete", "ole", "ine", "epine", "ocine"};
+    static const char* uns_o[] = {"", "", "", "irene", "ete", "ole", "ine", "epine", "ocine"};
+    const std::string stem = c.nN ? uns_n[c.size] : uns_o[c.size];
+    std::string pre, locs;
+    int nhet = 0;
+    for (const auto& [z, word] : std::vector<std::pair<int, std::string>>{{8, "oxa"}, {16, "thia"}, {7, "aza"}}) {
+      if (hl[z].empty()) continue;
+      for (int l : hl[z]) locs += (locs.empty() ? "" : ",") + std::to_string(l), ++nhet;
+      std::string w = multiplier(static_cast<int>(hl[z].size()), false) + word;
+      if (!pre.empty() && pre.back() == 'a' && starts_with_vowel(w)) pre.pop_back();
+      pre += w;
+    }
+    if (pre.back() == 'a' && starts_with_vowel(stem)) pre.pop_back();
+    c.hw_bare = pre + stem;
+    c.name = (nhet > 1 ? locs + "-" : "") + c.hw_bare;
+    c.fusion_base = (nhet > 1 ? "[" + locs + "]" : "") + c.hw_bare;
+    std::string pf = c.hw_bare;
+    if (pf.back() == 'e') pf.pop_back();
+    c.prefix = (nhet > 1 ? "[" + locs + "]" : "") + pf + "o";
+    return c;
+  };
+  Component A = make(sides[0]), B = make(sides[1]);
+
+  // base component (FR-3.1): nitrogenous; senior heteroatom; larger ring; more heteroatoms; variety;
+  // more heteroatoms early in O, S, N; lower heteroatom locants
+  auto seniority = [](const Component& c) {
+    std::vector<double> v = {double(c.nN > 0), double(c.nN == 0 && c.nO > 0), double(c.nN == 0 && c.nO == 0 && c.nS > 0), double(c.size),
+                             double(c.nN + c.nO + c.nS), double((c.nN > 0) + (c.nO > 0) + (c.nS > 0)), double(c.nO), double(c.nS), double(c.nN)};
+    for (int l : c.het_locs) v.push_back(-l);
+    return v;
+  };
+  std::string name;  // built below once the numbering is known (benzo names need it)
+  bool benzo_name = false;
+  const Component* base = &A;
+  const Component* att = &B;
+  if (A.carbocycle && B.carbocycle) {
+    const Component& big = A.size >= B.size ? A : B;
+    const Component& small = A.size >= B.size ? B : A;
+    if (small.benzene && big.size >= 7) name = "benzo[" + std::to_string(big.size) + "]annulene";
+    else if (small.size == 5 && big.size == 5) name = "pentalene";
+    else if (small.size == 7 && big.size == 7) name = "heptalene";
+    else return fail("fused carbocyclic system without a supported name");
+  } else if ((A.benzene && !B.carbocycle) || (B.benzene && !A.carbocycle)) {
+    benzo_name = true;
+    base = A.benzene ? &B : &A;
+    att = A.benzene ? &A : &B;
+  } else {
+    if (seniority(B) > seniority(A)) std::swap(base, att);
+    if (seniority(*base) == seniority(*att) && base->carbocycle == att->carbocycle && !base->carbocycle && base->size == att->size &&
+        base->het_locs == att->het_locs)
+      ;  // identical components: either may be the base
+    // fusion descriptor: earliest base letter, then lowest attached locants (FR-4.5, FR-4.6)
+    std::string bestdesc;
+    int bestletter = 1 << 20;
+    std::vector<int> bestatt;
+    for (const auto& bn : base->numberings) {
+      const int m = static_cast<int>(bn.size());
+      const int i1 = static_cast<int>(std::find(bn.begin(), bn.end(), f1) - bn.begin());
+      const int i2 = static_cast<int>(std::find(bn.begin(), bn.end(), f2) - bn.begin());
+      int letter, firstAtom, secondAtom;
+      if ((i1 + 1) % m == i2) letter = i1, firstAtom = f1, secondAtom = f2;
+      else letter = i2, firstAtom = f2, secondAtom = f1;
+      std::vector<int> attl;
+      if (!att->carbocycle) {
+        std::vector<int> bestpair;
+        for (const auto& an : att->numberings) {
+          const int l1 = static_cast<int>(std::find(an.begin(), an.end(), firstAtom) - an.begin()) + 1;
+          const int l2 = static_cast<int>(std::find(an.begin(), an.end(), secondAtom) - an.begin()) + 1;
+          std::vector<int> pr = {l1, l2};
+          auto sorted_pr = pr;
+          std::sort(sorted_pr.begin(), sorted_pr.end());
+          if (bestpair.empty()) bestpair = pr;
+          else {
+            auto sb = bestpair;
+            std::sort(sb.begin(), sb.end());
+            if (sorted_pr < sb || (sorted_pr == sb && pr < bestpair)) bestpair = pr;
+          }
+        }
+        attl = bestpair;
+      }
+      bool better = letter < bestletter;
+      if (letter == bestletter && !attl.empty()) {
+        auto s1 = attl, s2 = bestatt;
+        std::sort(s1.begin(), s1.end());
+        std::sort(s2.begin(), s2.end());
+        better = s1 < s2 || (s1 == s2 && attl < bestatt);
+      }
+      if (better) {
+        bestletter = letter;
+        bestatt = attl;
+      }
+    }
+    std::string desc = "[";
+    if (!bestatt.empty()) desc += std::to_string(bestatt[0]) + "," + std::to_string(bestatt[1]) + "-";
+    desc += static_cast<char>('a' + bestletter);
+    desc += "]";
+    name = att->prefix + desc + base->fusion_base;
+  }
+
+  // peripheral numbering (FR-5.3, FR-5.4): start next to a fusion atom in either ring, clockwise;
+  // fusion carbons take the previous number with a letter, fusion heteroatoms a number
+  struct Num {
+    std::vector<int> o;
+    std::vector<std::string> L;
+    std::vector<double> key;
+  };
+  std::vector<Num> cands;
+  for (int right = 0; right < 2; ++right)
+    for (int top = 0; top < 2; ++top) {
+      const int ft = top ? f2 : f1, fb = top ? f1 : f2;
+      auto r = sides[right], l = sides[1 - right];  // each runs f1 -> f2
+      if (ft == f2) std::reverse(r.begin(), r.end()), std::reverse(l.begin(), l.end());
+      // right ring from ft to fb, then left ring from fb back to ft
+      std::vector<int> seq(r.begin(), r.end());
+      seq.push_back(fb);
+      seq.insert(seq.end(), l.rbegin(), l.rend());
+      seq.push_back(ft);
+      Num nm;
+      nm.o = seq;
+      int counter = 0;
+      for (int a : seq) {
+        const bool fusion = a == f1 || a == f2;
+        if (fusion && at_[a].z == 6) nm.L.push_back(std::to_string(counter) + "a");
+        else nm.L.push_back(std::to_string(++counter));
+      }
+      std::vector<std::string> het, fc, fh;
+      for (std::size_t i = 0; i < seq.size(); ++i) {
+        if (at_[seq[i]].z != 6) het.push_back(nm.L[i]);
+        if ((seq[i] == f1 || seq[i] == f2) && at_[seq[i]].z == 6) fc.push_back(nm.L[i]);
+      }
+      auto add = [&](const std::vector<std::string>& v) {
+        auto k = sorted_keys(v);
+        nm.key.insert(nm.key.end(), k.begin(), k.end());
+        nm.key.push_back(-1);
+      };
+      add(het);
+      for (int z : {8, 16, 7}) {
+        std::vector<std::string> v;
+        for (std::size_t i = 0; i < seq.size(); ++i)
+          if (at_[seq[i]].z == z) v.push_back(nm.L[i]);
+        add(v);
+      }
+      add(fc);
+      cands.push_back(nm);
+    }
+  std::vector<double> best = cands[0].key;
+  for (const auto& c : cands) best = std::min(best, c.key);
+  for (const auto& c : cands) {
+    if (c.key != best) continue;
+    std::string nm = name;
+    if (benzo_name) {
+      const Component& h = *base;
+      std::string locs;
+      for (int z : {8, 16, 7}) {
+        std::vector<std::string> v;
+        for (std::size_t i = 0; i < c.o.size(); ++i)
+          if (at_[c.o[i]].z == z) v.push_back(c.L[i]);
+        std::sort(v.begin(), v.end(), [](const std::string& x, const std::string& y) { return locant_key(x) < locant_key(y); });
+        for (const auto& x : v) locs += (locs.empty() ? "" : ",") + x;
+      }
+      nm = locs + "-" + (starts_with_vowel(h.hw_bare) ? "benz" : "benzo") + h.hw_bare;
+    }
+    R.orders.push_back(c.o);
+    R.locs.push_back(c.L);
+    R.names.push_back(nm);
+  }
+  return true;
+}
+
 // Whether the ring-bond graph on `atoms` has a perfect matching (backtracking; ring systems are small).
 bool Namer::perfect_matching(std::vector<int> atoms) const {
   if (atoms.empty()) return true;
@@ -1725,8 +2152,11 @@ void Namer::hydro(const Cand& c, const std::vector<std::string>& L, std::string&
         break;
       }
     }
-    if (pick < 0 && !xs.empty()) pick = xs[0];
-    if (pick >= 0) ind = L[pick];
+    if (pick < 0) {
+      ind = "?";  // no indicated-hydrogen position gives a valid mancude parent
+      return;
+    }
+    ind = L[pick];
   }
   for (int x : R.X)
     if (x != pick) hyd.push_back(L[x]);
@@ -1775,9 +2205,24 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
     std::string ind;
     std::vector<std::string> hyd;
     hydro(c, L, ind, hyd);
+    if (ind == "?") valid = false;
     if (!ind.empty()) s.ind.push_back(locant_key(ind));
     if (hyd.size() % 2) valid = false;  // hydro prefixes come in pairs; an odd set has no mancude reference
     un.insert(un.end(), hyd.begin(), hyd.end());
+  }
+  if (c.kind == PKind::Template && rs_[c.rsys].het_numbering) {
+    // heteroatoms as a set, then in the order O, S, N (P-31.1.4.2.2)
+    std::vector<std::string> all;
+    for (int x : o)
+      if (at_[x].z != 6) all.push_back(L[x]);
+    s.het = sorted_keys(all);
+    for (int z : {8, 16, 7}) {
+      std::vector<std::string> l;
+      for (int x : o)
+        if (at_[x].z == z) l.push_back(L[x]);
+      const auto k = sorted_keys(l);
+      s.het.insert(s.het.end(), k.begin(), k.end());
+    }
   }
   if (sp.mode == Mode::Yl || sp.mode == Mode::Ylidene || sp.mode == Mode::Oyl) suf.push_back(L[sp.root]);
   if (sp.mode == Mode::Carbonyl) suf.push_back(L[sp.link]);
@@ -1843,7 +2288,7 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
     std::string s;
     if (!hyd.empty()) s = join_locants(hyd) + "-" + multiplier(static_cast<int>(hyd.size()), false) + "hydro";
     if (!ind.empty()) s += (s.empty() ? "" : "-") + ind + "H-";
-    append_piece(s, templates()[rs_[c.rsys].templ].name);
+    append_piece(s, rs_[c.rsys].names[static_cast<std::size_t>(order_index(c, o))]);
     return s;
   }
   const std::size_t m = o.size();
@@ -1866,7 +2311,9 @@ std::string Namer::hydride(const Cand& c, const std::vector<int>& o, bool omit_u
       rep_prefixes += (rep_prefixes.empty() ? "" : "-") + join_locants(l) + "-" + multiplier(static_cast<int>(l.size()), false) + word;
     }
     const RingSys& R = rs_[c.rsys];
-    if (c.kind == PKind::VonBaeyer)
+    if (c.kind == PKind::VonBaeyer && R.spiro)
+      stem = rep_prefixes + "spiro[" + std::to_string(R.vb[0]) + "." + std::to_string(R.vb[1]) + "]" + stem;
+    else if (c.kind == PKind::VonBaeyer)
       stem = rep_prefixes + "bicyclo[" + std::to_string(R.vb[0]) + "." + std::to_string(R.vb[1]) + "." + std::to_string(R.vb[2]) + "]" + stem;
     else
       stem = rep_prefixes + stem;
