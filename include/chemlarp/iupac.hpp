@@ -15,7 +15,7 @@
 //    aldehydes, ketones, alcohols, thiols, amines, imines), the rest as
 //    prefixes; thioamides, hydrazides, thiones; functional class names for
 //    esters, carbonates, carbamates, phosphate monoesters and phosphonic acids;
-//    ureas and thioureas; anions, cations, zwitterions, and salts, hydrogen
+//    ureas, thioureas and guanidines; amidines; anions, cations, zwitterions, and salts, hydrogen
 //    halide adducts and hydrates named component by component;
 //  - parent selection by P-44 (rings before chains, then longest chain, then
 //    unsaturation), numbering by the lowest-locant rules of P-31.1.4,
@@ -26,7 +26,7 @@
 //  - CIP stereodescriptors (R/S, E/Z) on parent and substituent atoms.
 //
 // A structure outside this scope (fused ring systems without a built-in parent,
-// spiro and tricyclic systems, amidines, hydrazines, polyphosphates, ...) gets
+// spiro and tricyclic systems, hydrazines, polyphosphates, ...) gets
 // no name and a NamingUnsupported diagnostic saying why: the namer never guesses.
 
 #include <cstdint>

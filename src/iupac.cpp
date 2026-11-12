@@ -414,13 +414,14 @@ const std::vector<SmartsQuery>& template_queries() {
 enum class Cls : int {
   Carboxylate = -6, Sulfonate = -5, Olate = -4, Ammonium = -3, RingCation = -2,  // anions, then cations (P-41: ions first)
   Acid = 1, SulfonicAcid = 2, Phosphonic = 3, Ester = 4, Carbonate = 5, Carbamate = 6, PhosMono = 7, Amide = 8, Thioamide = 9,
-  Hydrazide = 10, Sulfonamide = 11, Urea = 12, Thiourea = 13, Nitrile = 14, Aldehyde = 15, Ketone = 16, Thione = 17, Alcohol = 18,
-  Thiol = 19, Amine = 20, Imine = 21,
+  Hydrazide = 10, Amidine = 11, Sulfonamide = 12, Urea = 13, Thiourea = 14, Guanidine = 15, Nitrile = 16, Aldehyde = 17, Ketone = 18,
+  Thione = 19, Alcohol = 20, Thiol = 21, Amine = 22, Imine = 23,
   Sulfonyl = 50, Sulfinyl = 51, None = 99
 };
 
 bool is_acyl(Cls c) {
   return c == Cls::Acid || c == Cls::Carboxylate || c == Cls::Ester || c == Cls::Amide || c == Cls::Thioamide || c == Cls::Hydrazide ||
+         c == Cls::Amidine ||
          c == Cls::Nitrile ||
          c == Cls::Aldehyde;
 }
@@ -519,7 +520,8 @@ class Namer {
   std::map<std::uint32_t, int> local_;
   std::vector<Cls> acyl_;
   std::vector<char> amineN_, amideN_, nitro_, imineC_, imineN_, cationN_, ringCat_, anionO_;
-  std::vector<char> hydrN_, hydrN2_, hydroxamO_;  // hydrazide N (on the acyl) and N'; N-hydroxy amide O
+  std::vector<char> hydrN_, hydrN2_, hydroxamO_;
+  std::vector<char> amidN_;  // imino nitrogen of an amidine or guanidine  // hydrazide N (on the acyl) and N'; N-hydroxy amide O
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
   std::vector<RingSys> rs_;
@@ -736,6 +738,7 @@ bool Namer::perceive() {
   }
   // hydrazides C(=O)-NR-NR2 / C(=O)-NR-N=CR2 and N-hydroxy amides C(=O)-NR-OH
   hydrN_.assign(n(), 0);
+  amidN_.assign(n(), 0);
   hydrN2_.assign(n(), 0);
   hydroxamO_.assign(n(), 0);
   for (int N = 0; N < n(); ++N) {
@@ -832,7 +835,13 @@ bool Namer::perceive() {
         if (at_[b].z == 8) okO[b] = 1;
     }
   }
-  for (int a = 0; a < n(); ++a) {
+  // carbons first: their groups decide how the heteroatoms around them are read
+  std::vector<int> visit;
+  for (int a = 0; a < n(); ++a)
+    if (at_[a].z == 6) visit.push_back(a);
+  for (int a = 0; a < n(); ++a)
+    if (at_[a].z != 6) visit.push_back(a);
+  for (int a : visit) {
     const NAtom& A = at_[a];
     int val = A.h;
     for (int o : A.bo) val += o;
@@ -880,10 +889,26 @@ bool Namer::perceive() {
           if (nd || nt) return fail("unsupported carbon " + sym(a));
           break;
         }
-        if (imN >= 0) {  // imines and oximes (C=N-H, C=N-R, C=N-OH, C=N-OR)
+        if (imN >= 0) {  // imines and oximes (C=N-H, C=N-R, C=N-OH, C=N-OR); amidines and guanidines
           if (nd || nt) return fail("unsupported carbon " + sym(a));
-          for (int b : A.nb)
-            if (b != imN && at_[b].z != 6) return fail("amidine, imidate or related C(=N)X group at " + sym(a));
+          std::vector<int> ns;
+          for (int b : A.nb) {
+            if (b == imN || at_[b].z == 6) continue;
+            if (at_[b].z != 7 || at_[b].ring || at_[b].arom || at_[b].q != 0 || order(a, b) != 1)
+              return fail("imidate, amidoxime or related C(=N)X group at " + sym(a));
+            for (int y : at_[b].nb)
+              if (y != a && (at_[y].z != 6 || dO(y) >= 0)) return fail("substituted amidine nitrogen at " + sym(b));
+            ns.push_back(b);
+          }
+          if (!ns.empty()) {
+            if (A.ring || at_[imN].ring || deg(imN) > 2) return fail("cyclic or substituted amidine at " + sym(a));
+            for (int y : at_[imN].nb)
+              if (y != a && (at_[y].z != 6 || dO(y) >= 0)) return fail("amidine imino nitrogen with a heteroatom or acyl at " + sym(imN));
+            acyl_[a] = ns.size() == 1 ? Cls::Amidine : Cls::Guanidine;
+            amidN_[imN] = 1;
+            for (int b : ns) amideN_[b] = 1;
+            break;
+          }
           for (int y : at_[imN].nb) {
             if (y == a) continue;
             if (at_[y].z == 6 && order(imN, y) == 1 && (dO(y) < 0)) continue;
@@ -975,7 +1000,7 @@ bool Namer::perceive() {
         break;
       }
       case 7: {
-        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a]) break;
+        if (nitro_[a] || A.arom || imineN_[a] || cationN_[a] || ringCat_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a]) break;
         if (amideN_[a]) {  // N-hydroxy amide nitrogen, checked with its acyl carbon
           bool hx = false;
           for (int b : A.nb) hx |= hydroxamO_[b] != 0;
@@ -1027,7 +1052,8 @@ bool Namer::perceive() {
     }
   }
   for (int a = 0; a < n(); ++a)
-    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || at_[a].ring || at_[a].arom) amineN_[a] = 0;
+    if (amideN_[a] || nitro_[a] || imineN_[a] || cationN_[a] || hydrN_[a] || hydrN2_[a] || amidN_[a] || at_[a].ring || at_[a].arom)
+      amineN_[a] = 0;
   return true;
 }
 
@@ -1364,6 +1390,12 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       if (others.empty()) return Named{"amino", false, {}};
       if (others.size() == 1 && hydrN2_[others[0]] && deg(others[0]) == 1) return Named{"hydrazinyl", false, {}};
+      if (others.size() == 1 && acyl_[others[0]] == Cls::Guanidine) {
+        bool plain = true;
+        for (int x : at_[others[0]].nb)
+          if (x != q && deg(x) != 1) plain = false;
+        if (plain) return Named{"carbamimidamido", false, {}};
+      }
       if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::Sulfonamide) {
         auto sn = sulfonyl_name(others[0], q);
         if (!sn) return std::nullopt;
@@ -1386,6 +1418,16 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     }
     case 6: {
       if (acyl_[q] == Cls::Nitrile) return Named{"cyano", false, {}};
+      if (acyl_[q] == Cls::Amidine || acyl_[q] == Cls::Guanidine) {  // carbamimidoyl, -C(=NH)NH2 only
+        int plainN = 0;
+        for (int x : A.nb) {
+          if (x == from) continue;
+          if (at_[x].z != 7 || deg(x) != 1) return fail_n("substituted carbamimidoyl group at " + sym(q));
+          ++plainN;
+        }
+        if (plainN != 2) return fail_n("unsupported amidine substituent at " + sym(q));
+        return Named{"carbamimidoyl", false, {}};
+      }
       if (acyl_[q] == Cls::Thioamide || acyl_[q] == Cls::Thiourea) {  // carbamothioyl, from the carbon side only
         int N = -1;
         for (int x : A.nb)
@@ -1465,6 +1507,16 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
           c.pre.push_back({-1, *s});
           nprefix = true;
         }
+      if (acyl_[A] == Cls::Amidine && at_[b].z == 7) {
+        if (amidN_[b]) c.exo_double.push_back({at, b});
+        for (int x : at_[b].nb) {
+          if (x == A) continue;
+          auto s = sub(x, b, order(x, b));
+          if (!s) return false;
+          c.pre.push_back({amidN_[b] ? -2 : -1, *s});
+          nprefix = true;
+        }
+      }
       if ((acyl_[A] == Cls::Amide || acyl_[A] == Cls::Thioamide || acyl_[A] == Cls::Sulfonamide) && at_[b].z == 7)
         for (int x : at_[b].nb) {
           if (x == A) continue;
@@ -1544,7 +1596,8 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
       if (bo == 2 && at_[q].z != 6) c.exo_double.push_back({p, q});  // C=C is cited by the ylidene prefix itself
     }
   }
-  if (nprefix && (sp.principal == Cls::Amine || sp.principal == Cls::Ammonium || sp.principal == Cls::Amide || sp.principal == Cls::Hydrazide || sp.principal == Cls::Thioamide || sp.principal == Cls::Sulfonamide ||
+  if (nprefix && (sp.principal == Cls::Amine || sp.principal == Cls::Ammonium || sp.principal == Cls::Amide || sp.principal == Cls::Hydrazide ||
+                  sp.principal == Cls::Amidine || sp.principal == Cls::Thioamide || sp.principal == Cls::Sulfonamide ||
                   sp.principal == Cls::Imine) &&
       c.suffix_at.size() > 1)
     return fail("N-substituents on several amine or amide groups (N,N' locants)");
@@ -1909,6 +1962,7 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
         case Cls::Thione: word = "thione"; break;
         case Cls::Thioamide: word = c.inchain ? "thioamide" : "carbothioamide"; break;
         case Cls::Hydrazide: word = c.inchain ? "ohydrazide" : "carbohydrazide"; break;
+        case Cls::Amidine: word = c.inchain ? "imidamide" : "carboximidamide"; break;
         case Cls::Alcohol: word = "ol"; break;
         case Cls::Thiol: word = "thiol"; break;
         case Cls::Amine: word = "amine"; break;
@@ -2153,6 +2207,41 @@ std::optional<std::string> Namer::run() {
     }
     if (!result) {
       if (err_.empty()) err_ = "phosphorus acid derivative could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::Guanidine) {
+    // "N-methyl-N'-phenylguanidine": amino nitrogens N and N', imino nitrogen N'' (P-66.4.1.2.1)
+    for (int C = 0; C < n(); ++C) {
+      if (acyl_[C] != Cls::Guanidine) continue;
+      std::vector<int> amino;
+      int imino = -1;
+      for (int x : at_[C].nb)
+        if (amidN_[x]) imino = x;
+        else if (at_[x].z == 7) amino.push_back(x);
+      std::vector<Key> extra;
+      bool ok = imino >= 0 && amino.size() == 2;
+      auto subs_of = [&](int N, std::vector<Named>& out) {
+        for (int x : at_[N].nb) {
+          if (x == C) continue;
+          auto R = sub(x, N, 1);
+          if (!R) return false;
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          out.push_back(*R);
+        }
+        return true;
+      };
+      std::vector<Named> s0, s1, si;
+      if (ok) ok = subs_of(amino[0], s0) && subs_of(amino[1], s1) && subs_of(imino, si);
+      if (!ok) continue;
+      if (s1.size() > s0.size()) std::swap(s0, s1);
+      std::vector<std::pair<std::string, Named>> e;
+      for (const auto& x : s0) e.push_back({"N", x});
+      for (const auto& x : s1) e.push_back({"N'", x});
+      for (const auto& x : si) e.push_back({"N''", x});
+      finish(Built{}, format_prefixes(e, false) + "guanidine", extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "guanidine could not be named";
       return std::nullopt;
     }
   } else if (principal == Cls::Carbonate || principal == Cls::Carbamate || principal == Cls::Urea || principal == Cls::Thiourea) {

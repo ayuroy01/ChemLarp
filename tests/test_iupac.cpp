@@ -89,6 +89,13 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CC(=O)NO)", R"(N-hydroxyacetamide)"},
       {R"(O=C(N/N=C/c1ccccc1)c1ccccc1)", R"(N'-[(E)-phenylmethylidene]benzohydrazide)"},
       {R"(CC(=O)[O-].CC(=O)[O-].[Ca+2])", R"(calcium diacetate)"},
+      {R"(CC(=N)N)", R"(ethanimidamide)"},
+      {R"(NC(=N)c1ccccc1)", R"(benzenecarboximidamide)"},
+      {R"(CC(=NCc1ccccc1)N)", R"(N'-benzylethanimidamide)"},
+      {R"(NC(=N)NCCCC(N)C(=O)O)", R"(2-amino-5-carbamimidamidopentanoic acid)"},
+      {R"(NC(N)=NCCCC(N)C(=O)O)", R"(2-amino-5-carbamimidamidopentanoic acid)"},
+      {R"(CNC(=N)N)", R"(N-methylguanidine)"},
+      {R"(CN(CC(=O)O)C(=N)N)", R"(2-[carbamimidoyl(methyl)amino]acetic acid)"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
