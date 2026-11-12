@@ -229,6 +229,16 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"OC(=O)NCC(=O)O", "2-(carboxyamino)acetic acid"},
       {"CN(CC(=O)O)C(=S)SC", "2-{methyl[(methylsulfanyl)carbonothioyl]amino}acetic acid"},
       {"CCOC(=S)SCC(=O)O", "2-[(ethoxycarbonothioyl)sulfanyl]acetic acid"},
+      // sulfuric and sulfamic acids, their anions and monoester anions (P-67.1)
+      {"OS(=O)(=O)O", "sulfuric acid"},
+      {"OS(=O)(=O)[O-].[Na+]", "sodium hydrogen sulfate"},
+      {"CCOS(=O)(=O)[O-].[Na+]", "sodium ethyl sulfate"},
+      {"C[N+](C)(C)CCOS(=O)(=O)[O-]", "2-(trimethylazaniumyl)ethyl sulfate"},
+      {"CNS(=O)(=O)O", "N-methylsulfamic acid"},
+      {"CN(C)S(=O)(=O)[O-].[Na+]", "sodium N,N-dimethylsulfamate"},
+      {"OS(=O)(=O)NCC(=O)O", "2-(sulfoamino)acetic acid"},
+      {"OC(=O)CCOS(=O)(=O)O", "3-(sulfooxy)propanoic acid"},
+      {"OC(=O)CCOP(=O)(O)O", "3-(phosphonooxy)propanoic acid"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

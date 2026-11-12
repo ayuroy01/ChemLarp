@@ -427,8 +427,8 @@ const std::vector<SmartsQuery>& template_queries() {
 // Seniority of classes (P-41), lower = more senior.
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
-  Carboxylate = -60, CarbonicAnion = -55, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
-  Acid = 10, CarbonicAcid = 15, SulfonicAcid = 20, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
+  Carboxylate = -60, CarbonicAnion = -55, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
+  Acid = 10, CarbonicAcid = 15, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
   SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
@@ -1186,6 +1186,31 @@ bool Namer::perceive() {
           if (at_[b].z == 8) okO[b] = 1;
         continue;
       }
+      if (dO_.size() == 2 && single.size() == 2 && nC == 0) {
+        // sulfuric acid, hydrogen sulfate and sulfate; sulfate monoester anions; sulfamic acids and sulfamates
+        auto plainN = [&](int x) {
+          if (at_[x].ring || at_[x].arom || at_[x].q != 0 || nitro_[x] || pseudo_[x]) return false;
+          for (std::size_t k = 0; k < at_[x].nb.size(); ++k) {
+            const int y = at_[x].nb[k];
+            if (y == a) continue;
+            if (at_[x].bo[k] != 1 || at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) return false;
+          }
+          return true;
+        };
+        Cls k = Cls::None;
+        if (nOR == 1 && nOm == 1) k = Cls::SulfateAnion;
+        else if (N >= 0 && plainN(N) && nOH == 1) k = Cls::SulfamicAcid;
+        else if (N >= 0 && plainN(N) && nOm == 1) k = Cls::SulfamateAnion;
+        else if (nOH + nOm == 2) k = Cls::SulfuricInorg;
+        if (k != Cls::None) {
+          acyl_[a] = k;
+          if (N >= 0) amideN_[N] = 1;
+          for (int b : dO_) okO[b] = 1;
+          for (int b : single)
+            if (at_[b].z == 8) okO[b] = 1;
+          continue;
+        }
+      }
       if (dO_.size() == 1 && nC == 2 && single.size() == 2) acyl_[a] = Cls::Sulfinyl;
       else if (dO_.size() == 2 && single.size() == 2 && nC == 2) acyl_[a] = Cls::Sulfonyl;
       else if (dO_.size() == 2 && single.size() == 2 && nC == 1 && nOH == 1) acyl_[a] = Cls::SulfonicAcid;
@@ -1483,7 +1508,8 @@ bool Namer::perceive() {
         for (std::size_t k = 0; k < A.nb.size(); ++k) {
           const int b = A.nb[k];
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
-          const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl);
+          const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl || acyl_[b] == Cls::SulfamicAcid ||
+                                                    acyl_[b] == Cls::SulfamateAnion);
           const bool n_amino = at_[b].z == 7 && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
           if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
@@ -1977,8 +2003,9 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     case 53: return Named{"iodo", false, {}};
     case 8: {
       if (others.empty()) return Named{A.q == -1 ? "oxido" : "hydroxy", false, {}};
-      if (others.size() == 1 && at_[others[0]].z == 15 && acyl_[others[0]] == Cls::PhosMono) return Named{"phosphonooxy", false, {}};
-      if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfateMono) return Named{"sulfooxy", false, {}};
+      if (others.size() == 1 && at_[others[0]].z == 15 && acyl_[others[0]] == Cls::PhosMono) return Named{"phosphonooxy", true, {}};
+      if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfateMono) return Named{"sulfooxy", true, {}};
+      if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfateAnion) return Named{"sulfonatooxy", true, {}};
       if (others.size() == 1 && at_[others[0]].z == 14) {  // [(trimethylsilyl)oxy]
         auto R = sub(others[0], q, 1);
         if (!R) return std::nullopt;
@@ -1994,7 +2021,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         int oh = 0, singles = 0;
         for (std::size_t k = 0; k < at_[Pp].nb.size(); ++k)
           if (at_[Pp].bo[k] == 1 && at_[Pp].nb[k] != q) ++singles, oh += is_OH(at_[Pp].nb[k]);
-        if (oh == singles) return Named{"phosphonooxy", false, {}};
+        if (oh == singles) return Named{"phosphonooxy", true, {}};
         auto R = phosphoryl_name(Pp, q);
         if (!R) return std::nullopt;
         return Named{enclose(R->text) + "oxy", true, R->stereo};
@@ -2053,6 +2080,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       switch (acyl_[q]) {
         case Cls::SulfonicAcid: return Named{"sulfo", false, {}};
+        case Cls::SulfamicAcid: return Named{"sulfo", false, {}};
         case Cls::SulfinicAcid: return Named{"sulfino", false, {}};
         case Cls::SulfEster: {  // (methoxysulfonyl)
           auto alk = sub(ester_O(q), q, 1);
@@ -5219,6 +5247,44 @@ std::optional<std::string> Namer::run() {
     }
     if (!result) {
       if (err_.empty()) err_ = "acid halide could not be named";
+      return std::nullopt;
+    }
+  } else if (principal == Cls::SulfateAnion || principal == Cls::SulfamicAcid || principal == Cls::SulfamateAnion ||
+             principal == Cls::SulfuricInorg) {
+    // "ethyl sulfate", "N-methylsulfamic acid", "N,N-dimethylsulfamate", "sulfuric acid", "hydrogen sulfate"
+    for (int S = 0; S < n() && !result; ++S) {
+      if (acyl_[S] != principal) continue;
+      int nOH = 0, nOm = 0;
+      for (int x : at_[S].nb) nOH += is_OH(x), nOm += is_Ominus(x);
+      if (principal == Cls::SulfuricInorg) {
+        finish(Built{}, nOH == 2 ? "sulfuric acid" : nOH == 1 ? "hydrogen sulfate" : "sulfate", {});
+        continue;
+      }
+      if (principal == Cls::SulfateAnion) {
+        for (int x : at_[S].nb) {
+          if (at_[x].z != 8 || deg(x) != 2) continue;
+          const int r = at_[x].nb[0] == S ? at_[x].nb[1] : at_[x].nb[0];
+          if (auto R = sub(r, x, 1)) finish(Built{}, organyl(*R) + " sulfate", R->stereo);
+        }
+        continue;
+      }
+      int N = -1;
+      for (int x : at_[S].nb)
+        if (at_[x].z == 7) N = x;
+      std::vector<std::pair<std::string, Named>> e;
+      std::vector<Key> extra;
+      bool ok = true;
+      for (int x : at_[N].nb) {
+        if (x == S) continue;
+        auto R = sub(x, N, 1);
+        if (!R) { ok = false; break; }
+        extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        e.push_back({"N", *R});
+      }
+      if (ok) finish(Built{}, format_prefixes(e, false) + (principal == Cls::SulfamicAcid ? "sulfamic acid" : "sulfamate"), extra);
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "sulfuric acid derivative could not be named";
       return std::nullopt;
     }
   } else if (principal == Cls::SulfateMono) {
