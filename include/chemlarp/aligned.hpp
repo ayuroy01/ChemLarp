@@ -7,7 +7,7 @@
 #include <new>
 #include <vector>
 
-namespace omnichem {
+namespace chemlarp {
 
 inline constexpr std::size_t kSimdAlignment = 64;
 
@@ -36,4 +36,4 @@ struct AlignedAllocator {
 template <class T>
 using AlignedVector = std::vector<T, AlignedAllocator<T>>;
 
-}  // namespace omnichem
+}  // namespace chemlarp

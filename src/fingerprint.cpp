@@ -1,4 +1,4 @@
-#include "omnichem/fingerprint.hpp"
+#include "chemlarp/fingerprint.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -7,9 +7,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "omnichem/cip.hpp"
+#include "chemlarp/cip.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 std::uint32_t fmix32(std::uint32_t h) {
@@ -171,4 +171,4 @@ double dice(const Fingerprint& a, const Fingerprint& b) {
   return total == 0 ? 0.0 : 2.0 * both / total;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

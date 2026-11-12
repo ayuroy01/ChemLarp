@@ -6,18 +6,18 @@
 #include <vector>
 
 #include "../src/yaml_lite.hpp"
-#include "omnichem/kinetics.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/kinetics.hpp"
+#include "chemlarp/thermo.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
 Mechanism mech(const std::string& text) {
   Diagnostics d;
   auto m = parse_mechanism(text, d);
-  if (!m) throw octest::Failure("mechanism failed to parse: " + d.items().front().message);
+  if (!m) throw cltest::Failure("mechanism failed to parse: " + d.items().front().message);
   return *m;
 }
 
@@ -28,8 +28,8 @@ Diagnostics errors_of(const std::string& text) {
 }
 
 std::string read(const std::string& relative) {
-  std::ifstream in(octest::data_path(relative), std::ios::binary);
-  if (!in) throw octest::Failure("cannot read " + relative);
+  std::ifstream in(cltest::data_path(relative), std::ios::binary);
+  if (!in) throw cltest::Failure("cannot read " + relative);
   std::stringstream ss;
   ss << in.rdbuf();
   return ss.str();
@@ -106,7 +106,7 @@ TEST(explicit_reverse_rate) {
 
 TEST(jacobian_exact_for_all_rate_kinds) {
   Diagnostics d;
-  auto m = load_mechanism(octest::data_path("mechanisms/h2o2.ocm"), d);
+  auto m = load_mechanism(cltest::data_path("mechanisms/h2o2.ocm"), d);
   CHECK(m.has_value());
   auto plog = mech(kHO2 + "reactions\n H + O2 <=> HO2  1e12 0 0\n  PLOG / 0.1 1e11 0 0 /\n  PLOG / 10 4e13 0.5 300 /\nend\n");
   for (const Mechanism* mm : {&*m, &plog}) {
@@ -125,7 +125,7 @@ TEST(jacobian_exact_for_all_rate_kinds) {
       for (std::size_t i = 0; i < S; ++i) {
         const double fd = (wp[i] - wm[i]) / (2 * h), a = J[i * S + j];
         if (std::fabs(fd - a) > 1e-6 * (std::fabs(fd) + std::fabs(a)) + 1e-8)
-          throw octest::Failure("J[" + mm->names[i] + "][" + mm->names[j] + "] analytic " + std::to_string(a) + " fd " +
+          throw cltest::Failure("J[" + mm->names[i] + "][" + mm->names[j] + "] analytic " + std::to_string(a) + " fd " +
                                 std::to_string(fd));
       }
     }
@@ -136,16 +136,16 @@ TEST(jacobian_exact_for_all_rate_kinds) {
 // SMILES map) and Cantera YAML must import to identical kinetics.
 TEST(three_formats_give_identical_rates) {
   Diagnostics d;
-  auto ocm = load_mechanism(octest::data_path("mechanisms/h2o2.ocm"), d);
+  auto ocm = load_mechanism(cltest::data_path("mechanisms/h2o2.ocm"), d);
   auto ck = import_chemkin(read("mechanisms/h2o2/chem.inp"), read("mechanisms/h2o2/therm.dat"), "", d);
   auto ck_smi = import_chemkin(read("mechanisms/h2o2/chem.inp"), read("mechanisms/h2o2/therm.dat"),
                                read("mechanisms/h2o2/species.smi"), d);
-  auto yml = load_mechanism(octest::data_path("mechanisms/h2o2.yaml"), d);
-  if (!ocm || !ck || !ck_smi || !yml) throw octest::Failure("import failed: " + d.items().front().message);
+  auto yml = load_mechanism(cltest::data_path("mechanisms/h2o2.yaml"), d);
+  if (!ocm || !ck || !ck_smi || !yml) throw cltest::Failure("import failed: " + d.items().front().message);
   CHECK(!d.has_errors());
   CHECK(detect_mechanism_format(read("mechanisms/h2o2/chem.inp")) == MechanismFormat::Chemkin);
   CHECK(detect_mechanism_format(read("mechanisms/h2o2.yaml")) == MechanismFormat::CanteraYaml);
-  CHECK(detect_mechanism_format(read("mechanisms/h2o2.ocm")) == MechanismFormat::OmniChem);
+  CHECK(detect_mechanism_format(read("mechanisms/h2o2.ocm")) == MechanismFormat::ChemLarp);
   const std::size_t S = ocm->species_count();
   CHECK_EQ(ocm->reactions.size(), 23u);
   for (const Mechanism* other : {&*ck, &*ck_smi, &*yml}) {

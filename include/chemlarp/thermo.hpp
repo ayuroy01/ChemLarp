@@ -8,10 +8,10 @@
 #include <optional>
 #include <string>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 inline constexpr double kGasConstant = 8.314462618;  // J/(mol K)
 inline constexpr double kStandardPressure = 1.0e5;   // Pa
@@ -61,4 +61,4 @@ std::optional<SpeciesThermo> resolve_thermo(const ChemicalSystemState& state, st
 // Fill state.g_RT for every species at state.conditions. Returns false on any missing data.
 bool bind_thermo(ChemicalSystemState& state, Diagnostics& diag);
 
-}  // namespace omnichem
+}  // namespace chemlarp

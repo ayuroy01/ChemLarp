@@ -31,10 +31,10 @@
 #include <cstdint>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 enum class CipLabel : std::uint8_t { None = 0, R, S, E, Z, r, s };
 
@@ -57,4 +57,4 @@ std::vector<CipAssignment> cip_centres(const ChemicalSystemState& state, std::ui
 std::vector<CipAssignment> cip_double_bonds(const ChemicalSystemState& state, std::uint32_t species,
                                             Diagnostics* diag = nullptr);
 
-}  // namespace omnichem
+}  // namespace chemlarp

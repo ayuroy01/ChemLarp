@@ -1,4 +1,4 @@
-// OmniChem web app: workspace around one open compound, backed by the
+// ChemLarp web app: workspace around one open compound, backed by the
 // WebAssembly engine running in engine-worker.js.
 (function () {
   'use strict';
@@ -113,8 +113,9 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   const store = {
-    get(k, d) { try { const v = localStorage.getItem('omnichem.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
-    set(k, v) { try { localStorage.setItem('omnichem.' + k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+    // Settings saved before the rename used the 'omnichem.' prefix; read them as a fallback.
+    get(k, d) { try { const v = localStorage.getItem('chemlarp.' + k) ?? localStorage.getItem('omnichem.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('chemlarp.' + k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
   };
   function segmented(group, onChange) {
     group.addEventListener('click', (e) => {
@@ -826,7 +827,7 @@
   });
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
   if ('serviceWorker' in navigator && location.protocol !== 'file:' && !local) navigator.serviceWorker.register('sw.js').catch(() => {});
-  console.info('OmniChem web build', BUILD);
+  console.info('ChemLarp web build', BUILD);
 
   renderRecents();
   show();

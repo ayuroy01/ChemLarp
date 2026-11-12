@@ -4,13 +4,13 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/fingerprint.hpp"
-#include "omnichem/rings.hpp"
-#include "omnichem/smarts.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/fingerprint.hpp"
+#include "chemlarp/rings.hpp"
+#include "chemlarp/smarts.hpp"
+#include "chemlarp/smiles.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -18,9 +18,9 @@ std::size_t count(const char* smiles, const char* smarts, bool chiral = false, b
   ChemicalSystemState st;
   Diagnostics d;
   const std::int32_t sp = parse_smiles(st, smiles, d);
-  if (sp < 0) throw octest::Failure(std::string("bad SMILES ") + smiles);
+  if (sp < 0) throw cltest::Failure(std::string("bad SMILES ") + smiles);
   const SmartsQuery q = parse_smarts(smarts, d);
-  if (!q.valid()) throw octest::Failure(std::string("bad SMARTS ") + smarts + ": " + d.items().front().message);
+  if (!q.valid()) throw cltest::Failure(std::string("bad SMARTS ") + smarts + ": " + d.items().front().message);
   SmartsMatchOptions o;
   o.use_chirality = chiral;
   o.unique = unique;
@@ -76,7 +76,7 @@ TEST(smarts_counts_match_rdkit) {
   for (const Case& c : kCases) {
     const std::size_t got = count(c.smiles, c.smarts);
     if (got != c.expected)
-      throw octest::Failure(std::string(c.smiles) + " / " + c.smarts + ": " + std::to_string(got) + " matches, expected " +
+      throw cltest::Failure(std::string(c.smiles) + " / " + c.smarts + ": " + std::to_string(got) + " matches, expected " +
                             std::to_string(c.expected));
   }
   CHECK_EQ(count("c1ccccc1", "c1ccccc1", false, false), std::size_t{12});  // every automorphism
@@ -131,7 +131,7 @@ TEST(morgan_environments_match_rdkit) {
   for (const E& e : cases) {
     const auto [total, distinct] = envs(e.smiles, e.radius);
     if (total != e.total || distinct != e.distinct)
-      throw octest::Failure(std::string(e.smiles) + " r" + std::to_string(e.radius) + ": " + std::to_string(total) + "/" +
+      throw cltest::Failure(std::string(e.smiles) + " r" + std::to_string(e.radius) + ": " + std::to_string(total) + "/" +
                             std::to_string(distinct) + ", expected " + std::to_string(e.total) + "/" +
                             std::to_string(e.distinct));
   }

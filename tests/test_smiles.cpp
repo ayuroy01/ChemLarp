@@ -1,9 +1,9 @@
 #include <cstdint>
 
-#include "omnichem/smiles.hpp"
+#include "chemlarp/smiles.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 

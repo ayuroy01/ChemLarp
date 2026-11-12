@@ -1,4 +1,4 @@
-#include "omnichem/rings.hpp"
+#include "chemlarp/rings.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -7,7 +7,7 @@
 #include <set>
 #include <utility>
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 using BitRow = std::vector<std::uint64_t>;
@@ -321,4 +321,4 @@ void perceive_aromaticity(ChemicalSystemState& st, std::uint32_t sp) {
     if (arom_atom[a]) st.atoms.flags[s.atom_begin + a] |= kAtomAromatic;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

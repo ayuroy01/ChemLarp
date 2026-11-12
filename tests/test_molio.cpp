@@ -5,14 +5,14 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/conformer.hpp"
-#include "omnichem/depict.hpp"
-#include "omnichem/molio.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/conformer.hpp"
+#include "chemlarp/depict.hpp"
+#include "chemlarp/molio.hpp"
+#include "chemlarp/smiles.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -30,7 +30,7 @@ struct B {
 
 std::string v2000(const std::vector<A>& atoms, const std::vector<B>& bonds, const std::string& props = "",
                   const std::string& title = "test") {
-  std::string out = title + "\n  OmniChem test\n\n";
+  std::string out = title + "\n  ChemLarp test\n\n";
   char buf[128];
   std::snprintf(buf, sizeof buf, "%3zu%3zu  0  0  0  0  0  0  0  0999 V2000\n", atoms.size(), bonds.size());
   out += buf;

@@ -1,9 +1,9 @@
 // Offline support: cache the app shell, the WebAssembly engine and example data.
 // The build stamps a new cache name on every deploy, so updates replace old files.
-const CACHE = 'omnichem-__BUILD_ID__';
+const CACHE = 'chemlarp-__BUILD_ID__';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'viewer.js', 'chart.js', 'engine-worker.js',
-  'omnichem.js', 'omnichem.wasm', 'manifest.webmanifest',
+  'chemlarp.js', 'chemlarp.wasm', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
   'data/roadmap.json', 'data/mechanisms/h2o2.ocm', 'data/mechanisms/h2o2.yaml',
 ];
@@ -21,7 +21,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('omnichem-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => (k.startsWith('chemlarp-') || k.startsWith('omnichem-')) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

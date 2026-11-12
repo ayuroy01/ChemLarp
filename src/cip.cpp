@@ -1,4 +1,4 @@
-#include "omnichem/cip.hpp"
+#include "chemlarp/cip.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,9 +9,9 @@
 #include <tuple>
 #include <utility>
 
-#include "omnichem/elements.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr std::size_t kMaxNodes = 200000;
@@ -568,4 +568,4 @@ std::vector<CipAssignment> cip_double_bonds(const ChemicalSystemState& st, std::
   return out;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

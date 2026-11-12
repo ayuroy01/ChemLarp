@@ -6,7 +6,7 @@
 #include <span>
 #include <string_view>
 
-namespace omnichem {
+namespace chemlarp {
 
 inline constexpr std::size_t kElementSlots = 119;  // indexed by atomic number; slot 0 unused
 
@@ -37,4 +37,4 @@ int lowest_default_valence(std::uint8_t z, int formal_charge) noexcept;
 
 std::string_view element_symbol(std::uint8_t z) noexcept;  // "?" for unknown
 
-}  // namespace omnichem
+}  // namespace chemlarp

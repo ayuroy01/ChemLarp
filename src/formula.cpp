@@ -1,10 +1,10 @@
-#include "omnichem/formula.hpp"
+#include "chemlarp/formula.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <vector>
 
-namespace omnichem {
+namespace chemlarp {
 
 Composition compute_composition(const ChemicalSystemState& state, std::uint32_t species) {
   Composition c{};
@@ -53,4 +53,4 @@ double molar_mass(const Composition& c) {
   return m;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

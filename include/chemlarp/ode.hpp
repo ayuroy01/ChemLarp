@@ -15,9 +15,9 @@
 #include <functional>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
+#include "chemlarp/diagnostics.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 using OdeRhs = std::function<void(double t, const std::vector<double>& y, std::vector<double>& dydt)>;
 // Row-major n x n, J[i*n + j] = d f_i / d y_j.
@@ -62,4 +62,4 @@ class LuFactor {
   std::vector<std::size_t> piv_;
 };
 
-}  // namespace omnichem
+}  // namespace chemlarp

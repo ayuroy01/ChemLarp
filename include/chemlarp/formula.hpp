@@ -2,9 +2,9 @@
 
 #include <string>
 
-#include "omnichem/system_state.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 // Element counts of one species: explicit atoms plus implicit hydrogens.
 Composition compute_composition(const ChemicalSystemState& state, std::uint32_t species);
@@ -14,4 +14,4 @@ std::string hill_formula(const Composition& c, int net_charge = 0);
 
 double molar_mass(const Composition& c);  // g/mol
 
-}  // namespace omnichem
+}  // namespace chemlarp

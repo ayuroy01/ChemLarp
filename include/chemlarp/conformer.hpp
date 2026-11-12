@@ -17,12 +17,12 @@
 #include <string>
 #include <string_view>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/optimize.hpp"
-#include "omnichem/system_state.hpp"
-#include "omnichem/uff.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/optimize.hpp"
+#include "chemlarp/system_state.hpp"
+#include "chemlarp/uff.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 // Appends a copy of `species` with every implicit hydrogen as an explicit [H]
 // atom (stereo references remapped) and returns the new species index.
@@ -65,4 +65,4 @@ double dihedral_degrees(const ChemicalSystemState& state, std::uint32_t a, std::
 std::string write_sdf(const ChemicalSystemState& state, std::uint32_t species, const std::string& title = "");
 std::string write_xyz(const ChemicalSystemState& state, std::uint32_t species, const std::string& comment = "");
 
-}  // namespace omnichem
+}  // namespace chemlarp

@@ -1,4 +1,4 @@
-// Mechanism input: OmniChem .ocm, CHEMKIN-II (+ NASA-7 thermo cards), Cantera YAML.
+// Mechanism input: ChemLarp .ocm, CHEMKIN-II (+ NASA-7 thermo cards), Cantera YAML.
 //
 // All three formats feed one ReactionBuilder, so unit conversion, reaction-kind
 // validation, element balance and duplicate detection are identical for every
@@ -20,13 +20,13 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/elements.hpp"
-#include "omnichem/formula.hpp"
-#include "omnichem/kinetics.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/formula.hpp"
+#include "chemlarp/kinetics.hpp"
+#include "chemlarp/smiles.hpp"
 #include "yaml_lite.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr double kAtm = 101325.0;
@@ -1235,9 +1235,9 @@ MechanismFormat detect_mechanism_format(std::string_view text) noexcept {
     if (toks.empty()) continue;
     const std::string K = upper(toks[0].text);
     if (K.rfind("ELEM", 0) == 0) return MechanismFormat::Chemkin;
-    if (K == "SPECIES" || K == "SPEC") return toks.size() > 1 ? MechanismFormat::Chemkin : MechanismFormat::OmniChem;
+    if (K == "SPECIES" || K == "SPEC") return toks.size() > 1 ? MechanismFormat::Chemkin : MechanismFormat::ChemLarp;
   }
-  return MechanismFormat::OmniChem;
+  return MechanismFormat::ChemLarp;
 }
 
 std::optional<Mechanism> parse_any_mechanism(std::string_view text, std::string_view thermo, std::string_view smiles_map,
@@ -1276,4 +1276,4 @@ std::optional<Mechanism> load_mechanism(const std::string& path, Diagnostics& di
   return parse_any_mechanism(text, thermo, smiles, MechanismFormat::Auto, diag);
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

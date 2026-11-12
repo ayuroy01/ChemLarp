@@ -1,4 +1,4 @@
-# OmniChem Core: architecture
+# ChemLarp: architecture
 
 ## Provenance: clean-room, literature-based
 
@@ -47,7 +47,7 @@ Every stage reads and writes the same `ChemicalSystemState`, so data passes betw
 - **Contiguous species slices.** Species *k* owns `[atom_begin, atom_begin+atom_count)`, so a worker receives a `std::span` and never needs a copy.
 - **CSR adjacency** (`Adjacency`) gives O(1) neighbour iteration with no per-atom heap allocation. It is rebuilt in O(N+M) after topology edits.
 - **`revision`** is bumped on every mutation. Downstream caches (Newton warm starts, neighbour lists, FF parameter assignment) key on it.
-- **C ABI** (`omnichem_c.h`) exposes raw column pointers. Python wraps them with `numpy.ctypeslib.as_array`, which is verified zero-copy: a write from NumPy is visible in C++. Node can do the same with `ArrayBuffer` via N-API.
+- **C ABI** (`chemlarp_c.h`) exposes raw column pointers. Python wraps them with `numpy.ctypeslib.as_array`, which is verified zero-copy: a write from NumPy is visible in C++. Node can do the same with `ArrayBuffer` via N-API.
 
 ## Identity: canonical SMILES and CIP
 
@@ -67,9 +67,9 @@ Stereo storage (`TetrahedralStereo`, `DoubleBondStereo`) keeps references to exp
 Windows, macOS and Linux are first-class targets, and the code base follows a few rules to stay that way:
 
 - **ISO C++20 and the standard library only.** No compiler builtins (`std::countr_zero` instead of `__builtin_ctzll`), no POSIX calls, no `<windows.h>` outside `src/cli/main.cpp`, where it is used only to switch the console to UTF-8.
-- **One exported C ABI.** `OMNICHEM_API` expands to `__declspec(dllexport/dllimport)` on Windows and to default visibility elsewhere. `OMNICHEM_BUILD_DLL` and `OMNICHEM_STATIC` select the mode, and CMake sets them per target.
+- **One exported C ABI.** `CHEMLARP_API` expands to `__declspec(dllexport/dllimport)` on Windows and to default visibility elsewhere. `CHEMLARP_BUILD_DLL` and `CHEMLARP_STATIC` select the mode, and CMake sets them per target.
 - **Builds.** CMake is canonical (MSVC: `/utf-8 /permissive- /W4`). The Makefile covers macOS, Linux and MSYS2 MinGW. MinGW DLLs are linked with static libstdc++, so the DLL is self-contained for Python's `ctypes`.
-- **Files and text.** Mechanism files are read in text mode and accept CRLF. `.gitattributes` pins line endings for scripts. Tests resolve `data/` through `OMNICHEM_TEST_DATA_DIR`, so CTest can run from any build directory.
+- **Files and text.** Mechanism files are read in text mode and accept CRLF. `.gitattributes` pins line endings for scripts. Tests resolve `data/` through `CHEMLARP_TEST_DATA_DIR`, so CTest can run from any build directory.
 
 ## Error vector
 
@@ -108,7 +108,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | NASA-7 thermo (10 GRI-Mech species) | **done**, verified against JANAF to <0.6 kJ/mol |
 | Joback ΔfH°/ΔfG° from graph | **done**; ethanol, propane, acetone, benzene, and acetic acid fall within the tolerances shown in tests |
 | Ideal-gas Gibbs minimisation (element-potential Newton) | **done**, tested (K consistency, conservation, Le Chatelier, rank deficiency) |
-| C ABI + Python ctypes binding; `.ocx` v0.1 container | **done** |
+| C ABI + Python ctypes binding; `.clx` v0.1 container | **done** |
 | 2D layout (ring templates by arc closure, 120° chains, E/Z by mirroring, overlap relief by subtree reflection) and SVG drawing with IUPAC-style wedges, ring-fusion H, CIP labels; 2D molfile export | **done**; every stereocentre's wedge is checked by reading the chirality back from the drawing. Bridged polycycles (morphine, adamantane) are legible but not template-quality |
 | Standard InChI and InChIKey (normalisation, mobile H, canonical numbering, /c /h /q /p /b /t /m /s /i layers) | **done** for organic structures; 1483/1500 (98.9%) identical to PubChem on a random sample never used for tuning. Not covered: isotopic stereo, allene stereo, /f and /r layers, polymers, several charge-migration and salt rules (diazonium, N-oxides, metal complexes of macrocycles) |
 | Allene / atropisomer / square-planar stereo (@AL, @SP, @TB, @OH) | planned |

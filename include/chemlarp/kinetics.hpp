@@ -2,7 +2,7 @@
 // Gas-phase chemical kinetics: mechanisms, mass-action rates, batch reactors.
 //
 // Three input formats share one reaction model (see mechanism_io.cpp):
-//   * .ocm          OmniChem native: species bound to SMILES, CHEMKIN-style reactions
+//   * .ocm          ChemLarp native: species bound to SMILES, CHEMKIN-style reactions
 //   * CHEMKIN-II    chem.inp + therm.dat (NASA-7 fixed-format cards), optional NAME->SMILES map
 //   * Cantera YAML  species/thermo/reactions as written by ck2yaml or by hand
 //
@@ -47,12 +47,12 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/ode.hpp"
-#include "omnichem/system_state.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/ode.hpp"
+#include "chemlarp/system_state.hpp"
+#include "chemlarp/thermo.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct ArrheniusRate {
   double A = 0.0;     // SI: (m^3/mol)^(order-1) / s
@@ -112,7 +112,7 @@ struct Mechanism {
   std::int32_t find(std::string_view name) const;  // case-insensitive, -1 if absent
 };
 
-enum class MechanismFormat { Auto, OmniChem, Chemkin, CanteraYaml };
+enum class MechanismFormat { Auto, ChemLarp, Chemkin, CanteraYaml };
 
 MechanismFormat detect_mechanism_format(std::string_view text) noexcept;
 
@@ -183,4 +183,4 @@ ReactorResult run_reactor(const Mechanism& m, const ReactorSetup& setup, Diagnos
 const char* to_string(ReactorModel model) noexcept;
 std::optional<ReactorModel> reactor_model_from_string(std::string_view s) noexcept;  // "iso-v", "iso-p", "adiabatic-v", "adiabatic-p"
 
-}  // namespace omnichem
+}  // namespace chemlarp

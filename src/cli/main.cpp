@@ -1,14 +1,14 @@
-// omnichem — terminal front end for OmniChem Core.
+// chemlarp — terminal front end for ChemLarp.
 //
-//   omnichem parse <SMILES> [--json]
-//   omnichem canon <SMILES> [--random N] [--kekule]
-//   omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi] [-m iso-v|iso-p|adiabatic-v|adiabatic-p]
+//   chemlarp parse <SMILES> [--json]
+//   chemlarp canon <SMILES> [--random N] [--kekule]
+//   chemlarp kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi] [-m iso-v|iso-p|adiabatic-v|adiabatic-p]
 //                     [-T K] [-P bar] [-t s] [--csv file] NAME=moles ...      (mechanism: .ocm, CHEMKIN-II or Cantera YAML)
-//   omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
-//   omnichem flash -T K -P bar [--srk] <SMILES> <fraction> ...      (vapour-liquid equilibrium)
-//   omnichem psat <SMILES> -T K [--srk]                              (vapour pressure)
-//   omnichem reaction "<equation>" [-T kelvin] [--json]
-//   omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
+//   chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
+//   chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> ...      (vapour-liquid equilibrium)
+//   chemlarp psat <SMILES> -T K [--srk]                              (vapour pressure)
+//   chemlarp reaction "<equation>" [-T kelvin] [--json]
+//   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -31,48 +31,48 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/cip.hpp"
-#include "omnichem/conformer.hpp"
-#include "omnichem/depict.hpp"
-#include "omnichem/uff.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/eos.hpp"
-#include "omnichem/gibbs.hpp"
-#include "omnichem/inchi.hpp"
-#include "omnichem/json.hpp"
-#include "omnichem/fingerprint.hpp"
-#include "omnichem/kinetics.hpp"
-#include "omnichem/molio.hpp"
-#include "omnichem/reaction.hpp"
-#include "omnichem/smarts.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/conformer.hpp"
+#include "chemlarp/depict.hpp"
+#include "chemlarp/uff.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/eos.hpp"
+#include "chemlarp/gibbs.hpp"
+#include "chemlarp/inchi.hpp"
+#include "chemlarp/json.hpp"
+#include "chemlarp/fingerprint.hpp"
+#include "chemlarp/kinetics.hpp"
+#include "chemlarp/molio.hpp"
+#include "chemlarp/reaction.hpp"
+#include "chemlarp/smarts.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/thermo.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
 int usage() {
   std::fputs(
       "usage:\n"
-      "  omnichem parse <SMILES> [--json]\n"
-      "  omnichem canon <SMILES> [--random N] [--kekule]\n"
-      "  omnichem embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
-      "  omnichem flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
-      "  omnichem psat <SMILES> -T K [--srk]\n"
-      "  omnichem inchi <SMILES> [--key]\n"
-      "  omnichem read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
-      "  omnichem match <SMILES> <SMARTS> [--chiral]          substructure matches (atom indices)\n"
-      "  omnichem similarity <SMILES> <SMILES> [--radius N] [--bits N]\n"
-      "  omnichem search <file.smi|.sdf|...> [--smarts Q] [--like SMILES] [--min T] [--radius N] [--bits N]\n"
-      "  omnichem depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
-      "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
+      "  chemlarp parse <SMILES> [--json]\n"
+      "  chemlarp canon <SMILES> [--random N] [--kekule]\n"
+      "  chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
+      "  chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
+      "  chemlarp psat <SMILES> -T K [--srk]\n"
+      "  chemlarp inchi <SMILES> [--key]\n"
+      "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
+      "  chemlarp match <SMILES> <SMARTS> [--chiral]          substructure matches (atom indices)\n"
+      "  chemlarp similarity <SMILES> <SMILES> [--radius N] [--bits N]\n"
+      "  chemlarp search <file.smi|.sdf|...> [--smarts Q] [--like SMILES] [--min T] [--radius N] [--bits N]\n"
+      "  chemlarp depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
+      "  chemlarp kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
       "                    [--rtol x] [--csv file] NAME=moles ...\n"
       "                    mechanism: .ocm, CHEMKIN-II (chem.inp) or Cantera YAML (detected from content)\n"
-      "  omnichem reaction \"<coef> SMILES + ... -> <coef> SMILES + ...\" [-T kelvin] [--json]\n"
-      "  omnichem equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]\n",
+      "  chemlarp reaction \"<coef> SMILES + ... -> <coef> SMILES + ...\" [-T kelvin] [--json]\n"
+      "  chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]\n",
       stderr);
   return 2;
 }

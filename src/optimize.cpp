@@ -1,11 +1,11 @@
-#include "omnichem/optimize.hpp"
+#include "chemlarp/optimize.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <deque>
 #include <vector>
 
-namespace omnichem {
+namespace chemlarp {
 
 namespace {
 double dot(const std::vector<double>& a, const std::vector<double>& b) {
@@ -107,4 +107,4 @@ LbfgsResult minimize_lbfgs(const Objective& func, std::vector<double>& x, const 
   return res;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

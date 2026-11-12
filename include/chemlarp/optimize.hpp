@@ -6,7 +6,7 @@
 #include <functional>
 #include <vector>
 
-namespace omnichem {
+namespace chemlarp {
 
 // Returns f(x) and writes the gradient into g (same size as x).
 using Objective = std::function<double(const std::vector<double>& x, std::vector<double>& g)>;
@@ -29,4 +29,4 @@ struct LbfgsResult {
 
 LbfgsResult minimize_lbfgs(const Objective& f, std::vector<double>& x, const LbfgsOptions& options = {});
 
-}  // namespace omnichem
+}  // namespace chemlarp

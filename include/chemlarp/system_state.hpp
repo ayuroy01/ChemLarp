@@ -18,10 +18,10 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/aligned.hpp"
-#include "omnichem/elements.hpp"
+#include "chemlarp/aligned.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 enum AtomFlag : std::uint8_t {
   kAtomAromatic = 1u << 0,  // aromatic by perception (Hückel 4n+2), independent of input notation
@@ -169,4 +169,4 @@ struct ChemicalSystemState {
   void rebuild_adjacency();
 };
 
-}  // namespace omnichem
+}  // namespace chemlarp

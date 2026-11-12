@@ -1,4 +1,4 @@
-#include "omnichem/uff.hpp"
+#include "chemlarp/uff.hpp"
 
 #include <algorithm>
 #include <array>
@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/elements.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -495,4 +495,4 @@ UffMinimizeResult uff_minimize(ChemicalSystemState& st, std::uint32_t sp, Diagno
   return res;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

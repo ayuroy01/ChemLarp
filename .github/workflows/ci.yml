@@ -30,8 +30,8 @@ jobs:
       - name: CLI smoke test
         shell: bash
         run: |
-          exe=build/omnichem; [ -f build/Release/omnichem.exe ] && exe=build/Release/omnichem.exe
-          [ -f build/omnichem.exe ] && exe=build/omnichem.exe
+          exe=build/chemlarp; [ -f build/Release/chemlarp.exe ] && exe=build/Release/chemlarp.exe
+          [ -f build/chemlarp.exe ] && exe=build/chemlarp.exe
           "$exe" canon 'C1=CC=C(C=C1)/C=C/C(=O)O'
           "$exe" reaction '1 C + 2 O=O -> 1 O=C=O + 2 O'
           "$exe" kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7 > kinetics.txt
@@ -46,13 +46,13 @@ jobs:
         shell: bash
         run: |
           python -I -c "
-          import sys; sys.path.insert(0, 'python'); import omnichem
-          print('loaded', omnichem.library_path())
-          assert omnichem.canonical('C1=CC=CC=C1')['canonical'] == 'c1ccccc1'
-          r = omnichem.kinetics('data/mechanisms/h2o2.ocm', {'H2': 2, 'O2': 1, 'AR': 7}, 1000, 1e5, t_end=1e-3)
+          import sys; sys.path.insert(0, 'python'); import chemlarp
+          print('loaded', chemlarp.library_path())
+          assert chemlarp.canonical('C1=CC=CC=C1')['canonical'] == 'c1ccccc1'
+          r = chemlarp.kinetics('data/mechanisms/h2o2.ocm', {'H2': 2, 'O2': 1, 'AR': 7}, 1000, 1e5, t_end=1e-3)
           assert r['ignition_time'] and r['samples'][-1]['T'] > 2500
           print('ok', r['ignition_time'])
-          e = omnichem.embed('C[C@@H](C(=O)O)N')
+          e = chemlarp.embed('C[C@@H](C(=O)O)N')
           assert e['stereo']['centres_ok'] == 1 and e['converged'] and len(e['coordinates']) == 13
           print('embed ok', e['energy_kcal_mol'])
           "

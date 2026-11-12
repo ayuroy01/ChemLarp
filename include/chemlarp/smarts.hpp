@@ -10,7 +10,7 @@
 // fragments (fragments may match the same target component).
 //
 // Target conventions (the same as typed SMILES): plain [H] atoms are folded into
-// hydrogen counts; aromaticity is OmniChem's perception (rings.hpp); D counts
+// hydrogen counts; aromaticity is ChemLarp's perception (rings.hpp); D counts
 // explicit connections, H all hydrogens, h hydrogens not written as atoms,
 // v the Kekulé valence including hydrogens, X = D + H; R and r use the relevant cycles
 // (unique, unlike an SSSR; see rings.hpp), x counts ring bonds. Chirality (@, @@) is checked only when
@@ -25,10 +25,10 @@
 #include <string_view>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct SmartsQueryData;  // compiled form (smarts.cpp)
 
@@ -61,4 +61,4 @@ std::vector<std::vector<std::uint32_t>> match_smarts(const ChemicalSystemState& 
 bool has_match(const ChemicalSystemState& state, std::uint32_t species, const SmartsQuery& query,
                bool use_chirality = false);
 
-}  // namespace omnichem
+}  // namespace chemlarp

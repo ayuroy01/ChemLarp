@@ -1,11 +1,11 @@
-#include "omnichem/joback.hpp"
+#include "chemlarp/joback.hpp"
 
 #include <array>
 #include <string>
 
-#include "omnichem/elements.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 struct GroupData {
@@ -258,4 +258,4 @@ JobackResult joback_estimate(const ChemicalSystemState& st, std::uint32_t sp, Di
   return res;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

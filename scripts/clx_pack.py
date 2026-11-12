@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Pack / inspect OmniChem Exchange (.ocx) containers. See docs/OCX_SPEC.md.
+"""Pack / inspect ChemLarp Exchange (.clx) containers. See docs/CLX_SPEC.md.
 
-    omnichem parse 'CCO' --json | scripts/ocx_pack.py pack ethanol.ocx -
-    scripts/ocx_pack.py pack mix.ocx structure.json --thermo thermo.json
-    scripts/ocx_pack.py inspect ethanol.ocx
+    chemlarp parse 'CCO' --json | scripts/clx_pack.py pack ethanol.clx -
+    scripts/clx_pack.py pack mix.clx structure.json --thermo thermo.json
+    scripts/clx_pack.py inspect ethanol.clx
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import sys
 import zipfile
 from datetime import datetime, timezone
 
-OCX_FORMAT = "ocx"
+OCX_FORMAT = "clx"
 OCX_VERSION = "0.1"
 
 
@@ -52,7 +52,7 @@ def pack(out: str, structure: str, thermo: str | None, process: str | None) -> N
         "format": OCX_FORMAT,
         "version": OCX_VERSION,
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "generator": "omnichem-core 0.1.0",
+        "generator": "chemlarp-core 0.1.0",
         "payloads": [
             {"path": name, "kind": name.split(".")[0], "encoding": "json", "sha256": hashlib.sha256(data).hexdigest()}
             for name, data in encoded.items()
@@ -69,8 +69,8 @@ def inspect(path: str) -> None:
     with zipfile.ZipFile(path) as z:
         manifest = json.loads(z.read("manifest.json"))
         if manifest.get("format") != OCX_FORMAT:
-            raise ValueError("not an .ocx container")
-        print(f"{path}: ocx v{manifest['version']} ({manifest.get('generator', '?')})")
+            raise ValueError("not an .clx container")
+        print(f"{path}: clx v{manifest['version']} ({manifest.get('generator', '?')})")
         for p in manifest["payloads"]:
             data = z.read(p["path"])
             ok = hashlib.sha256(data).hexdigest() == p["sha256"]

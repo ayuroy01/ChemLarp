@@ -2,19 +2,19 @@
 #include <string>
 #include <utility>
 
-#include "omnichem/gibbs.hpp"
-#include "omnichem/kinetics.hpp"
-#include "omnichem/ode.hpp"
+#include "chemlarp/gibbs.hpp"
+#include "chemlarp/kinetics.hpp"
+#include "chemlarp/ode.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
 Mechanism mech(const std::string& text) {
   Diagnostics d;
   auto m = parse_mechanism(text, d);
-  if (!m) throw octest::Failure("mechanism failed to parse: " + d.items().front().message);
+  if (!m) throw cltest::Failure("mechanism failed to parse: " + d.items().front().message);
   return *m;
 }
 
@@ -42,7 +42,7 @@ ReactorSetup unit_volume(const Mechanism& m, double T, std::initializer_list<std
 double sample_value(const ReactorResult& r, double t, std::size_t sp) {
   for (const auto& s : r.samples)
     if (std::fabs(s.t - t) <= 1e-12 * std::max(1.0, t)) return s.n[sp];
-  throw octest::Failure("no sample at t = " + std::to_string(t));
+  throw cltest::Failure("no sample at t = " + std::to_string(t));
 }
 
 }  // namespace
@@ -143,7 +143,7 @@ TEST(kinetics_robertson_benchmark) {
 
 TEST(kinetics_jacobian_matches_finite_difference) {
   Diagnostics d;
-  auto m = load_mechanism(octest::data_path("mechanisms/h2o2.ocm"), d);
+  auto m = load_mechanism(cltest::data_path("mechanisms/h2o2.ocm"), d);
   CHECK(m.has_value());
   const std::size_t S = m->species_count();
   std::vector<double> C = {20, 10, 0.3, 0.05, 0.08, 4, 0.002, 1e-4, 50};
@@ -159,7 +159,7 @@ TEST(kinetics_jacobian_matches_finite_difference) {
     for (std::size_t i = 0; i < S; ++i) {
       const double fd = (wp[i] - wm[i]) / (2 * h);
       if (std::fabs(fd - J[i * S + j]) > 1e-6 * (std::fabs(fd) + std::fabs(J[i * S + j])) + 1e-6)
-        throw octest::Failure("J[" + m->names[i] + "][" + m->names[j] + "] analytic " + std::to_string(J[i * S + j]) +
+        throw cltest::Failure("J[" + m->names[i] + "][" + m->names[j] + "] analytic " + std::to_string(J[i * S + j]) +
                               " vs finite difference " + std::to_string(fd));
     }
   }
@@ -193,7 +193,7 @@ TEST(kinetics_relaxes_to_gibbs_equilibrium) {
 
 TEST(kinetics_h2o2_adiabatic_ignition_invariants) {
   Diagnostics d;
-  auto m = load_mechanism(octest::data_path("mechanisms/h2o2.ocm"), d);
+  auto m = load_mechanism(cltest::data_path("mechanisms/h2o2.ocm"), d);
   CHECK(m.has_value());
   ReactorSetup su;
   su.model = ReactorModel::AdiabaticConstantVolume;

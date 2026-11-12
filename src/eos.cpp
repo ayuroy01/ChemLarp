@@ -1,4 +1,4 @@
-#include "omnichem/eos.hpp"
+#include "chemlarp/eos.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,11 +8,11 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/smiles.hpp"
-#include "omnichem/system_state.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/system_state.hpp"
+#include "chemlarp/thermo.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr double kSqrt2 = 1.4142135623730951;
@@ -408,4 +408,4 @@ std::optional<EosMixture> mixture_from_smiles(const std::vector<std::string>& sm
   return m;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

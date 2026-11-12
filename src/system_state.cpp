@@ -1,8 +1,8 @@
-#include "omnichem/system_state.hpp"
+#include "chemlarp/system_state.hpp"
 
 #include <limits>
 
-namespace omnichem {
+namespace chemlarp {
 
 void AtomTable::reserve(std::size_t n) {
   x.reserve(n); y.reserve(n); z.reserve(n);
@@ -92,4 +92,4 @@ void ChemicalSystemState::rebuild_adjacency() {
   ++revision;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

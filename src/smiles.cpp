@@ -1,4 +1,4 @@
-#include "omnichem/smiles.hpp"
+#include "chemlarp/smiles.hpp"
 
 #include <algorithm>
 #include <array>
@@ -8,12 +8,12 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/formula.hpp"
-#include "omnichem/rings.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/formula.hpp"
+#include "chemlarp/rings.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr std::uint8_t kOrderImplicit = 0;
@@ -835,4 +835,4 @@ std::int32_t parse_smiles(ChemicalSystemState& state, std::string_view smiles, D
   return static_cast<std::int32_t>(sp);
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

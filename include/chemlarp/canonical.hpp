@@ -30,10 +30,10 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct SmilesWriteOptions {
   bool canonical = true;          // false: random atom order (see random_seed)
@@ -59,4 +59,4 @@ std::vector<char> stereogenic_centres(const ChemicalSystemState& state, std::uin
 // Canonical rank per species atom (index = global atom - atom_begin); folded hydrogens get UINT32_MAX.
 std::vector<std::uint32_t> canonical_ranks(const ChemicalSystemState& state, std::uint32_t species);
 
-}  // namespace omnichem
+}  // namespace chemlarp

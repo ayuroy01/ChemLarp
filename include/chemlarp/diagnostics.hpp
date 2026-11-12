@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace omnichem {
+namespace chemlarp {
 
 enum class DiagCode : std::uint16_t {
   // 1xx — SMILES syntax
@@ -157,4 +157,4 @@ class Diagnostics {
   std::size_t error_count_ = 0;
 };
 
-}  // namespace omnichem
+}  // namespace chemlarp

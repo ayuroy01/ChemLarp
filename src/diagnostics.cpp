@@ -1,6 +1,6 @@
-#include "omnichem/diagnostics.hpp"
+#include "chemlarp/diagnostics.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 const char* to_string(DiagCode code) noexcept {
   switch (code) {
@@ -79,4 +79,4 @@ const char* to_string(Severity severity) noexcept {
   return severity == Severity::Error ? "error" : "warning";
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

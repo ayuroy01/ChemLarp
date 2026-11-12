@@ -29,8 +29,8 @@
 // most toolkits.
 //
 // Validation (RDKit 2026.09 reading the same files, structures compared by
-// OmniChem canonical SMILES): PubChem 2D SDF 999/999; PubChem 3D SDF 865/866;
-// OmniChem 2D molfiles 1498/1499 and 3D SDF 1465/1468 (1500 random PubChem
+// ChemLarp canonical SMILES): PubChem 2D SDF 999/999; PubChem 3D SDF 865/866;
+// ChemLarp 2D molfiles 1498/1499 and 3D SDF 1465/1468 (1500 random PubChem
 // compounds). The differences are stereo on cage atoms (adamantane) or =NH
 // imines that the CIP model does not keep, hypervalent halogen normalisation,
 // and one distorted 3D input. PDB: crambin
@@ -54,10 +54,10 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 enum class MolFormat : std::uint8_t { Auto, Molfile, Pdb, Cml };
 
@@ -93,4 +93,4 @@ int mdl_valence_field(std::uint8_t z, int charge, int bond_order_sum, int hydrog
 std::vector<MolRecord> read_molecules(ChemicalSystemState& state, std::string_view text, Diagnostics& diag,
                                       const ReadOptions& options = {});
 
-}  // namespace omnichem
+}  // namespace chemlarp

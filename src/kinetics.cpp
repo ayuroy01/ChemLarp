@@ -1,4 +1,4 @@
-#include "omnichem/kinetics.hpp"
+#include "chemlarp/kinetics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,9 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/elements.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 double ArrheniusRate::k(double T) const noexcept {
   return A * std::pow(T, b) * std::exp(-Ea_J / (kGasConstant * T));
@@ -445,4 +445,4 @@ ReactorResult run_reactor(const Mechanism& m, const ReactorSetup& su, Diagnostic
   return res;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

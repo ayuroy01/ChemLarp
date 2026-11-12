@@ -19,9 +19,9 @@
 #include <string_view>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
+#include "chemlarp/diagnostics.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct CriticalProperties {
   std::string name;
@@ -77,4 +77,4 @@ FlashResult flash_tp(const EosMixture& mix, double T, double P, const std::vecto
 // Builds a mixture from SMILES; reports NoCriticalData for unknown components.
 std::optional<EosMixture> mixture_from_smiles(const std::vector<std::string>& smiles, CubicEos eos, Diagnostics& diag);
 
-}  // namespace omnichem
+}  // namespace chemlarp

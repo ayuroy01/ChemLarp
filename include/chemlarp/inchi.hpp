@@ -33,10 +33,10 @@
 #include <string>
 #include <string_view>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct InchiResult {
   bool ok = false;
@@ -55,4 +55,4 @@ std::string inchi_key(std::string_view inchi);
 // SHA-256 digest (FIPS 180-4), exposed for tests.
 std::array<std::uint8_t, 32> sha256(std::string_view data);
 
-}  // namespace omnichem
+}  // namespace chemlarp

@@ -15,11 +15,11 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/optimize.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/optimize.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct UffParameters {
   const char* label;
@@ -99,4 +99,4 @@ struct UffMinimizeResult {
 UffMinimizeResult uff_minimize(ChemicalSystemState& state, std::uint32_t species, Diagnostics& diag,
                                const LbfgsOptions& options = {});
 
-}  // namespace omnichem
+}  // namespace chemlarp

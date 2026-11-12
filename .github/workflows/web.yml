@@ -28,7 +28,7 @@ jobs:
       - name: Build web app
         run: scripts/build_web.sh
       - name: Check output
-        run: ls -la build/web && test -s build/web/omnichem.wasm
+        run: ls -la build/web && test -s build/web/chemlarp.wasm
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

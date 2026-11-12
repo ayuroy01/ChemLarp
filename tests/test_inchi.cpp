@@ -5,10 +5,10 @@
 #include <cstddef>
 #include <string>
 
-#include "omnichem/inchi.hpp"
+#include "chemlarp/inchi.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -72,11 +72,11 @@ TEST(inchi_curated_reference_table) {
   std::string miss;
   const std::size_t ok = matches(kCurated, &miss);
   const std::size_t n = sizeof(kCurated) / sizeof(kCurated[0]);
-  if (ok + 1 < n) throw octest::Failure(std::to_string(ok) + "/" + std::to_string(n) + " match; first miss " + miss);
+  if (ok + 1 < n) throw cltest::Failure(std::to_string(ok) + "/" + std::to_string(n) + " match; first miss " + miss);
 }
 
 TEST(inchi_pubchem_sample) {
   // 492 of these 500 matched when the table was frozen; this guards against regressions.
   const std::size_t ok = matches(kPubchem);
-  if (ok < 492) throw octest::Failure("only " + std::to_string(ok) + "/500 PubChem InChIs match");
+  if (ok < 492) throw cltest::Failure("only " + std::to_string(ok) + "/500 PubChem InChIs match");
 }

@@ -1,4 +1,4 @@
-#include "omnichem/canonical.hpp"
+#include "chemlarp/canonical.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,11 +9,11 @@
 #include <string>
 #include <utility>
 
-#include "omnichem/cip.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/rings.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/rings.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr int kTokH = -2;
@@ -748,4 +748,4 @@ std::vector<std::uint32_t> canonical_ranks(const ChemicalSystemState& st, std::u
   return out;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

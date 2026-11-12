@@ -1,4 +1,4 @@
-#include "omnichem/reaction.hpp"
+#include "chemlarp/reaction.hpp"
 
 #include <array>
 #include <cmath>
@@ -7,11 +7,11 @@
 #include <optional>
 #include <string>
 
-#include "omnichem/elements.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/thermo.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 struct Token {
@@ -203,4 +203,4 @@ std::optional<ReactionThermo> reaction_thermo(const ChemicalSystemState& state, 
   return out;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

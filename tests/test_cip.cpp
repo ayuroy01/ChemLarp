@@ -4,11 +4,11 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/cip.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/smiles.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -17,7 +17,7 @@ std::string labels(const std::string& smi) {
   ChemicalSystemState st;
   Diagnostics d;
   const std::int32_t sp = parse_smiles(st, smi, d);
-  if (sp < 0) throw octest::Failure("parse failed: " + smi);
+  if (sp < 0) throw cltest::Failure("parse failed: " + smi);
   std::string out;
   for (const auto& c : cip_centres(st, static_cast<std::uint32_t>(sp)))
     if (c.label != CipLabel::None) out += "a" + std::to_string(c.index) + to_string(c.label) + " ";
@@ -30,7 +30,7 @@ std::string labels(const std::string& smi) {
 
 void expect(const std::string& smi, const std::string& want) {
   const std::string got = labels(smi);
-  if (got != want) throw octest::Failure(smi + ": got [" + got + "], expected [" + want + "]");
+  if (got != want) throw cltest::Failure(smi + ": got [" + got + "], expected [" + want + "]");
 }
 
 }  // namespace

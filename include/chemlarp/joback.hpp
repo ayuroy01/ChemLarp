@@ -10,10 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 enum class JobackGroup : std::uint8_t {
   CH3, CH2, CH, C, EqCH2, EqCH, EqC, EqCEq, TrCH, TrC,
@@ -35,4 +35,4 @@ struct JobackResult {
 
 JobackResult joback_estimate(const ChemicalSystemState& state, std::uint32_t species, Diagnostics& diag);
 
-}  // namespace omnichem
+}  // namespace chemlarp

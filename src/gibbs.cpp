@@ -1,14 +1,14 @@
-#include "omnichem/gibbs.hpp"
+#include "chemlarp/gibbs.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <string>
 
-#include "omnichem/elements.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/thermo.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 bool solve_dense(std::vector<double>& m, std::vector<double>& rhs, std::size_t n) {
   double scale = 0.0;
@@ -273,4 +273,4 @@ EquilibriumResult equilibrate(ChemicalSystemState& state, Diagnostics& diag, con
   return r;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

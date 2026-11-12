@@ -1,15 +1,15 @@
-# OmniChem Exchange (`.ocx`) — v0.1
+# ChemLarp Exchange (`.clx`) — v0.1
 
-An `.ocx` file is a ZIP container. Its first entry is `manifest.json`, followed by one or more payloads. Payloads use JSON in v0.1. A Protocol Buffers encoding of the same schemas is planned as `encoding: "protobuf"`; readers must check the `encoding` field rather than infer it from the file extension.
+An `.clx` file is a ZIP container. Its first entry is `manifest.json`, followed by one or more payloads. Payloads use JSON in v0.1. A Protocol Buffers encoding of the same schemas is planned as `encoding: "protobuf"`; readers must check the `encoding` field rather than infer it from the file extension.
 
 ## manifest.json
 
 ```json
 {
-  "format": "ocx",
+  "format": "clx",
   "version": "0.1",
   "created": "2026-11-08T12:00:00+00:00",
-  "generator": "omnichem-core 0.1.0",
+  "generator": "chemlarp-core 0.1.0",
   "payloads": [
     {"path": "structure.json", "kind": "structure", "encoding": "json", "sha256": "…"},
     {"path": "thermo.json",    "kind": "thermo",    "encoding": "json", "sha256": "…"}
@@ -44,7 +44,7 @@ This payload mirrors `ChemicalSystemState` one-to-one. Columns are stored struct
 | `stereo.tetrahedral[]` | object | `atom, refs[4]` (atom ids, `"H"` implicit H, `"LP"` lone pair), `parity` `"@"`/`"@@"` (viewed from `refs[0]`), `cip` `"R"`/`"S"`/`""` |
 | `stereo.double_bonds[]` | object | `bond, ref_begin, ref_end, cis` (refs are neighbours of `bonds.begin/end`), `cip` `"E"`/`"Z"`/`""` |
 
-Invariant: each species owns the contiguous ranges `[atom_begin, atom_begin+atom_count)` and `[bond_begin, bond_begin+bond_count)`. `scripts/ocx_pack.py` validates the column lengths and bond index ranges.
+Invariant: each species owns the contiguous ranges `[atom_begin, atom_begin+atom_count)` and `[bond_begin, bond_begin+bond_count)`. `scripts/clx_pack.py` validates the column lengths and bond index ranges.
 
 ## thermo.json
 

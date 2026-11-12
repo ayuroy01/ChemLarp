@@ -3,11 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/depict.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/depict.hpp"
+#include "chemlarp/smiles.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -20,7 +20,7 @@ struct Parsed {
 Parsed parse(const std::string& smi) {
   Parsed p;
   const auto sp = parse_smiles(p.st, smi, p.d);
-  if (sp < 0) throw octest::Failure("parse failed: " + smi);
+  if (sp < 0) throw cltest::Failure("parse failed: " + smi);
   p.sp = static_cast<std::uint32_t>(sp);
   return p;
 }
@@ -85,7 +85,7 @@ TEST(depict_bond_lengths_are_uniform) {
       const auto& u = xy[p.st.bonds.begin[b] - s.atom_begin];
       const auto& v = xy[p.st.bonds.end[b] - s.atom_begin];
       const double len = std::hypot(u[0] - v[0], u[1] - v[1]);
-      if (std::fabs(len - 1.0) > 0.02) throw octest::Failure(smi + ": bond length " + std::to_string(len));
+      if (std::fabs(len - 1.0) > 0.02) throw cltest::Failure(smi + ": bond length " + std::to_string(len));
     }
   }
 }
@@ -98,7 +98,7 @@ TEST(depict_has_no_atom_overlaps) {
     for (std::uint32_t i = 0; i < s.atom_count; ++i)
       for (std::uint32_t j = i + 1; j < s.atom_count; ++j) {
         const double d = std::hypot(xy[i][0] - xy[j][0], xy[i][1] - xy[j][1]);
-        if (d < 0.6) throw octest::Failure(smi + ": atoms " + std::to_string(i + 1) + " and " + std::to_string(j + 1) + " overlap");
+        if (d < 0.6) throw cltest::Failure(smi + ": atoms " + std::to_string(i + 1) + " and " + std::to_string(j + 1) + " overlap");
       }
   }
 }
@@ -137,7 +137,7 @@ TEST(depict_wedges_encode_every_stereocentre) {
         }
       }
       const int expect = t.parity == Chirality::CounterClockwise ? 1 : 2;
-      if (drawn_parity(dp, c, refs) != expect) throw octest::Failure(smi + ": wrong wedge at atom " + std::to_string(c + 1));
+      if (drawn_parity(dp, c, refs) != expect) throw cltest::Failure(smi + ": wrong wedge at atom " + std::to_string(c + 1));
     }
   }
 }
@@ -148,7 +148,7 @@ TEST(depict_keeps_double_bond_geometry) {
     Diagnostics d;
     const Depiction dp = depict(p.st, p.sp, d);
     CHECK(dp.stereo_bonds > 0);
-    if (dp.stereo_bonds_ok != dp.stereo_bonds) throw octest::Failure(std::string(smi) + ": E/Z not kept");
+    if (dp.stereo_bonds_ok != dp.stereo_bonds) throw cltest::Failure(std::string(smi) + ": E/Z not kept");
   }
 }
 

@@ -1,4 +1,4 @@
-#include "omnichem/depict.hpp"
+#include "chemlarp/depict.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,13 +10,13 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/cip.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/molio.hpp"
-#include "omnichem/rings.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/molio.hpp"
+#include "chemlarp/rings.hpp"
+#include "chemlarp/smiles.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -1258,7 +1258,7 @@ Depiction depict(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics& d
 
   // ---- 2D molfile ----
   {
-    std::string out = s.canonical_smiles + "\n  OmniChem          2D\n\n";
+    std::string out = s.canonical_smiles + "\n  ChemLarp          2D\n\n";
     char buf[160];
     std::snprintf(buf, sizeof buf, "%3zu%3zu  0  0%3d  0  0  0  0  0999 V2000\n", N, bonds.size(), centres.empty() ? 0 : 1);
     out += buf;
@@ -1376,4 +1376,4 @@ Depiction depict_smiles(std::string_view smiles, Diagnostics& diag, const Depict
   return depict(st, static_cast<std::uint32_t>(sp), diag, options);
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

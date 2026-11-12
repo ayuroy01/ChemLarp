@@ -19,9 +19,9 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/system_state.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct MorganOptions {
   int radius = 2;           // 2 = ECFP4, 3 = ECFP6
@@ -47,4 +47,4 @@ Fingerprint morgan_fingerprint(const ChemicalSystemState& state, std::uint32_t s
 double tanimoto(const Fingerprint& a, const Fingerprint& b);
 double dice(const Fingerprint& a, const Fingerprint& b);
 
-}  // namespace omnichem
+}  // namespace chemlarp

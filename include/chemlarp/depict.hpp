@@ -30,10 +30,10 @@
 #include <string_view>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct DepictOptions {
   double bond_length = 30.0;  // px
@@ -77,4 +77,4 @@ Depiction depict(const ChemicalSystemState& state, std::uint32_t species, Diagno
 // Convenience: parse and depict. On a parse error the result has ok == false.
 Depiction depict_smiles(std::string_view smiles, Diagnostics& diag, const DepictOptions& options = {});
 
-}  // namespace omnichem
+}  // namespace chemlarp

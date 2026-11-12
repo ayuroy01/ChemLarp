@@ -4,14 +4,14 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/cip.hpp"
-#include "omnichem/conformer.hpp"
-#include "omnichem/optimize.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/uff.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/conformer.hpp"
+#include "chemlarp/optimize.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/uff.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -28,7 +28,7 @@ Embedded embed(const std::string& smi, std::uint64_t seed = 42) {
   EmbedOptions o;
   o.seed = seed;
   e.sp = embed_smiles(e.st, smi, e.d, &e.r, o);
-  if (e.sp < 0) throw octest::Failure("embedding failed for " + smi + ": " + (e.d.empty() ? "" : e.d.items().back().message));
+  if (e.sp < 0) throw cltest::Failure("embedding failed for " + smi + ": " + (e.d.empty() ? "" : e.d.items().back().message));
   return e;
 }
 
@@ -56,7 +56,7 @@ double mean_bond(const Embedded& e, std::uint8_t za, std::uint8_t zb, int order)
     sum += dist(e.st, i, j);
     ++n;
   }
-  if (n == 0) throw octest::Failure("no such bond");
+  if (n == 0) throw cltest::Failure("no such bond");
   return sum / n;
 }
 
@@ -150,7 +150,7 @@ TEST(uff_gradient_matches_finite_differences) {
       xm[i] -= 1e-6;
       const double fd = (ff->energy(xp) - ff->energy(xm)) / 2e-6;
       if (std::fabs(fd - g[i]) > 1e-5 * (std::fabs(fd) + 1.0))
-        throw octest::Failure(std::string(smi) + ": coordinate " + std::to_string(i) + " analytic " +
+        throw cltest::Failure(std::string(smi) + ": coordinate " + std::to_string(i) + " analytic " +
                               std::to_string(g[i]) + " vs finite difference " + std::to_string(fd));
     }
   }
@@ -194,7 +194,7 @@ TEST(embedding_corpus_is_clean) {
     for (std::uint32_t i = 0; i < s.atom_count; ++i)
       for (std::uint32_t j = i + 1; j < s.atom_count; ++j)
         if (topo[i][j] > 2 && dist(e.st, s.atom_begin + i, s.atom_begin + j) < 1.6)
-          throw octest::Failure(std::string(smi) + ": atoms " + std::to_string(i) + " and " + std::to_string(j) +
+          throw cltest::Failure(std::string(smi) + ": atoms " + std::to_string(i) + " and " + std::to_string(j) +
                                 " are only " + std::to_string(dist(e.st, s.atom_begin + i, s.atom_begin + j)) + " Å apart");
   }
 }
@@ -215,7 +215,7 @@ TEST(embedding_reproduces_cip_labels_geometrically) {
       std::vector<CipLabel> got;
       for (const auto& t : e.st.tetrahedral)
         if (e.st.atoms.species[t.atom] == static_cast<std::uint32_t>(e.sp)) got.push_back(geometric_cip(e.st, t.atom));
-      if (got != c.expected) throw octest::Failure(std::string(c.smiles) + ": geometry does not give the expected R/S");
+      if (got != c.expected) throw cltest::Failure(std::string(c.smiles) + ": geometry does not give the expected R/S");
       for (const auto& t : e.st.tetrahedral)  // and the label from the parsed stereo agrees
         if (e.st.atoms.species[t.atom] == static_cast<std::uint32_t>(e.sp)) CHECK(cip_label(e.st, t) == geometric_cip(e.st, t.atom));
     }

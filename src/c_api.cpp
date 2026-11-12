@@ -1,8 +1,8 @@
 // This translation unit defines the exported C ABI: export unless the static library is being built.
-#if !defined(OMNICHEM_STATIC) && !defined(OMNICHEM_BUILD_DLL)
-#define OMNICHEM_BUILD_DLL
+#if !defined(CHEMLARP_STATIC) && !defined(CHEMLARP_BUILD_DLL)
+#define CHEMLARP_BUILD_DLL
 #endif
-#include "omnichem/omnichem_c.h"
+#include "chemlarp/chemlarp_c.h"
 
 #include <cmath>
 #include <cstdio>
@@ -13,26 +13,26 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/cip.hpp"
-#include "omnichem/conformer.hpp"
-#include "omnichem/depict.hpp"
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/eos.hpp"
-#include "omnichem/gibbs.hpp"
-#include "omnichem/inchi.hpp"
-#include "omnichem/molio.hpp"
-#include "omnichem/json.hpp"
-#include "omnichem/fingerprint.hpp"
-#include "omnichem/kinetics.hpp"
-#include "omnichem/reaction.hpp"
-#include "omnichem/smarts.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/conformer.hpp"
+#include "chemlarp/depict.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/eos.hpp"
+#include "chemlarp/gibbs.hpp"
+#include "chemlarp/inchi.hpp"
+#include "chemlarp/molio.hpp"
+#include "chemlarp/json.hpp"
+#include "chemlarp/fingerprint.hpp"
+#include "chemlarp/kinetics.hpp"
+#include "chemlarp/reaction.hpp"
+#include "chemlarp/smarts.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/system_state.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
-struct oc_system {
+struct cl_system {
   ChemicalSystemState state;
   Diagnostics last;
 };
@@ -106,12 +106,12 @@ std::string jnum(double v) {
 
 extern "C" {
 
-const char* oc_version(void) { return "0.1.0"; }
+const char* cl_version(void) { return "0.1.0"; }
 
-oc_system* oc_system_new(void) { return new (std::nothrow) oc_system(); }
-void oc_system_free(oc_system* sys) { delete sys; }
+cl_system* cl_system_new(void) { return new (std::nothrow) cl_system(); }
+void cl_system_free(cl_system* sys) { delete sys; }
 
-int32_t oc_system_add_smiles(oc_system* sys, const char* smiles) {
+int32_t cl_system_add_smiles(cl_system* sys, const char* smiles) {
   if (!sys || !smiles) return -1;
   sys->last.clear();
   try {
@@ -121,21 +121,21 @@ int32_t oc_system_add_smiles(oc_system* sys, const char* smiles) {
   }
 }
 
-int oc_system_set_moles(oc_system* sys, uint32_t species, double moles) {
+int cl_system_set_moles(cl_system* sys, uint32_t species, double moles) {
   if (!sys || species >= sys->state.species.size() || !(moles >= 0.0) || !std::isfinite(moles)) return 0;
   sys->state.moles[species] = moles;
   ++sys->state.revision;
   return 1;
 }
 
-int oc_system_set_conditions(oc_system* sys, double temperature_K, double pressure_Pa) {
+int cl_system_set_conditions(cl_system* sys, double temperature_K, double pressure_Pa) {
   if (!sys || !(temperature_K > 0.0) || !(pressure_Pa > 0.0)) return 0;
   sys->state.conditions = {temperature_K, pressure_Pa};
   ++sys->state.revision;
   return 1;
 }
 
-int oc_system_equilibrate(oc_system* sys) {
+int cl_system_equilibrate(cl_system* sys) {
   if (!sys) return 0;
   sys->last.clear();
   try {
@@ -145,34 +145,34 @@ int oc_system_equilibrate(oc_system* sys) {
   }
 }
 
-size_t oc_system_atom_count(const oc_system* s) { return s ? s->state.atoms.size() : 0; }
-size_t oc_system_bond_count(const oc_system* s) { return s ? s->state.bonds.size() : 0; }
-size_t oc_system_species_count(const oc_system* s) { return s ? s->state.species.size() : 0; }
-const uint8_t* oc_system_atom_element(const oc_system* s) { return s ? s->state.atoms.element.data() : nullptr; }
-const int8_t* oc_system_atom_charge(const oc_system* s) { return s ? s->state.atoms.formal_charge.data() : nullptr; }
-const uint8_t* oc_system_atom_implicit_h(const oc_system* s) { return s ? s->state.atoms.implicit_h.data() : nullptr; }
-double* oc_system_atom_x(oc_system* s) { return s ? s->state.atoms.x.data() : nullptr; }
-double* oc_system_atom_y(oc_system* s) { return s ? s->state.atoms.y.data() : nullptr; }
-double* oc_system_atom_z(oc_system* s) { return s ? s->state.atoms.z.data() : nullptr; }
-const uint32_t* oc_system_bond_begin(const oc_system* s) { return s ? s->state.bonds.begin.data() : nullptr; }
-const uint32_t* oc_system_bond_end(const oc_system* s) { return s ? s->state.bonds.end.data() : nullptr; }
-const uint8_t* oc_system_bond_order(const oc_system* s) { return s ? s->state.bonds.order.data() : nullptr; }
-const double* oc_system_moles(const oc_system* s) { return s ? s->state.moles.data() : nullptr; }
+size_t cl_system_atom_count(const cl_system* s) { return s ? s->state.atoms.size() : 0; }
+size_t cl_system_bond_count(const cl_system* s) { return s ? s->state.bonds.size() : 0; }
+size_t cl_system_species_count(const cl_system* s) { return s ? s->state.species.size() : 0; }
+const uint8_t* cl_system_atom_element(const cl_system* s) { return s ? s->state.atoms.element.data() : nullptr; }
+const int8_t* cl_system_atom_charge(const cl_system* s) { return s ? s->state.atoms.formal_charge.data() : nullptr; }
+const uint8_t* cl_system_atom_implicit_h(const cl_system* s) { return s ? s->state.atoms.implicit_h.data() : nullptr; }
+double* cl_system_atom_x(cl_system* s) { return s ? s->state.atoms.x.data() : nullptr; }
+double* cl_system_atom_y(cl_system* s) { return s ? s->state.atoms.y.data() : nullptr; }
+double* cl_system_atom_z(cl_system* s) { return s ? s->state.atoms.z.data() : nullptr; }
+const uint32_t* cl_system_bond_begin(const cl_system* s) { return s ? s->state.bonds.begin.data() : nullptr; }
+const uint32_t* cl_system_bond_end(const cl_system* s) { return s ? s->state.bonds.end.data() : nullptr; }
+const uint8_t* cl_system_bond_order(const cl_system* s) { return s ? s->state.bonds.order.data() : nullptr; }
+const double* cl_system_moles(const cl_system* s) { return s ? s->state.moles.data() : nullptr; }
 
-char* oc_system_structure_json(const oc_system* s) {
+char* cl_system_structure_json(const cl_system* s) {
   if (!s) return nullptr;
   return guarded([&] { return structure_to_json(s->state); });
 }
-char* oc_system_thermo_json(const oc_system* s) {
+char* cl_system_thermo_json(const cl_system* s) {
   if (!s) return nullptr;
   return guarded([&] { return thermo_to_json(s->state); });
 }
-char* oc_system_diagnostics_json(const oc_system* s) {
+char* cl_system_diagnostics_json(const cl_system* s) {
   if (!s) return nullptr;
   return guarded([&] { return diagnostics_to_json(s->last); });
 }
 
-char* oc_parse_smiles_json(const char* smiles) {
+char* cl_parse_smiles_json(const char* smiles) {
   if (!smiles) return nullptr;
   return guarded([&] {
     ChemicalSystemState st;
@@ -183,7 +183,7 @@ char* oc_parse_smiles_json(const char* smiles) {
   });
 }
 
-char* oc_check_reaction_json(const char* equation, double temperature_K) {
+char* cl_check_reaction_json(const char* equation, double temperature_K) {
   if (!equation) return nullptr;
   return guarded([&] {
     ChemicalSystemState st;
@@ -208,7 +208,7 @@ char* oc_check_reaction_json(const char* equation, double temperature_K) {
   });
 }
 
-char* oc_equilibrate_json(const char* const* smiles, const double* moles, size_t count, double temperature_K,
+char* cl_equilibrate_json(const char* const* smiles, const double* moles, size_t count, double temperature_K,
                           double pressure_Pa) {
   if ((!smiles || !moles) && count > 0) return nullptr;
   return guarded([&] {
@@ -231,7 +231,7 @@ char* oc_equilibrate_json(const char* const* smiles, const double* moles, size_t
   });
 }
 
-char* oc_canonical_smiles_json(const char* smiles, unsigned n_random, uint64_t seed) {
+char* cl_canonical_smiles_json(const char* smiles, unsigned n_random, uint64_t seed) {
   if (!smiles) return nullptr;
   return guarded([&] {
     ChemicalSystemState st;
@@ -265,7 +265,7 @@ char* oc_canonical_smiles_json(const char* smiles, unsigned n_random, uint64_t s
   });
 }
 
-char* oc_kinetics_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+char* cl_kinetics_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
                        const char* model, double temperature_K, double pressure_Pa,
                        const char* const* names, const double* moles, size_t count, double t_end, size_t n_samples,
                        double rtol) {
@@ -325,7 +325,7 @@ char* oc_kinetics_json(const char* mechanism_text, const char* thermo_text, cons
   });
 }
 
-char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minimize) {
+char* cl_embed_json(const char* smiles, uint64_t seed, int candidates, int minimize) {
   if (!smiles) return nullptr;
   return guarded([&] {
     ChemicalSystemState st;
@@ -352,15 +352,15 @@ char* oc_embed_json(const char* smiles, uint64_t seed, int candidates, int minim
 }
 
 
-char* oc_depict_json(const char* smiles, double bond_px, int flags) {
+char* cl_depict_json(const char* smiles, double bond_px, int flags) {
   if (!smiles) return nullptr;
   return guarded([&] {
     Diagnostics d;
     DepictOptions opt;
     if (bond_px > 0) opt.bond_length = bond_px;
-    opt.color = (flags & OC_DEPICT_COLOR) != 0;
-    opt.cip_labels = (flags & OC_DEPICT_CIP) != 0;
-    opt.atom_numbers = (flags & OC_DEPICT_NUMBERS) != 0;
+    opt.color = (flags & CL_DEPICT_COLOR) != 0;
+    opt.cip_labels = (flags & CL_DEPICT_CIP) != 0;
+    opt.atom_numbers = (flags & CL_DEPICT_NUMBERS) != 0;
     ChemicalSystemState st;
     const std::int32_t sp = parse_smiles(st, smiles, d);
     Depiction dp;
@@ -388,7 +388,7 @@ char* oc_depict_json(const char* smiles, double bond_px, int flags) {
   });
 }
 
-char* oc_inchi_json(const char* smiles) {
+char* cl_inchi_json(const char* smiles) {
   if (!smiles) return nullptr;
   return guarded([&] {
     Diagnostics d;
@@ -399,7 +399,7 @@ char* oc_inchi_json(const char* smiles) {
   });
 }
 
-char* oc_smarts_match_json(const char* smiles, const char* smarts, int use_chirality, int max_matches) {
+char* cl_smarts_match_json(const char* smiles, const char* smarts, int use_chirality, int max_matches) {
   if (!smiles || !smarts) return nullptr;
   return guarded([&] {
     Diagnostics d;
@@ -424,7 +424,7 @@ char* oc_smarts_match_json(const char* smiles, const char* smarts, int use_chira
   });
 }
 
-char* oc_similarity_json(const char* smiles_a, const char* smiles_b, int radius, int bits) {
+char* cl_similarity_json(const char* smiles_a, const char* smiles_b, int radius, int bits) {
   if (!smiles_a || !smiles_b) return nullptr;
   return guarded([&] {
     Diagnostics d;
@@ -443,7 +443,7 @@ char* oc_similarity_json(const char* smiles_a, const char* smiles_b, int radius,
   });
 }
 
-char* oc_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits) {
+char* cl_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits) {
   if (!smiles_lines) return nullptr;
   return guarded([&] {
     Diagnostics d;
@@ -496,7 +496,7 @@ char* oc_search_json(const char* smiles_lines, const char* smarts, const char* q
   });
 }
 
-char* oc_read_molecules_json(const char* text, const char* format, int keep_hydrogens, int max_records) {
+char* cl_read_molecules_json(const char* text, const char* format, int keep_hydrogens, int max_records) {
   if (!text) return nullptr;
   return guarded([&] {
     const std::string f = format ? format : "";
@@ -533,25 +533,25 @@ char* oc_read_molecules_json(const char* text, const char* format, int keep_hydr
   });
 }
 
-char* oc_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed) {
-  return oc_canonical_smiles_json(smiles, n_random, seed);
+char* cl_canonical_smiles32_json(const char* smiles, unsigned n_random, unsigned seed) {
+  return cl_canonical_smiles_json(smiles, n_random, seed);
 }
 
-char* oc_embed32_json(const char* smiles, unsigned seed, int candidates, int minimize) {
-  return oc_embed_json(smiles, seed, candidates, minimize);
+char* cl_embed32_json(const char* smiles, unsigned seed, int candidates, int minimize) {
+  return cl_embed_json(smiles, seed, candidates, minimize);
 }
 
-char* oc_equilibrate_text_json(const char* species_lines, double temperature_K, double pressure_Pa) {
+char* cl_equilibrate_text_json(const char* species_lines, double temperature_K, double pressure_Pa) {
   std::vector<std::string> names;
   std::vector<double> moles;
   std::string bad;
   if (!parse_pairs(species_lines, names, moles, bad)) return bad_input(bad);
   std::vector<const char*> ptrs;
   for (const auto& n : names) ptrs.push_back(n.c_str());
-  return oc_equilibrate_json(ptrs.data(), moles.data(), ptrs.size(), temperature_K, pressure_Pa);
+  return cl_equilibrate_json(ptrs.data(), moles.data(), ptrs.size(), temperature_K, pressure_Pa);
 }
 
-char* oc_kinetics_text_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
+char* cl_kinetics_text_json(const char* mechanism_text, const char* thermo_text, const char* smiles_map_text,
                             const char* model, double temperature_K, double pressure_Pa, const char* feed_lines,
                             double t_end, size_t n_samples, double rtol) {
   std::vector<std::string> names;
@@ -560,12 +560,12 @@ char* oc_kinetics_text_json(const char* mechanism_text, const char* thermo_text,
   if (!parse_pairs(feed_lines, names, moles, bad)) return bad_input(bad);
   std::vector<const char*> ptrs;
   for (const auto& n : names) ptrs.push_back(n.c_str());
-  return oc_kinetics_json(mechanism_text, thermo_text, smiles_map_text, model, temperature_K, pressure_Pa, ptrs.data(),
+  return cl_kinetics_json(mechanism_text, thermo_text, smiles_map_text, model, temperature_K, pressure_Pa, ptrs.data(),
                           moles.data(), ptrs.size(), t_end, n_samples, rtol);
 }
 
 
-char* oc_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos) {
+char* cl_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos) {
   std::vector<std::string> smiles;
   std::vector<double> z;
   std::string bad;
@@ -595,7 +595,7 @@ char* oc_flash_text_json(const char* component_lines, double temperature_K, doub
   });
 }
 
-char* oc_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos) {
+char* cl_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos) {
   if (!smiles) return nullptr;
   return guarded([&] {
     Diagnostics d;
@@ -609,6 +609,6 @@ char* oc_saturation_pressure_json(const char* smiles, double temperature_K, cons
   });
 }
 
-void oc_free_string(char* s) { std::free(s); }
+void cl_free_string(char* s) { std::free(s); }
 
 }  // extern "C"

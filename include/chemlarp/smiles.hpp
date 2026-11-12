@@ -12,10 +12,10 @@
 #include <cstdint>
 #include <string_view>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 // Returns the new species index, or -1 on error. `base_offset` is added to all
 // reported character positions (used when the SMILES is embedded in a larger
@@ -23,4 +23,4 @@ namespace omnichem {
 std::int32_t parse_smiles(ChemicalSystemState& state, std::string_view smiles, Diagnostics& diag,
                           std::size_t base_offset = 0);
 
-}  // namespace omnichem
+}  // namespace chemlarp

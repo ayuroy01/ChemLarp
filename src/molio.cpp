@@ -1,4 +1,4 @@
-#include "omnichem/molio.hpp"
+#include "chemlarp/molio.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,12 +11,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/cip.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/smiles.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 // ---- raw record ------------------------------------------------------------------
@@ -1519,4 +1519,4 @@ std::vector<MolRecord> read_molecules(ChemicalSystemState& state, std::string_vi
   return out;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

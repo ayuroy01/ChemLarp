@@ -1,8 +1,8 @@
-#include "omnichem/elements.hpp"
+#include "chemlarp/elements.hpp"
 
 #include <array>
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 // Masses: IUPAC 2021 conventional standard atomic weights; for elements without
@@ -183,4 +183,4 @@ std::string_view element_symbol(std::uint8_t z) noexcept {
   return e ? e->symbol : std::string_view("?");
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

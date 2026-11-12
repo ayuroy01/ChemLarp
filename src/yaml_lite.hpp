@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace omnichem::yaml {
+namespace chemlarp::yaml {
 
 struct Node {
   enum class Kind { Null, Scalar, Map, Seq };
@@ -42,4 +42,4 @@ struct ParseError {
 // Returns false and fills `error` on malformed input.
 bool parse(std::string_view text, Node& out, ParseError& error);
 
-}  // namespace omnichem::yaml
+}  // namespace chemlarp::yaml

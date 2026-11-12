@@ -1,10 +1,10 @@
-#include "omnichem/joback.hpp"
-#include "omnichem/reaction.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/joback.hpp"
+#include "chemlarp/reaction.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/thermo.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 

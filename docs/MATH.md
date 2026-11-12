@@ -175,7 +175,7 @@ Because the solver's dimension is `E + 1`, not `S`, adding species to a reacting
 ## 6. Worked example (reproducible)
 
 ```bash
-./build/omnichem equilibrate -T 1000 -P 1 '[C-]#[O+]' 1 O 1 O=C=O 0 '[H][H]' 0
+./build/chemlarp equilibrate -T 1000 -P 1 '[C-]#[O+]' 1 O 1 O=C=O 0 '[H][H]' 0
 ```
 
 Because the shift reaction conserves moles, `x_CO₂ x_H₂ / (x_CO x_H₂O) = K = exp(−Σ νᵢ gᵢ)`. The test `water_gas_shift_matches_equilibrium_constant` asserts that the solver's composition reproduces `K` to 10⁻⁸, which verifies §4 end to end. At 1000 K the result is n_CO₂ = n_H₂ = 0.5451 mol, so K ≈ 1.44, matching the literature value.

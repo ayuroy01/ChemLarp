@@ -7,7 +7,7 @@ int main() {
   int failed = 0;
   // Flush after every line so progress survives a hang or crash. (Not setvbuf(_IOLBF, 0):
   // the MSVC CRT rejects a zero buffer size and fast-fails the process.)
-  for (const auto& c : octest::registry()) {
+  for (const auto& c : cltest::registry()) {
     try {
       c.fn();
       std::printf("  ok    %s\n", c.name);
@@ -17,6 +17,6 @@ int main() {
     }
     std::fflush(stdout);
   }
-  std::printf("\n%zu tests, %d failed\n", octest::registry().size(), failed);
+  std::printf("\n%zu tests, %d failed\n", cltest::registry().size(), failed);
   return failed == 0 ? 0 : 1;
 }

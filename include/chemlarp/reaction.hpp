@@ -11,10 +11,10 @@
 #include <string_view>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct ReactionTerm {
   double coefficient = 1.0;
@@ -47,4 +47,4 @@ struct ReactionThermo {
 std::optional<ReactionThermo> reaction_thermo(const ChemicalSystemState& state, const Reaction& rxn,
                                               double temperature_K, Diagnostics& diag);
 
-}  // namespace omnichem
+}  // namespace chemlarp

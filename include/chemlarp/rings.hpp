@@ -13,9 +13,9 @@
 #include <cstdint>
 #include <vector>
 
-#include "omnichem/system_state.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct Ring {
   std::vector<std::uint32_t> atoms;  // global atom ids, in ring order
@@ -38,4 +38,4 @@ int aromatic_pi_electrons(const ChemicalSystemState& state, std::uint32_t atom);
 // structure, so equivalent Kekulé and aromatic inputs end up identical.
 void perceive_aromaticity(ChemicalSystemState& state, std::uint32_t species);
 
-}  // namespace omnichem
+}  // namespace chemlarp

@@ -1,6 +1,6 @@
 {
-  "name": "OmniChem",
-  "short_name": "OmniChem",
+  "name": "ChemLarp",
+  "short_name": "ChemLarp",
   "description": "Chemistry workbench: structures, 3D models, reactions, equilibrium and kinetics. Works offline.",
   "start_url": "./index.html",
   "scope": "./",

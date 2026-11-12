@@ -1,4 +1,4 @@
-#include "omnichem/ode.hpp"
+#include "chemlarp/ode.hpp"
 
 #include <algorithm>
 #include <cfloat>
@@ -6,7 +6,7 @@
 #include <deque>
 #include <string>
 
-namespace omnichem {
+namespace chemlarp {
 
 bool LuFactor::factor(std::vector<double> a, std::size_t n) {
   n_ = n;
@@ -301,4 +301,4 @@ bool integrate_bdf(const OdeRhs& rhs, const OdeJacobian* jacobian, double t0, st
   return true;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

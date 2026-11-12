@@ -1,4 +1,4 @@
-#include "omnichem/smarts.hpp"
+#include "chemlarp/smarts.hpp"
 
 #include <algorithm>
 #include <array>
@@ -8,10 +8,10 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/elements.hpp"
-#include "omnichem/rings.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/rings.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 // ---- compiled query -------------------------------------------------------------------
 
@@ -43,16 +43,16 @@ struct QBond {
   int a = 0, b = 0, expr = -1;
 };
 
-}  // namespace omnichem
+}  // namespace chemlarp
 
-struct omnichem::SmartsQueryData {
+struct chemlarp::SmartsQueryData {
   std::vector<Node> nodes;
   std::vector<QAtom> atoms;
   std::vector<QBond> bonds;
   std::vector<std::shared_ptr<const SmartsQueryData>> recursive;
 };
 
-namespace omnichem {
+namespace chemlarp {
 
 std::size_t SmartsQuery::atom_count() const noexcept { return data_ ? data_->atoms.size() : 0; }
 
@@ -836,4 +836,4 @@ bool has_match(const ChemicalSystemState& state, std::uint32_t species, const Sm
   return !match_smarts(state, species, query, o).empty();
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

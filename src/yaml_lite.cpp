@@ -2,7 +2,7 @@
 
 #include <cctype>
 
-namespace omnichem::yaml {
+namespace chemlarp::yaml {
 namespace {
 
 struct Logical {
@@ -331,4 +331,4 @@ bool parse(std::string_view text, Node& out, ParseError& error) {
   return p.run(out);
 }
 
-}  // namespace omnichem::yaml
+}  // namespace chemlarp::yaml

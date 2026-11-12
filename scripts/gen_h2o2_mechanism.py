@@ -4,7 +4,7 @@
     python3 scripts/gen_h2o2_mechanism.py
 
 Writes:
-    data/mechanisms/h2o2.ocm               OmniChem native (SMILES-bound species)
+    data/mechanisms/h2o2.ocm               ChemLarp native (SMILES-bound species)
     data/mechanisms/h2o2/chem.inp          CHEMKIN-II reactions
     data/mechanisms/h2o2/therm.dat         CHEMKIN-II NASA-7 thermo cards (fixed columns)
     data/mechanisms/h2o2/species.smi       NAME -> SMILES map for the CHEMKIN / YAML imports

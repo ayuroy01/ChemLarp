@@ -1,4 +1,4 @@
-#include "omnichem/inchi.hpp"
+#include "chemlarp/inchi.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/elements.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/smiles.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr std::size_t kMaxLeaves = 40000;   // minimal numberings kept per component
@@ -1230,4 +1230,4 @@ InchiResult inchi_from_smiles(std::string_view smiles, Diagnostics& diag) {
   return inchi(st, static_cast<std::uint32_t>(sp), &diag);
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

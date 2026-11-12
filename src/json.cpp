@@ -1,12 +1,12 @@
-#include "omnichem/json.hpp"
+#include "chemlarp/json.hpp"
 
 #include <cmath>
 #include <cstdio>
 
-#include "omnichem/cip.hpp"
-#include "omnichem/elements.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/elements.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 std::string num(double v) {
@@ -177,4 +177,4 @@ std::string equilibrium_to_json(const ChemicalSystemState& st, const Equilibrium
   return s + "}}";
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

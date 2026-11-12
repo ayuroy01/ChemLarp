@@ -1,4 +1,4 @@
-#include "omnichem/conformer.hpp"
+#include "chemlarp/conformer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,13 +10,13 @@
 #include <utility>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/elements.hpp"
-#include "omnichem/molio.hpp"
-#include "omnichem/rings.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/elements.hpp"
+#include "chemlarp/molio.hpp"
+#include "chemlarp/rings.hpp"
+#include "chemlarp/smiles.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -711,7 +711,7 @@ bool cis_from_coordinates(const ChemicalSystemState& st, const DoubleBondStereo&
 
 std::string write_sdf(const ChemicalSystemState& st, std::uint32_t sp, const std::string& title) {
   const Species& s = st.species[sp];
-  std::string out = (title.empty() ? s.canonical_smiles : title) + "\n  OmniChem          3D\n\n";
+  std::string out = (title.empty() ? s.canonical_smiles : title) + "\n  ChemLarp          3D\n\n";
   char buf[128];
   const bool chiral = std::any_of(st.tetrahedral.begin(), st.tetrahedral.end(),
                                   [&](const TetrahedralStereo& t) { return st.atoms.species[t.atom] == sp; });
@@ -768,4 +768,4 @@ std::string write_xyz(const ChemicalSystemState& st, std::uint32_t sp, const std
   return out;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

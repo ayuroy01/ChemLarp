@@ -6,10 +6,10 @@
 #include <cstdint>
 #include <vector>
 
-#include "omnichem/diagnostics.hpp"
-#include "omnichem/system_state.hpp"
+#include "chemlarp/diagnostics.hpp"
+#include "chemlarp/system_state.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 struct EquilibriumInput {
   std::vector<Composition> composition;  // column a_i of the element matrix, per species
@@ -47,4 +47,4 @@ EquilibriumResult equilibrate(ChemicalSystemState& state, Diagnostics& diag, con
 // Returns false if the matrix is numerically singular.
 bool solve_dense(std::vector<double>& m, std::vector<double>& rhs, std::size_t n);
 
-}  // namespace omnichem
+}  // namespace chemlarp

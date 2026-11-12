@@ -5,9 +5,9 @@
 #include <string_view>
 #include <vector>
 
-#include "omnichem/inchi.hpp"
+#include "chemlarp/inchi.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 std::array<std::uint8_t, 32> sha256(std::string_view data) {
   static constexpr std::uint32_t k[64] = {
@@ -131,4 +131,4 @@ std::string inchi_key(std::string_view inchi) {
   return key;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

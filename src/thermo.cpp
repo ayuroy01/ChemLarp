@@ -1,4 +1,4 @@
-#include "omnichem/thermo.hpp"
+#include "chemlarp/thermo.hpp"
 
 #include <array>
 #include <cmath>
@@ -6,10 +6,10 @@
 #include <string>
 #include <unordered_map>
 
-#include "omnichem/joback.hpp"
-#include "omnichem/smiles.hpp"
+#include "chemlarp/joback.hpp"
+#include "chemlarp/smiles.hpp"
 
-namespace omnichem {
+namespace chemlarp {
 
 double Nasa7::cp_R(double T) const noexcept {
   const auto& a = coeffs(T);
@@ -228,4 +228,4 @@ bool bind_thermo(ChemicalSystemState& state, Diagnostics& diag) {
   return ok;
 }
 
-}  // namespace omnichem
+}  // namespace chemlarp

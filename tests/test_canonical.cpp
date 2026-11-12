@@ -2,13 +2,13 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/canonical.hpp"
-#include "omnichem/cip.hpp"
-#include "omnichem/smiles.hpp"
-#include "omnichem/thermo.hpp"
+#include "chemlarp/canonical.hpp"
+#include "chemlarp/cip.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/thermo.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 
@@ -16,7 +16,7 @@ std::string canon(const std::string& smi) {
   ChemicalSystemState st;
   Diagnostics d;
   const std::int32_t sp = parse_smiles(st, smi, d);
-  if (sp < 0) throw octest::Failure("failed to parse " + smi + ": " + d.items().front().message);
+  if (sp < 0) throw cltest::Failure("failed to parse " + smi + ": " + d.items().front().message);
   return st.species[static_cast<std::size_t>(sp)].canonical_smiles;
 }
 
@@ -43,7 +43,7 @@ CipLabel bond_label(const std::string& smi) {
 void expect_same(std::initializer_list<const char*> spellings) {
   const std::string ref = canon(*spellings.begin());
   for (const char* s : spellings)
-    if (canon(s) != ref) throw octest::Failure(std::string(s) + " -> " + canon(s) + " but expected " + ref);
+    if (canon(s) != ref) throw cltest::Failure(std::string(s) + " -> " + canon(s) + " but expected " + ref);
 }
 
 // A corpus covering aromatics, heteroatoms, charges, isotopes, rings, fused
@@ -110,7 +110,7 @@ TEST(canonical_distinguishes_isomers) {
 TEST(canonical_is_idempotent) {
   for (const auto& s : kCorpus) {
     const std::string c = canon(s);
-    if (canon(c) != c) throw octest::Failure(s + ": canonical " + c + " re-canonicalises to " + canon(c));
+    if (canon(c) != c) throw cltest::Failure(s + ": canonical " + c + " re-canonicalises to " + canon(c));
   }
 }
 
@@ -133,11 +133,11 @@ TEST(canonical_random_round_trip) {
       std::string back;
       try {
         back = canon(rnd);
-      } catch (const octest::Failure& f) {
-        throw octest::Failure(s + ": random form " + rnd + " does not parse: " + f.what());
+      } catch (const cltest::Failure& f) {
+        throw cltest::Failure(s + ": random form " + rnd + " does not parse: " + f.what());
       }
       if (back != ref)
-        throw octest::Failure(s + ": random form " + rnd + " canonicalises to " + back + ", expected " + ref);
+        throw cltest::Failure(s + ": random form " + rnd + " canonicalises to " + back + ", expected " + ref);
     }
   }
 }
@@ -250,7 +250,7 @@ TEST(canonical_achiral_ring_stereo) {
       o.canonical = false;
       o.random_seed = seed;
       const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
-      if (canon(rnd) != ref) throw octest::Failure(std::string(s) + ": " + rnd + " -> " + canon(rnd) + ", expected " + ref);
+      if (canon(rnd) != ref) throw cltest::Failure(std::string(s) + ": " + rnd + " -> " + canon(rnd) + ", expected " + ref);
     }
   }
 }
@@ -288,7 +288,7 @@ TEST(canonical_ring_para_stereo) {
     o.canonical = false;
     o.random_seed = seed;
     const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
-    if (canon(rnd) != ref) throw octest::Failure(rnd + " -> " + canon(rnd) + ", expected " + ref);
+    if (canon(rnd) != ref) throw cltest::Failure(rnd + " -> " + canon(rnd) + ", expected " + ref);
   }
 }
 
@@ -308,6 +308,6 @@ TEST(canonical_ez_next_to_aromatic_ring) {
     o.canonical = false;
     o.random_seed = seed;
     const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
-    if (canon(rnd) != c) throw octest::Failure(rnd + " -> " + canon(rnd) + ", expected " + c);
+    if (canon(rnd) != c) throw cltest::Failure(rnd + " -> " + canon(rnd) + ", expected " + c);
   }
 }

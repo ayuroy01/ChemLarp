@@ -2,21 +2,21 @@
 #include <string>
 #include <vector>
 
-#include "omnichem/eos.hpp"
+#include "chemlarp/eos.hpp"
 #include "test_framework.hpp"
 
-using namespace omnichem;
+using namespace chemlarp;
 
 namespace {
 CriticalProperties comp(const char* smiles) {
   auto c = critical_properties(smiles);
-  if (!c) throw octest::Failure(std::string("no critical data for ") + smiles);
+  if (!c) throw cltest::Failure(std::string("no critical data for ") + smiles);
   return *c;
 }
 double psat(const char* smiles, double T, CubicEos e = CubicEos::PengRobinson) {
   Diagnostics d;
   auto p = saturation_pressure(comp(smiles), e, T, d);
-  if (!p) throw octest::Failure(std::string("no saturation pressure for ") + smiles);
+  if (!p) throw cltest::Failure(std::string("no saturation pressure for ") + smiles);
   return *p;
 }
 }  // namespace
