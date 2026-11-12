@@ -142,7 +142,7 @@
         {
           "name": "Quantum chemistry (Hartree-Fock, DFT)",
           "size": "L",
-          "status": "planned"
+          "status": "done"
         }
       ]
     },

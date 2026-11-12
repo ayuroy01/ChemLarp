@@ -38,6 +38,7 @@
     <symbol id="i-ed-undo" viewBox="0 0 24 24"><path d="M9 7 4.5 11.5 9 16"/><path d="M5 11.5h9a5 5 0 0 1 0 10h-2"/></symbol>
     <symbol id="i-ed-redo" viewBox="0 0 24 24"><path d="m15 7 4.5 4.5L15 16"/><path d="M19 11.5h-9a5 5 0 0 0 0 10h2"/></symbol>
     <symbol id="i-ed-clean" viewBox="0 0 24 24"><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2"/><circle cx="12" cy="12" r="2.6"/></symbol>
+    <symbol id="i-quantum" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.8"/><ellipse cx="12" cy="12" rx="9" ry="3.6"/><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-60 12 12)"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.9A2.4 2.4 0 0 0 13.1 4.5H6.9A2.4 2.4 0 0 0 4.5 6.9v6.2a2.4 2.4 0 0 0 2.4 2.4h1.6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
     <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
@@ -67,6 +68,8 @@
         <a href="#reaction" data-tool="reaction" data-key="3"><svg><use href="#i-reaction"/></svg><span>Reaction</span><kbd>⌘3</kbd></a>
         <a href="#equilibrium" data-tool="equilibrium" data-key="4"><svg><use href="#i-equilibrium"/></svg><span>Equilibrium</span><kbd>⌘4</kbd></a>
         <a href="#phases" data-tool="phases" data-key="5"><svg><use href="#i-phases"/></svg><span>Phase Behaviour</span><kbd>⌘5</kbd></a>
+        <div class="list-heading">Quantum</div>
+        <a href="#quantum" data-tool="quantum" data-key="9"><svg><use href="#i-quantum"/></svg><span>Quantum Chemistry</span><kbd>⌘9</kbd></a>
         <div class="list-heading">Kinetics</div>
         <a href="#kinetics" data-tool="kinetics" data-key="6"><svg><use href="#i-kinetics"/></svg><span>Batch Reactor</span><kbd>⌘6</kbd></a>
       </nav>
@@ -298,6 +301,36 @@ CCCCC 0.2</textarea>
         </div>
       </section>
 
+      <!-- Quantum chemistry -->
+      <section class="view" id="quantum" hidden>
+        <header class="view-head">
+          <h1>Quantum Chemistry</h1>
+          <p>Hartree–Fock and density-functional energies, orbitals, charges and dipole for the open compound, at its 3D structure.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="qc-form">
+            <div class="field">
+              <label>Method</label>
+              <div class="segmented" role="radiogroup" aria-label="Method" id="qc-method">
+                <button type="button" role="radio" aria-checked="true" data-method="hf">HF</button>
+                <button type="button" role="radio" aria-checked="false" data-method="svwn">SVWN5</button>
+                <button type="button" role="radio" aria-checked="false" data-method="pbe">PBE</button>
+                <button type="button" role="radio" aria-checked="false" data-method="b3lyp">B3LYP</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <div class="field narrow"><label for="qc-basis">Basis set</label>
+                <select id="qc-basis"><option>STO-3G</option><option>3-21G</option><option selected>6-31G</option><option>6-31G*</option></select></div>
+              <div class="field narrow"><label for="qc-mult">Multiplicity</label>
+                <select id="qc-mult"><option value="0" selected>Lowest</option><option value="1">Singlet</option><option value="2">Doublet</option><option value="3">Triplet</option><option value="4">Quartet</option></select></div>
+            </div>
+            <p class="muted small">Elements H to Ar. The 3D structure comes from ChemLarp's embedder (distance geometry + UFF). Larger molecules and basis sets take longer; the calculation runs in the background.</p>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Calculate</button></div>
+          </form>
+          <div class="stack" id="qc-out"></div>
+        </div>
+      </section>
+
       <!-- Kinetics -->
       <section class="view" id="kinetics" hidden>
         <header class="view-head">
@@ -387,6 +420,7 @@ AR=7</textarea>
       <a href="#reaction" data-tool="reaction"><svg><use href="#i-reaction"/></svg><span>Reaction</span></a>
       <a href="#equilibrium" data-tool="equilibrium" aria-label="Equilibrium"><svg><use href="#i-equilibrium"/></svg><span>Equil.</span></a>
       <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>
+      <a href="#quantum" data-tool="quantum"><svg><use href="#i-quantum"/></svg><span>Quantum</span></a>
       <a href="#kinetics" data-tool="kinetics"><svg><use href="#i-kinetics"/></svg><span>Kinetics</span></a>
       <a href="#roadmap" data-tool="roadmap"><svg><use href="#i-roadmap"/></svg><span>Roadmap</span></a>
     </nav>

@@ -44,6 +44,7 @@
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
 #include "chemlarp/molio.hpp"
+#include "chemlarp/qc.hpp"
 #include "chemlarp/reaction.hpp"
 #include "chemlarp/smarts.hpp"
 #include "chemlarp/smiles.hpp"
@@ -64,6 +65,8 @@ int usage() {
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
       "  chemlarp match <SMILES> <SMARTS> [--chiral]          substructure matches (atom indices)\n"
+      "  chemlarp qc <SMILES|file.sdf> [--method hf|svwn|pbe|b3lyp] [--basis STO-3G|3-21G|6-31G|6-31G*]\n"
+      "              [--mult N] [--grid 1-3]               Hartree-Fock / DFT single point\n"
       "  chemlarp similarity <SMILES> <SMILES> [--radius N] [--bits N]\n"
       "  chemlarp search <file.smi|.sdf|...> [--smarts Q] [--like SMILES] [--min T] [--radius N] [--bits N]\n"
       "  chemlarp depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
@@ -558,6 +561,60 @@ int cmd_search(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_qc(const std::vector<std::string>& args) {
+  std::string input;
+  QcOptions o;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "--method" && i + 1 < args.size()) { if (!parse_qc_method(args[++i], o.method)) return usage(); }
+    else if (args[i] == "--basis" && i + 1 < args.size()) o.basis = args[++i];
+    else if (args[i] == "--mult" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.multiplicity)) return usage(); }
+    else if (args[i] == "--grid" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.grid_level)) return usage(); }
+    else if (input.empty()) input = args[i];
+    else return usage();
+  }
+  if (input.empty()) return usage();
+  ChemicalSystemState st;
+  Diagnostics d;
+  std::int32_t sp = -1;
+  std::ifstream in(input, std::ios::binary);
+  if (in) {
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    ReadOptions ro;
+    ro.keep_hydrogens = true;
+    ro.max_records = 1;
+    ro.format = detect_format(text, input);
+    const auto recs = read_molecules(st, text, d, ro);
+    if (!recs.empty() && recs[0].species >= 0 && recs[0].dimensions == 3) sp = recs[0].species;
+    else if (!recs.empty() && recs[0].species >= 0) d.error(DiagCode::InvalidInput, "the file has no 3D coordinates");
+  } else {
+    sp = embed_smiles(st, input, d);
+  }
+  if (sp < 0) { print_diagnostics(d, input); return 1; }
+  const QcResult r = run_qc(st, static_cast<std::uint32_t>(sp), d, o);
+  print_diagnostics(d, {});
+  if (!r.ok) return 1;
+  std::printf("%s/%s  %d basis functions  multiplicity %d  charge %d\n", r.method.c_str(), r.basis.c_str(), r.n_basis,
+              r.multiplicity, r.charge);
+  std::printf("E = %.10f hartree  (%s in %d iterations)\n", r.energy, r.converged ? "converged" : "NOT converged", r.iterations);
+  std::printf("  nuclear repulsion %.10f  one-electron %.10f  two-electron %.10f", r.nuclear_repulsion, r.one_electron, r.two_electron);
+  if (o.method != QcMethod::HF) std::printf("  xc %.10f  (grid electrons %.6f)", r.xc, r.electrons_on_grid);
+  std::printf("\n");
+  const int ho = r.n_alpha - 1;
+  if (ho >= 0 && static_cast<std::size_t>(r.n_alpha) < r.orbital_energies_alpha.size())
+    std::printf("HOMO %.6f  LUMO %.6f hartree (alpha)  gap %.3f eV\n", r.orbital_energies_alpha[static_cast<std::size_t>(ho)],
+                r.orbital_energies_alpha[static_cast<std::size_t>(r.n_alpha)],
+                (r.orbital_energies_alpha[static_cast<std::size_t>(r.n_alpha)] - r.orbital_energies_alpha[static_cast<std::size_t>(ho)]) * 27.211386245988);
+  std::printf("dipole %.4f %.4f %.4f debye  |mu| = %.4f\n", r.dipole[0], r.dipole[1], r.dipole[2],
+              std::sqrt(r.dipole[0] * r.dipole[0] + r.dipole[1] * r.dipole[1] + r.dipole[2] * r.dipole[2]));
+  if (r.unrestricted) std::printf("<S^2> = %.4f\n", r.s_squared);
+  std::printf("Mulliken charges:");
+  const Species& s = st.species[static_cast<std::size_t>(sp)];
+  for (std::uint32_t k = 0; k < s.atom_count; ++k)
+    std::printf(" %s%u %+.4f", std::string(element_symbol(st.atoms.element[s.atom_begin + k])).c_str(), k + 1, r.mulliken[k]);
+  std::printf("\n");
+  return r.converged ? 0 : 2;
+}
+
 int cmd_depict(const std::vector<std::string>& args) {
   std::string smiles, svg_path, mol_path;
   DepictOptions opt;
@@ -714,6 +771,7 @@ int main(int argc, char** argv) {
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "read" && !args.empty()) return cmd_read(args);
   if (cmd == "match" && !args.empty()) return cmd_match(args);
+  if (cmd == "qc" && !args.empty()) return cmd_qc(args);
   if (cmd == "similarity" && !args.empty()) return cmd_similarity(args);
   if (cmd == "search" && !args.empty()) return cmd_search(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);

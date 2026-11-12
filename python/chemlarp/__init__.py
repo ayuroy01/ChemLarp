@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "smarts_match", "similarity", "search", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -89,6 +89,7 @@ _cl_inchi = _sig("cl_inchi_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_smarts = _sig("cl_smarts_match_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_similarity = _sig("cl_similarity_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_search = _sig("cl_search_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
+_cl_qc = _sig("cl_qc_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_double)
 _cl_read = _sig("cl_read_molecules_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_depict = _sig("cl_depict_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_flash = _sig("cl_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
@@ -247,6 +248,19 @@ def search(smiles: list[str], smarts: str = "", query: str = "", radius: int = 2
     for x in r["results"]:
         out[x["line"] - 1] = {k: v for k, v in x.items() if k != "line"}
     return out
+
+
+def qc(structure: str, method: str = "hf", basis: str = "STO-3G", multiplicity: int = 0, grid: int = 2,
+       memory_mb: float = 0) -> dict:
+    """Hartree-Fock or DFT single point (methods hf, svwn, pbe, b3lyp; bases STO-3G, 3-21G, 6-31G, 6-31G*).
+
+    `structure` is a SMILES (embedded to 3D first) or the text of a 3D molfile/SDF record with
+    hydrogens. Energies in hartree, coordinates in angstrom, dipole in debye. Raises ChemLarpError.
+    """
+    r = _take_json(_cl_qc(structure.encode(), method.encode(), basis.encode(), multiplicity, grid, memory_mb))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
 
 
 def flash(feed: dict[str, float], temperature_K: float, pressure_Pa: float, eos: str = "pr") -> dict:

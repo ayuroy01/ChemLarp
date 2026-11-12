@@ -4,7 +4,7 @@ ChemLarp is a terminal-native chemistry engine written in C++20. It covers the p
 
 ## Use it in your browser (any OS, installable)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, a structure editor, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, a structure editor, Hartree-Fock and DFT calculations, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
 
 - **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
 - **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
@@ -79,6 +79,7 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 ./build/chemlarp inchi 'C[C@@H](C(=O)O)N'                                              # InChI and InChIKey
 ./build/chemlarp read compounds.sdf --inchi             # MOL/SDF, PDB, CML -> canonical SMILES, title, InChIKey
 ./build/chemlarp match 'CC(=O)Oc1ccccc1C(=O)O' '[CX3](=O)[OX2H1]'                     # SMARTS matches
+./build/chemlarp qc 'C=O' --method b3lyp --basis 6-31G*        # HF / DFT energy, orbitals, charges, dipole
 ./build/chemlarp search compounds.sdf --smarts 'c1ccccc1C(=O)O' --like 'OC(=O)c1ccccc1O' --min 0.3   # screen a file
 ./build/chemlarp depict 'C[C@@H](C(=O)O)N' -o alanine.svg --mol alanine.mol --cip   # 2D drawing with wedges
 ```
@@ -113,6 +114,7 @@ chemlarp.inchi("N[C@@H](C)C(=O)O")["key"]   # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
 chemlarp.read_molecules("compounds.sdf")     # [{'title', 'smiles', 'formula', 'properties': {...}}, ...]
 chemlarp.smarts_match("CC(=O)Oc1ccccc1C(=O)O", "[CX3](=O)[OX2H1]")   # [(10, 11, 12)]
 chemlarp.similarity("CC(=O)Oc1ccccc1C(=O)O", "OC(=O)c1ccccc1O")["tanimoto"]   # ECFP4 Tanimoto
+chemlarp.qc("O", "b3lyp", "6-31G*")["energy"]   # about -76.408 hartree at the embedded geometry
 chemlarp.depict("N[C@@H](C)C(=O)O")["svg"]  # 2D drawing (SVG + molfile with wedges)
 chemlarp.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
 chemlarp.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
@@ -132,6 +134,7 @@ include/chemlarp/   public headers (C++ API + chemlarp_c.h C ABI)
   molio.hpp           readers for MOL V2000/V3000, SDF, PDB, CML
   smarts.hpp          SMARTS parser and substructure matcher
   fingerprint.hpp     Morgan (ECFP) fingerprints, Tanimoto and Dice
+  qc.hpp              Hartree-Fock and Kohn-Sham DFT single points
   reaction.hpp        equation parser, element/charge balance, ΔrG°, K
   thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
   joback.hpp          group-additivity ΔfH°/ΔfG° from the graph

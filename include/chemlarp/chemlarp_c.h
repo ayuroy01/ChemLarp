@@ -138,6 +138,17 @@ CHEMLARP_API char* cl_similarity_json(const char* smiles_a, const char* smiles_b
 /* Screens one SMILES per line: SMARTS match count (when smarts is non-empty) and Tanimoto to
  * query_smiles (when non-empty). JSON: {"ok","results":[{"line","ok","count","similarity"}],"diagnostics"};
  * a line that does not parse has "ok": false. */
+/* Quantum chemistry single point (see qc.hpp). `input` is a SMILES (embedded to 3D with explicit
+ * hydrogens first) or a 3D molfile / SDF record. method: "hf", "svwn", "pbe", "b3lyp"; basis:
+ * "STO-3G", "3-21G", "6-31G", "6-31G*"; multiplicity 0 = lowest; grid_level 1-3; memory_mb <= 0
+ * for the default limit on stored two-electron integrals.
+ * JSON: {"ok","converged","method","basis","energy","nuclear_repulsion","one_electron","two_electron",
+ * "xc","iterations","n_basis","n_alpha","n_beta","multiplicity","charge","homo","lumo",
+ * "orbitals_alpha":[...],"orbitals_beta":[...],"mulliken":[...],"elements":[...],"xyz":[[x,y,z],...],
+ * "dipole":[x,y,z],"dipole_total","s2","electrons_on_grid","diagnostics"} (hartree, angstrom, debye). */
+CHEMLARP_API char* cl_qc_json(const char* input, const char* method, const char* basis, int multiplicity, int grid_level,
+                              double memory_mb);
+
 CHEMLARP_API char* cl_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits);
 
 CHEMLARP_API void cl_free_string(char* s);

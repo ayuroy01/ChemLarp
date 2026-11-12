@@ -22,6 +22,7 @@
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/molio.hpp"
+#include "chemlarp/qc.hpp"
 #include "chemlarp/json.hpp"
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
@@ -440,6 +441,86 @@ char* cl_similarity_json(const char* smiles_a, const char* smiles_b, int radius,
     return "{\"ok\":true,\"tanimoto\":" + jnum(tanimoto(fa, fb)) + ",\"dice\":" + jnum(dice(fa, fb)) +
            ",\"bits_a\":" + std::to_string(fa.count()) + ",\"bits_b\":" + std::to_string(fb.count()) +
            ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* cl_qc_json(const char* input, const char* method, const char* basis, int multiplicity, int grid_level,
+                 double memory_mb) {
+  if (!input) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    ChemicalSystemState st;
+    std::int32_t sp = -1;
+    const std::string in = input;
+    auto fail = [&]() { return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}"; };
+    if (in.find('\n') != std::string::npos) {
+      ReadOptions ro;
+      ro.keep_hydrogens = true;
+      ro.max_records = 1;
+      const auto recs = read_molecules(st, in, d, ro);
+      if (recs.empty() || recs[0].species < 0) return fail();
+      if (recs[0].dimensions != 3) {
+        d.error(DiagCode::InvalidInput, "the structure has no 3D coordinates");
+        return fail();
+      }
+      sp = recs[0].species;
+      const Species& s0 = st.species[static_cast<std::size_t>(sp)];
+      for (std::uint32_t g = s0.atom_begin; g < s0.atom_begin + s0.atom_count; ++g)
+        if (st.atoms.implicit_h[g] > 0) {
+          d.error(DiagCode::ImplicitHydrogens, "the 3D structure must include its hydrogen atoms (or pass a SMILES to embed it)");
+          return fail();
+        }
+    } else {
+      EmbedResult er;
+      sp = embed_smiles(st, in, d, &er);
+      if (sp < 0) return fail();
+    }
+    QcOptions o;
+    if (method && *method && !parse_qc_method(method, o.method)) {
+      d.error(DiagCode::InvalidInput, std::string("unknown method '") + method + "' (hf, svwn, pbe, b3lyp)");
+      return fail();
+    }
+    if (basis && *basis) o.basis = basis;
+    o.multiplicity = multiplicity > 0 ? multiplicity : 0;
+    if (grid_level > 0) o.grid_level = grid_level;
+    if (memory_mb > 0) o.memory_limit_mb = memory_mb;
+    const QcResult r = run_qc(st, static_cast<std::uint32_t>(sp), d, o);
+    if (!r.ok) return fail();
+    auto arr = [](const std::vector<double>& v) {
+      std::string a = "[";
+      for (std::size_t i = 0; i < v.size(); ++i) a += (i ? "," : "") + jnum(v[i]);
+      return a + "]";
+    };
+    const int homo = r.n_alpha - 1;
+    std::string out = std::string("{\"ok\":true,\"converged\":") + (r.converged ? "true" : "false") +
+                      ",\"method\":" + json_escape(r.method) + ",\"basis\":" + json_escape(r.basis) +
+                      ",\"energy\":" + jnum(r.energy) + ",\"nuclear_repulsion\":" + jnum(r.nuclear_repulsion) +
+                      ",\"one_electron\":" + jnum(r.one_electron) + ",\"two_electron\":" + jnum(r.two_electron) +
+                      ",\"xc\":" + jnum(r.xc) + ",\"iterations\":" + std::to_string(r.iterations) +
+                      ",\"n_basis\":" + std::to_string(r.n_basis) + ",\"n_alpha\":" + std::to_string(r.n_alpha) +
+                      ",\"n_beta\":" + std::to_string(r.n_beta) + ",\"multiplicity\":" + std::to_string(r.multiplicity) +
+                      ",\"charge\":" + std::to_string(r.charge);
+    // frontier orbitals (alpha for closed shells; highest occupied / lowest virtual of either spin otherwise)
+    double ho = homo >= 0 ? r.orbital_energies_alpha[static_cast<std::size_t>(homo)] : 0.0;
+    double lu = static_cast<std::size_t>(r.n_alpha) < r.orbital_energies_alpha.size() ? r.orbital_energies_alpha[static_cast<std::size_t>(r.n_alpha)] : 0.0;
+    if (r.unrestricted && !r.orbital_energies_beta.empty()) {
+      if (r.n_beta > 0) ho = std::max(ho, r.orbital_energies_beta[static_cast<std::size_t>(r.n_beta - 1)]);
+      if (static_cast<std::size_t>(r.n_beta) < r.orbital_energies_beta.size()) lu = std::min(lu, r.orbital_energies_beta[static_cast<std::size_t>(r.n_beta)]);
+    }
+    out += ",\"homo\":" + jnum(ho) + ",\"lumo\":" + jnum(lu);
+    out += ",\"orbitals_alpha\":" + arr(r.orbital_energies_alpha) + ",\"orbitals_beta\":" + arr(r.orbital_energies_beta);
+    out += ",\"mulliken\":" + arr(r.mulliken);
+    const Species& s = st.species[static_cast<std::size_t>(sp)];
+    std::string el = "[", xyz = "[";
+    for (std::uint32_t g = s.atom_begin; g < s.atom_begin + s.atom_count; ++g) {
+      el += (g > s.atom_begin ? "," : "") + json_escape(std::string(element_symbol(st.atoms.element[g])));
+      xyz += (g > s.atom_begin ? ",[" : "[") + jnum(st.atoms.x[g]) + "," + jnum(st.atoms.y[g]) + "," + jnum(st.atoms.z[g]) + "]";
+    }
+    out += ",\"elements\":" + el + "],\"xyz\":" + xyz + "]";
+    out += ",\"dipole\":[" + jnum(r.dipole[0]) + "," + jnum(r.dipole[1]) + "," + jnum(r.dipole[2]) + "]";
+    out += ",\"dipole_total\":" + jnum(std::sqrt(r.dipole[0] * r.dipole[0] + r.dipole[1] * r.dipole[1] + r.dipole[2] * r.dipole[2]));
+    out += ",\"s2\":" + jnum(r.s_squared) + ",\"electrons_on_grid\":" + jnum(r.electrons_on_grid);
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }
 

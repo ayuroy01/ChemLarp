@@ -627,6 +627,115 @@
     if (compound) edLoadCompound(); else edCheck();
   }
 
+  // ---- quantum chemistry ---------------------------------------------------------------------
+  const HARTREE_EV = 27.211386245988;
+  function orbitalDiagram(r) {
+    const spins = r.orbitals_beta && r.orbitals_beta.length ? [['α', r.orbitals_alpha, r.n_alpha], ['β', r.orbitals_beta, r.n_beta]] : [['', r.orbitals_alpha, r.n_alpha]];
+    const pick = (orb, nocc) => orb.map((e, i) => ({ e: e * HARTREE_EV, occ: i < nocc, i })).filter((o) => o.i >= nocc - 6 && o.i < nocc + 4);
+    const cols = spins.map(([label, orb, nocc]) => ({ label, levels: pick(orb, nocc) }));
+    const all = cols.flatMap((c) => c.levels.map((l) => l.e));
+    const lo = Math.min(...all), hi = Math.max(...all), span = Math.max(1e-6, hi - lo);
+    const W = 300, H = 260, top = 14, bottom = 16, left = 46;
+    const y = (e) => top + (H - top - bottom) * (1 - (e - lo) / span);
+    const colW = (W - left - 10) / cols.length;
+    const parts = [`<svg viewBox="0 0 ${W} ${H}" class="orbital-diagram" role="img" aria-label="Orbital energy levels">`];
+    for (let k = 0; k <= 4; k++) {
+      const e = lo + (span * k) / 4;
+      parts.push(`<text x="${left - 6}" y="${y(e) + 4}" text-anchor="end" class="od-axis">${e.toFixed(1)}</text>`);
+    }
+    parts.push(`<text x="4" y="${top - 2}" class="od-axis">eV</text>`);
+    cols.forEach((c, ci) => {
+      const x0 = left + ci * colW + 10, x1 = left + (ci + 1) * colW - 10;
+      if (c.label) parts.push(`<text x="${(x0 + x1) / 2}" y="${H - 2}" text-anchor="middle" class="od-axis">${c.label}</text>`);
+      for (const l of c.levels) parts.push(`<line x1="${x0}" x2="${x1}" y1="${y(l.e)}" y2="${y(l.e)}" class="${l.occ ? 'od-occ' : 'od-virt'}"><title>${l.occ ? 'occupied' : 'virtual'} ${l.e.toFixed(3)} eV</title></line>`);
+    });
+    parts.push('</svg>');
+    return h('div', { class: 'orbital-wrap', html: parts.join('') });  // built only from numbers above
+  }
+  function chargeDrawing(c, r) {
+    // heavy atoms come first in the embedded structure, in SMILES order; add each H to its nearest heavy atom
+    const heavy = r.elements.map((e, i) => (e !== 'H' ? i : -1)).filter((i) => i >= 0);
+    const q = new Map(heavy.map((i) => [i, r.mulliken[i]]));
+    r.elements.forEach((e, i) => {
+      if (e !== 'H') return;
+      let best = -1, bd = Infinity;
+      for (const k of heavy) {
+        const d = Math.hypot(...[0, 1, 2].map((t) => r.xyz[i][t] - r.xyz[k][t]));
+        if (d < bd) { bd = d; best = k; }
+      }
+      if (best >= 0) q.set(best, q.get(best) + r.mulliken[i]);
+    });
+    const host = h('div', { class: 'drawing', role: 'img', 'aria-label': 'Structure with Mulliken charges' }, h('div', { class: 'spinner' }));
+    depiction(c, drawFlags() & ~2, 46).then((d) => {
+      if (!d.ok) { host.replaceChildren(); return; }
+      host.innerHTML = d.svg;  // engine-generated SVG
+      const svg = host.querySelector('svg');
+      const ns = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(ns, 'g');
+      const cx = d.atoms.reduce((s, a) => s + a.x, 0) / d.atoms.length, cy = d.atoms.reduce((s, a) => s + a.y, 0) / d.atoms.length;
+      for (const a of d.atoms) {
+        if (!q.has(a.atom)) continue;
+        const v = q.get(a.atom);
+        const halo = document.createElementNS(ns, 'circle');
+        halo.setAttribute('cx', a.x); halo.setAttribute('cy', a.y);
+        halo.setAttribute('r', 6 + Math.min(10, Math.abs(v) * 18));
+        halo.setAttribute('class', v < 0 ? 'q-neg' : 'q-pos');
+        g.append(halo);
+        // label outward from the molecule's centre, clear of the atom symbol
+        let ux = a.x - cx, uy = a.y - cy;
+        const len = Math.hypot(ux, uy);
+        if (len < 1e-6) { ux = 0; uy = -1; } else { ux /= len; uy /= len; }
+        const t = document.createElementNS(ns, 'text');
+        t.setAttribute('x', a.x + ux * 21); t.setAttribute('y', a.y + uy * 21 + 3.5);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('class', 'q-label');
+        t.textContent = (v > 0 ? '+' : '') + v.toFixed(2);
+        g.append(t);
+      }
+      svg.insertBefore(g, svg.firstChild);
+      svg.append(...[...g.querySelectorAll('text')]);
+      svg.style.overflow = 'visible';  // labels may sit just outside the drawing's box
+      host.style.padding = '18px 12px';
+    }).catch(() => host.replaceChildren());
+    return host;
+  }
+  async function runQc() {
+    const out = $('qc-out');
+    if (!compound) { out.replaceChildren(status('warn', 'Open a compound first', 'Quantum chemistry works on the open compound')); return; }
+    const method = checked($('qc-method')).dataset.method, basis = $('qc-basis').value, mult = Number($('qc-mult').value);
+    busy(out, `Running ${method.toUpperCase()}/${basis}…`);
+    const t0 = performance.now();
+    try {
+      const r = (await engine('qc', { input: compound.input, method, basis, mult, grid: 2, memory: 384 })).result;
+      if (!r.ok) { out.replaceChildren(status('bad', 'The calculation could not run'), ...diagnostics(r.diagnostics)); return; }
+      const secs = (performance.now() - t0) / 1000;
+      const gap = (r.lumo - r.homo) * HARTREE_EV;
+      const metrics = [
+        metric('Total energy', fmt(r.energy, 10), 'Eₕ'),
+        metric('HOMO', fmt(r.homo * HARTREE_EV, 4), 'eV'),
+        metric('LUMO', fmt(r.lumo * HARTREE_EV, 4), 'eV'),
+        metric('Gap', fmt(gap, 4), 'eV'),
+        metric('Dipole', fmt(r.dipole_total, 4), 'D'),
+      ];
+      if (r.multiplicity > 1) metrics.push(metric('⟨S²⟩', fmt(r.s2, 4)));
+      const comps = [['Nuclear repulsion', r.nuclear_repulsion], ['One-electron', r.one_electron], ['Two-electron', r.two_electron]];
+      if (method !== 'hf') comps.push(['Exchange–correlation', r.xc]);
+      out.replaceChildren(
+        status(r.converged ? 'ok' : 'warn', r.converged ? `${r.method}/${r.basis} converged` : `${r.method}/${r.basis} did not converge`,
+          `${r.iterations} iterations · ${r.n_basis} basis functions · ${secs.toFixed(1)} s`),
+        h('div', { class: 'glass-card card' }, h('div', { class: 'card-head' }, h('h2', { text: 'Energy' }),
+          h('span', { class: 'meta', text: `charge ${r.charge} · multiplicity ${r.multiplicity}` })), h('div', { class: 'metrics' }, metrics)),
+        h('div', { class: 'qc-grid' },
+          h('div', { class: 'glass-card card' }, h('div', { class: 'card-head' }, h('h2', { text: 'Mulliken charges' }),
+            h('span', { class: 'meta', text: 'hydrogens summed into their atoms' })), chargeDrawing(compound, r)),
+          h('div', { class: 'glass-card card' }, h('div', { class: 'card-head' }, h('h2', { text: 'Orbital energies' }),
+            h('span', { class: 'meta', text: 'filled: occupied' })), orbitalDiagram(r))),
+        h('div', { class: 'glass-card card' }, h('div', { class: 'card-head' }, h('h2', { text: 'Energy components' }), h('span', { class: 'meta', text: 'hartree' })),
+          h('table', { class: 'data' }, h('tbody', {}, comps.map(([k, v]) => h('tr', {}, h('td', { text: k }), h('td', { class: 'num', text: fmt(v, 8) })))))),
+        ...diagnostics(r.diagnostics.filter((d) => d.severity === 'warning')));
+    } catch (err) { fail(out, err); }
+  }
+
   // ---- recents --------------------------------------------------------------------------
   function remember_(c) {
     const list = store.get('recents', []).filter((x) => x.canonical !== c.canonical);
@@ -643,7 +752,7 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'kinetics', 'roadmap'];
+  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'quantum', 'kinetics', 'roadmap'];
   const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
@@ -885,6 +994,8 @@
   $('compound-form').addEventListener('submit', (e) => { e.preventDefault(); openCompound($('compound').value); });
   $('open-file').addEventListener('click', () => $('file-input').click());
   $('sr-form').addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
+  $('qc-form').addEventListener('submit', (e) => { e.preventDefault(); runQc(); });
+  segmented($('qc-method'), () => {});
   segmented($('sr-chiral'), () => $('sr-form').requestSubmit());
   $('file-input').addEventListener('change', (e) => { openFile(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('dragover', (e) => {

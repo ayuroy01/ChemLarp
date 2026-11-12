@@ -30,6 +30,7 @@ const calls = {
   smarts: (M, a) => callJson(M, 'cl_smarts_match_json', ['string', 'string', 'number', 'number'], [a.smiles, a.smarts, a.chiral ? 1 : 0, a.max || 1000]),
   similarity: (M, a) => callJson(M, 'cl_similarity_json', ['string', 'string', 'number', 'number'], [a.a, a.b, a.radius || 0, a.bits || 0]),
   search: (M, a) => callJson(M, 'cl_search_json', ['string', 'string', 'string', 'number', 'number'], [a.lines, a.smarts || '', a.query || '', a.radius || 0, a.bits || 0]),
+  qc: (M, a) => callJson(M, 'cl_qc_json', ['string', 'string', 'string', 'number', 'number', 'number'], [a.input, a.method || 'hf', a.basis || 'STO-3G', a.mult || 0, a.grid || 2, a.memory || 384]),
   read: (M, a) => callJson(M, 'cl_read_molecules_json', ['string', 'string', 'number', 'number'], [a.text, a.format || '', a.keepH ? 1 : 0, a.max || 0]),
   depict: (M, a) => callJson(M, 'cl_depict_json', ['string', 'number', 'number'], [a.smiles, a.bond || 30, a.flags == null ? 1 : a.flags]),
   embed: (M, a) => callJson(M, 'cl_embed32_json', ['string', 'number', 'number', 'number'], [a.smiles, a.seed || 42, a.candidates || 5, a.minimize ? 1 : 0]),

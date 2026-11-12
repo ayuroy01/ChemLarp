@@ -8,7 +8,7 @@ OUT=build/web
 rm -rf "$OUT"
 mkdir -p "$OUT/data"
 SOURCES=$(ls src/*.cpp)
-EXPORTS='["_cl_flash_text_json","_cl_saturation_pressure_json","_cl_version","_cl_parse_smiles_json","_cl_canonical_smiles32_json","_cl_check_reaction_json","_cl_equilibrate_text_json","_cl_kinetics_text_json","_cl_embed32_json","_cl_depict_json","_cl_inchi_json","_cl_read_molecules_json","_cl_smarts_match_json","_cl_similarity_json","_cl_search_json","_cl_free_string","_malloc","_free"]'
+EXPORTS='["_cl_flash_text_json","_cl_saturation_pressure_json","_cl_version","_cl_parse_smiles_json","_cl_canonical_smiles32_json","_cl_check_reaction_json","_cl_equilibrate_text_json","_cl_kinetics_text_json","_cl_embed32_json","_cl_depict_json","_cl_inchi_json","_cl_read_molecules_json","_cl_smarts_match_json","_cl_similarity_json","_cl_search_json","_cl_qc_json","_cl_free_string","_malloc","_free"]'
 em++ -std=c++20 -O3 -fexceptions -Iinclude -DCHEMLARP_STATIC $SOURCES -o "$OUT/chemlarp.js" \
   -fexceptions -sMODULARIZE=1 -sEXPORT_NAME=createChemLarp -sENVIRONMENT=web,worker \
   -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4194304 \
