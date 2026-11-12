@@ -239,6 +239,14 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"OS(=O)(=O)NCC(=O)O", "2-(sulfoamino)acetic acid"},
       {"OC(=O)CCOS(=O)(=O)O", "3-(sulfooxy)propanoic acid"},
       {"OC(=O)CCOP(=O)(O)O", "3-(phosphonooxy)propanoic acid"},
+      // phosphoric acid, phosphate and phosphonate anions, acyl phosphates (P-67.1.3)
+      {"OP(=O)(O)O", "phosphoric acid"},
+      {"OP(=O)([O-])[O-].[Na+].[Na+]", "disodium hydrogen phosphate"},
+      {"CCCCCCCCCCCCCCCCOP(=O)([O-])OCC[N+](C)(C)C", "hexadecyl 2-(trimethylazaniumyl)ethyl phosphate"},
+      {"CCOP(=O)(O)[O-].[K+]", "potassium ethyl hydrogen phosphate"},
+      {"CC1C(O1)P(=O)([O-])[O-].[Na+].[Na+]", "disodium (3-methyloxiran-2-yl)phosphonate"},
+      {"CC(=O)OP(=O)(O)O", "acetyl dihydrogen phosphate"},
+      {"CC(=O)NC(CCC(=O)OP(=O)(O)O)C(=O)O", "2-acetamido-5-oxo-5-(phosphonooxy)pentanoic acid"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -251,7 +259,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
+  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "C1COP(=O)(O)O1", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)C1(CC1)c1ccccc21"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);

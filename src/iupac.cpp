@@ -427,9 +427,9 @@ const std::vector<SmartsQuery>& template_queries() {
 // Seniority of classes (P-41), lower = more senior.
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
-  Carboxylate = -60, CarbonicAnion = -55, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
+  Carboxylate = -60, CarbonicAnion = -55, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, PhosAnion = -45, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
   Acid = 10, CarbonicAcid = 15, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
-  SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
+  SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
   Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, None = 999
@@ -1237,20 +1237,21 @@ bool Namer::perceive() {
       for (int b : single)
         if (at_[b].z == 8) okO[b] = 1;
     } else {
-      int nOH = 0, nC = 0, bridge = -1, nPOP = 0;
+      int nOH = 0, nC = 0, bridge = -1, nPOP = 0, nOm = 0;
       for (int b : single) {
         if (is_OH(b)) ++nOH;
+        else if (is_Ominus(b)) ++nOm;
         else if (at_[b].z == 6) ++nC;
         else if (at_[b].z == 8 && deg(b) == 2) {
           const int y = at_[b].nb[0] == a ? at_[b].nb[1] : at_[b].nb[0];
           if (at_[b].ring) return fail("cyclic phosphate at " + sym(a));
           if (at_[y].z == 15) ++nPOP;  // P-O-P: di- and triphosphates
-          else if (at_[y].z != 6 || dO(y) >= 0) return fail("mixed phosphoric anhydride at " + sym(a));
+          else if (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y))) return fail("mixed phosphoric anhydride at " + sym(a));
           else bridge = b;
         } else return fail("unsupported phosphorus group at " + sym(a));
       }
       if (nPOP) {
-        if (dO_.size() != 1 || single.size() != 3 || nC) return fail("unsupported polyphosphate at " + sym(a));
+        if (dO_.size() != 1 || single.size() != 3 || nC || nOm) return fail("unsupported polyphosphate at " + sym(a));
         acyl_[a] = Cls::PolyP;
         okO[dO_[0]] = 1;
         for (int b : single)
@@ -1261,7 +1262,12 @@ bool Namer::perceive() {
       for (int b : single)
         if (at_[b].z == 8 && deg(b) == 2) ++nOR;
       if (dO_.size() != 1 || single.size() != 3 || nC > 1) return fail("phosphorus group other than a phosphoric or phosphonic acid derivative at " + sym(a));
-      if (nOH == 2 && nC == 1) acyl_[a] = Cls::Phosphonic;
+      if (nOm) {  // phosphate and phosphonate anions: "ethyl hydrogen phosphate", "methylphosphonate"
+        acyl_[a] = Cls::PhosAnion;
+        for (int b : single)
+          if (is_Ominus(b)) anionO_[b] = 3;
+      } else if (nOH == 3) acyl_[a] = Cls::PhosAcidInorg;
+      else if (nOH == 2 && nC == 1) acyl_[a] = Cls::Phosphonic;
       else if (nOH == 2 && bridge >= 0) acyl_[a] = Cls::PhosMono;
       else if (nOR >= 1) acyl_[a] = Cls::PhosEster;  // di-/triesters, phosphonate esters
       else return fail("unsupported phosphorus group at " + sym(a));
@@ -1418,6 +1424,7 @@ bool Namer::perceive() {
               else if (is_Ominus(x)) acyl_[a] = Cls::Carboxylate;
               else if (deg(x) == 2) {
                 const int y = at_[x].nb[0] == a ? at_[x].nb[1] : at_[x].nb[0];
+                if (at_[y].z == 15 && acyl_[y] != Cls::None && acyl_[y] != Cls::PolyP) break;  // acyl phosphate: oxo + (phosphonooxy)
                 if (at_[y].z != 6) return fail("anhydride at " + sym(a));
                 if (dO(y) >= 0) {  // carboxylic anhydride R-CO-O-CO-R'
                   int het = 0;
@@ -2028,6 +2035,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       if (others.size() == 1 && at_[others[0]].z == 15 &&
           (acyl_[others[0]] == Cls::PhosEster || acyl_[others[0]] == Cls::PhosThio || acyl_[others[0]] == Cls::PhosphinicAcid ||
+           acyl_[others[0]] == Cls::PhosAnion ||
            acyl_[others[0]] == Cls::PhosOxide)) {  // (dimethoxyphosphoryl)oxy
         auto R = phosphoryl_name(others[0], q);
         if (!R) return std::nullopt;
@@ -2064,7 +2072,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       return ligands(others, q, "silyl");
     case 15:
       if (acyl_[q] == Cls::Phosphonic) return Named{"phosphono", false, {}};
-      if (acyl_[q] == Cls::PhosEster || acyl_[q] == Cls::PhosMono || acyl_[q] == Cls::PolyP || acyl_[q] == Cls::PhosOxide ||
+      if (acyl_[q] == Cls::PhosEster || acyl_[q] == Cls::PhosAnion || acyl_[q] == Cls::PhosMono || acyl_[q] == Cls::PolyP || acyl_[q] == Cls::PhosOxide ||
           acyl_[q] == Cls::PhosphinicAcid || acyl_[q] == Cls::PhosThio)
         return phosphoryl_name(q, from);
       if (acyl_[q] == Cls::Phosphane) {
@@ -5363,11 +5371,15 @@ std::optional<std::string> Namer::run() {
       if (err_.empty()) err_ = "phosphorus compound could not be named";
       return std::nullopt;
     }
-  } else if (principal == Cls::PhosEster) {
+  } else if (principal == Cls::PhosEster || principal == Cls::PhosAnion || principal == Cls::PhosAcidInorg) {
     // esters of phosphoric and phosphonic acids (P-67.1.3.2): "triethyl phosphate", "dimethyl methylphosphonate",
     // "diethyl hydrogen phosphate"
     for (int P = 0; P < n(); ++P) {
-      if (acyl_[P] != Cls::PhosEster) continue;
+      if (acyl_[P] != principal) continue;
+      if (principal == Cls::PhosAcidInorg) {
+        finish(Built{}, "phosphoric acid", {});
+        continue;
+      }
       std::vector<std::string> org;
       std::vector<Key> extra;
       int hydrogens = 0;
@@ -5377,6 +5389,7 @@ std::optional<std::string> Namer::run() {
         const int x = at_[P].nb[k];
         if (at_[P].bo[k] != 1) continue;
         if (is_OH(x)) ++hydrogens;
+        else if (is_Ominus(x)) continue;
         else if (at_[x].z == 8) {
           const int r = at_[x].nb[0] == P ? at_[x].nb[1] : at_[x].nb[0];
           auto R = sub(r, x, 1);
@@ -5398,8 +5411,8 @@ std::optional<std::string> Namer::run() {
         const bool comp = t[0] == '(' || t[0] == '[' || has_digit(t);
         name += (name.empty() ? "" : " ") + (k > 1 ? (comp ? multiplier(k, true) + enclose(t) : multiplier(k, false) + t) : t);
       }
-      if (hydrogens) name += " " + multiplier(hydrogens, false) + "hydrogen";
-      name += " " + (cpart.empty() ? std::string("phosphate") : cpart + "phosphonate");
+      if (hydrogens) name += (name.empty() ? "" : " ") + multiplier(hydrogens, false) + "hydrogen";
+      name += (name.empty() ? "" : " ") + (cpart.empty() ? std::string("phosphate") : cpart + "phosphonate");
       finish(Built{}, name, extra);
     }
     if (!result) {
