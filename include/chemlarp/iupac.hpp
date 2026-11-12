@@ -14,8 +14,8 @@
 //    von Baeyer and monospiro systems (bicyclo[2.2.1]heptane, spiro[4.5]decane);
 //  - principal characteristic groups as suffixes in the order of P-41
 //    (carboxylic and sulfonic acids, esters, amides and sulfonamides, nitriles,
-//    aldehydes, ketones, alcohols, thiols, amines, imines), the rest as
-//    prefixes; thioamides, hydrazides, thiones; functional class names for
+//    aldehydes, ketones, alcohols, thiols, peroxols, amines, imines), the rest
+//    as prefixes (incl. nitroso, azido, (iso)(thio)cyanato, peroxy); thioamides, hydrazides, thiones; functional class names for
 //    esters, carbonates, carbamates, phosphate monoesters and phosphonic acids;
 //    ureas, thioureas and guanidines; amidines; anions, cations, zwitterions, and salts, hydrogen
 //    halide adducts and hydrates named component by component;
@@ -27,8 +27,7 @@
 //    acid, benzoic acid, phenol, aniline, benzaldehyde, benzonitrile, ...);
 //  - CIP stereodescriptors (R/S, E/Z) on parent and substituent atoms.
 //
-// A structure outside this scope (spiro systems with fused components,
-// uncommon ions, metal complexes, hydrazines, polyphosphates, ...) gets
+// A structure outside this scope (uncommon ions, metal complexes, hydrazines, polyphosphates, ...) gets
 // no name and a NamingUnsupported diagnostic saying why: the namer never guesses.
 
 #include <cstdint>

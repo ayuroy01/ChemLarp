@@ -432,7 +432,7 @@ enum class Cls : int {
   SulfEster = 44, Carbonate = 50, Carbamate = 60, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Thioamide = 90, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
-  Thiol = 210, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, None = 999
+  Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, None = 999
 };
 
 bool is_acyl(Cls c) {
@@ -580,6 +580,10 @@ class Namer {
   std::vector<int> hzPartner_;  // hydrazine / hydrazone nitrogens: the other nitrogen, else -1
   std::vector<int> azoPartner_;  // R-N=N-R': the other nitrogen, else -1
   std::vector<char> nO_;        // oxygen of a hydroxylamine (N-O-H or N-O-C, N not acyl)
+  // prefix-only groups (P-61.5, P-63.4.2): the anchor atom bonded to the parent holds the kind,
+  // the other atoms of the group are flagged in pseudoIn_
+  enum Pseudo : char { PNone, Nitroso, Azido, Isocyanato, Isothiocyanato, Cyanato, Thiocyanato, Hydroperoxy, Peroxy };
+  std::vector<char> pseudo_, pseudoIn_;
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
   std::vector<RingSys> rs_;
@@ -797,6 +801,68 @@ bool Namer::perceive() {
       nitro_[a] = 1;
       for (int b : A.nb)
         if (at_[b].z == 8) nitroO[b] = 1;
+    }
+  }
+  // prefix-only groups on a carbon without a double bond to a heteroatom: nitroso, azido,
+  // iso(thio)cyanato, (thio)cyanato, hydroperoxy and alkylperoxy
+  pseudo_.assign(n(), PNone);
+  pseudoIn_.assign(n(), 0);
+  {
+    auto plainC = [&](int c) {
+      if (at_[c].z != 6) return false;
+      const NAtom& C = at_[c];
+      for (std::size_t k = 0; k < C.nb.size(); ++k)
+        if (at_[C.nb[k]].z != 6 && C.bo[k] != 1 && !C.ab[k]) return false;
+      return true;
+    };
+    auto other = [&](int x, int not_) { return at_[x].nb[0] == not_ ? at_[x].nb[1] : at_[x].nb[0]; };
+    for (int a = 0; a < n(); ++a) {
+      const NAtom& A = at_[a];
+      if (A.ring || A.arom || A.q != 0 || A.h != 0 || deg(a) != 2 || nitro_[a] || nitroO[a]) continue;
+      int s1 = -1, d1 = -1, t1 = -1;
+      for (std::size_t k = 0; k < A.nb.size(); ++k) {
+        if (A.bo[k] == 1) (s1 < 0 ? s1 : t1) = A.nb[k];
+        else if (A.bo[k] == 2) d1 = A.nb[k];
+      }
+      if (A.z == 7 && s1 >= 0 && d1 >= 0) {
+        const NAtom& D = at_[d1];
+        if (D.ring) continue;
+        // C-N=O on a plain carbon, or N-N=O on an acyclic or ring nitrogen
+        const bool host_ok = plainC(s1) || (at_[s1].z == 7 && at_[s1].q == 0 && !nitro_[s1]);
+        if (D.z == 8 && deg(d1) == 1 && D.q == 0 && host_ok) {
+          pseudo_[a] = Nitroso, pseudoIn_[d1] = 1;
+        } else if (D.z == 7 && D.q == 1 && deg(d1) == 2 && plainC(s1)) {
+          const int e = other(d1, a);
+          if (at_[e].z == 7 && at_[e].q == -1 && deg(e) == 1 && order(d1, e) == 2) pseudo_[a] = Azido, pseudoIn_[d1] = pseudoIn_[e] = 1;
+        } else if (D.z == 6 && D.q == 0 && deg(d1) == 2 && D.h == 0 && plainC(s1)) {
+          const int e = other(d1, a);
+          if ((at_[e].z == 8 || at_[e].z == 16) && deg(e) == 1 && at_[e].q == 0 && order(d1, e) == 2)
+            pseudo_[a] = at_[e].z == 8 ? Isocyanato : Isothiocyanato, pseudoIn_[d1] = pseudoIn_[e] = 1;
+        }
+      } else if ((A.z == 8 || A.z == 16) && s1 >= 0 && t1 >= 0) {
+        for (int pass = 0; pass < 2; ++pass) {
+          const int c = pass ? t1 : s1, g = pass ? s1 : t1;
+          if (!plainC(c)) continue;
+          const NAtom& G = at_[g];
+          if (G.z == 6 && !G.ring && deg(g) == 2 && G.q == 0) {  // -O-C#N, -S-C#N
+            const int e = other(g, a);
+            if (at_[e].z == 7 && deg(e) == 1 && order(g, e) == 3 && !pseudoIn_[a]) {
+              pseudo_[a] = A.z == 8 ? Cyanato : Thiocyanato, pseudoIn_[g] = pseudoIn_[e] = 1;
+              break;
+            }
+          }
+          if (A.z == 8 && G.z == 8 && !G.ring && G.q == 0) {
+            if (deg(g) == 1 && G.h == 1) {
+              pseudo_[a] = Hydroperoxy, pseudoIn_[g] = 1;
+              break;
+            }
+            if (deg(g) == 2 && plainC(other(g, a))) {
+              pseudo_[a] = Peroxy;  // each oxygen of R-O-O-R' is an anchor
+              break;
+            }
+          }
+        }
+      }
     }
   }
   // ions: ammonium and aromatic N+ cations, O- anions (carboxylate, sulfonate, olate)
@@ -1146,6 +1212,8 @@ bool Namer::perceive() {
     const NAtom& A = at_[a];
     int val = A.h;
     for (int o : A.bo) val += o;
+    if (pseudoIn_[a]) continue;
+    if (pseudo_[a]) continue;
     if (A.q != 0 && !nitro_[a] && !nitroO[a] && !cationN_[a] && !ringCat_[a] && !anionO_[a])
       return fail("charged atom " + sym(a) + " (ion type not covered)");
     switch (A.z) {
@@ -1173,7 +1241,7 @@ bool Namer::perceive() {
           auto plainN = [&](int x) {
             if (at_[x].z != 7 || at_[x].ring || nitro_[x]) return false;
             for (int y : at_[x].nb)
-              if (y != a && !imineN_[y] && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
+              if (y != a && !imineN_[y] && pseudo_[y] != Nitroso && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
                   (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0))
                 return false;
             return true;
@@ -1269,7 +1337,7 @@ bool Namer::perceive() {
                 return fail("unsupported acyl group at " + sym(a));
               } else {
                 for (int y : at_[x].nb) {
-                  if (y == a || hydroxamO_[y] || hydrN2_[y] || imineN_[y]) continue;
+                  if (y == a || hydroxamO_[y] || hydrN2_[y] || imineN_[y] || pseudo_[y] == Nitroso) continue;
                   if (at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) continue;  // N-sulfonyl amide
                   if (at_[y].z != 6) return fail("N-heteroatom amide at " + sym(x));
                   if (dO(y) >= 0) {  // diacylamine: one acyl is the amide, the other an N-acyl prefix
@@ -1300,7 +1368,7 @@ bool Namer::perceive() {
             auto plainN = [&](int x) {
               if (at_[x].z != 7 || at_[x].ring || nitro_[x]) return false;
               for (int y : at_[x].nb)
-                if (y != a && !imineN_[y] && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
+                if (y != a && !imineN_[y] && pseudo_[y] != Nitroso && !(at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) &&
                   (at_[y].z != 6 || (dO(y) >= 0 && !plain_acyl(y)) || dS(y) >= 0))
                 return false;
               return true;
@@ -1344,7 +1412,7 @@ bool Namer::perceive() {
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
           const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl);
           const bool n_amino = at_[b].z == 7 && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
-          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b]) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
+          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
         break;
@@ -1695,6 +1763,26 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     }
     if (A.z == 6) return build_sub(Mode::Ylidene, q, from);
     return fail_n("double-bonded heteroatom substituent at " + sym(q));
+  }
+  switch (pseudo_[q]) {
+    case Nitroso: return Named{"nitroso", false, {}};
+    case Azido: return Named{"azido", false, {}};
+    case Isocyanato: return Named{"isocyanato", false, {}};
+    case Isothiocyanato: return Named{"isothiocyanato", false, {}};
+    case Cyanato: return Named{"cyanato", false, {}};
+    case Thiocyanato: return Named{"thiocyanato", false, {}};
+    case Hydroperoxy: return Named{"hydroperoxy", false, {}};
+    case Peroxy: {  // -O-O-R: (methylperoxy)
+      int g = -1;
+      for (int y : A.nb)
+        if (y != from) g = y;
+      if (g < 0 || at_[g].z != 8 || from < 0 || at_[from].z != 6) return fail_n("unsupported peroxide at " + sym(q));
+      const int r = at_[g].nb[0] == q ? at_[g].nb[1] : at_[g].nb[0];
+      auto R = sub(r, g, 1);
+      if (!R) return std::nullopt;
+      return Named{(R->compound ? enclose(R->text) : R->text) + "peroxy", true, R->stereo};
+    }
+    default: break;
   }
   if (A.ring) return build_sub(Mode::Yl, q, from);
   std::vector<int> others;
@@ -2073,6 +2161,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
       if (sp.mode == Mode::Carbonyl && q == sp.root) continue;
       if (mol && bo == 1) {
         if ((sp.principal == Cls::Alcohol && is_OH(q)) || (sp.principal == Cls::Thiol && is_SH(q)) ||
+            (sp.principal == Cls::Peroxol && pseudo_[q] == Hydroperoxy) ||
             (sp.principal == Cls::Olate && is_Ominus(q) && at_[p].z == 6 && acyl_[p] != Cls::Carboxylate)) {
           used[q] = 1;
           c.suffix_at.push_back(p);
@@ -4383,6 +4472,7 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
         case Cls::Amidine: word = c.inchain ? "imidamide" : "carboximidamide"; break;
         case Cls::Alcohol: word = "ol"; break;
         case Cls::Thiol: word = "thiol"; break;
+        case Cls::Peroxol: word = "peroxol"; break;
         case Cls::Amine: word = "amine"; break;
         case Cls::Carboxylate: word = c.inchain ? "oate" : "carboxylate"; break;
         case Cls::Sulfonate: word = "sulfonate"; break;
@@ -4594,6 +4684,7 @@ std::optional<std::string> Namer::run() {
     if (acyl_[a] != Cls::None && static_cast<int>(acyl_[a]) < 500) senior(acyl_[a]);
     if (is_OH(a) && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Acid) senior(Cls::Alcohol);
     if (is_SH(a)) senior(Cls::Thiol);
+    if (pseudo_[a] == Hydroperoxy) senior(Cls::Peroxol);
     if (amineN_[a]) senior(Cls::Amine);
     if (cationN_[a]) senior(Cls::Ammonium);
     if (ringCat_[a]) senior(Cls::RingCation);

@@ -193,6 +193,23 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(O=C1NC(=O)C2(CCCc3ccccc32)N1)", R"(3',4'-dihydro-2'H-spiro[imidazolidine-4,1'-naphthalene]-2,5-dione)"},
       {R"(O=C1NC(=O)C2(CCCc3sccc32)N1)", R"(6,7-dihydro-5H-spiro[[1]benzothiophene-4,4'-imidazolidine]-2',5'-dione)"},
       {R"(O=C1Nc2ccccc2C12C=Cc1ccccc1N2)", R"(1,2-dihydro-1'H-spiro[indole-3,2'-quinoline]-2-one)"},
+      // prefix-only groups and peroxols (P-61.5, P-63.4.2)
+      {"CC(C)OO", "propane-2-peroxol"},
+      {"OOC1CCCCC1", "cyclohexaneperoxol"},
+      {"CC(C)(C)OOCCC", "2-methyl-2-(propylperoxy)propane"},
+      {"COOC", "(methylperoxy)methane"},
+      {"OOC(C)CC(=O)O", "3-hydroperoxybutanoic acid"},
+      {"CC(OO)OOC(C)C", "1-[(propan-2-yl)peroxy]ethane-1-peroxol"},
+      {"[N-]=[N+]=NCCCO", "3-azidopropan-1-ol"},
+      {"O=NC1=CC=CC=C1", "nitrosobenzene"},
+      {"CN(C)N=O", "N-methyl-N-nitrosomethanamine"},
+      {"O=NN1CCCCC1", "1-nitrosopiperidine"},
+      {"CNC(=O)N(CCCl)N=O", "N-(2-chloroethyl)-N'-methyl-N-nitrosourea"},
+      {"CC(=O)N(C)N=O", "N-methyl-N-nitrosoacetamide"},
+      {"N#CSC1=CC=CC=C1", "thiocyanatobenzene"},
+      {"N#COc1ccccc1", "cyanatobenzene"},
+      {"CC1=CC=C(N=C=O)C=C1", "1-isocyanato-4-methylbenzene"},
+      {"S=C=NCC1=CC=CC=C1", "(isothiocyanatomethyl)benzene"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -205,7 +222,7 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "CN=[N+]=[N-]", "CC1=CC=CC=C1NP(=S)(C)C",
+  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "CC(=O)OP(=O)(O)O", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)C1(CC1)c1ccccc21"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
