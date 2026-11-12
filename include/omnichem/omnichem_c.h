@@ -127,6 +127,19 @@ OMNICHEM_API char* oc_inchi_json(const char* smiles);
  *        "properties":[[name,value],...]}],"diagnostics"}. "ok" is true when at least one record was read. */
 OMNICHEM_API char* oc_read_molecules_json(const char* text, const char* format, int keep_hydrogens, int max_records);
 
+/* SMARTS matches in one SMILES (see smarts.hpp). Atoms are 0-based indices in SMILES order.
+ * JSON: {"ok","count","matches":[[atom,...],...],"diagnostics"}. max_matches 0 = no limit. */
+OMNICHEM_API char* oc_smarts_match_json(const char* smiles, const char* smarts, int use_chirality, int max_matches);
+
+/* Morgan fingerprint similarity of two SMILES (radius 2 and 2048 bits when given 0).
+ * JSON: {"ok","tanimoto","dice","bits_a","bits_b","diagnostics"}. */
+OMNICHEM_API char* oc_similarity_json(const char* smiles_a, const char* smiles_b, int radius, int bits);
+
+/* Screens one SMILES per line: SMARTS match count (when smarts is non-empty) and Tanimoto to
+ * query_smiles (when non-empty). JSON: {"ok","results":[{"line","ok","count","similarity"}],"diagnostics"};
+ * a line that does not parse has "ok": false. */
+OMNICHEM_API char* oc_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits);
+
 OMNICHEM_API void oc_free_string(char* s);
 
 #ifdef __cplusplus

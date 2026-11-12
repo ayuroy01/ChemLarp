@@ -23,8 +23,10 @@
 #include "omnichem/inchi.hpp"
 #include "omnichem/molio.hpp"
 #include "omnichem/json.hpp"
+#include "omnichem/fingerprint.hpp"
 #include "omnichem/kinetics.hpp"
 #include "omnichem/reaction.hpp"
+#include "omnichem/smarts.hpp"
 #include "omnichem/smiles.hpp"
 #include "omnichem/system_state.hpp"
 
@@ -394,6 +396,103 @@ char* oc_inchi_json(const char* smiles) {
     std::string out = std::string("{\"ok\":") + (r.ok ? "true" : "false");
     if (r.ok) out += ",\"inchi\":" + json_escape(r.inchi) + ",\"key\":" + json_escape(r.key);
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_smarts_match_json(const char* smiles, const char* smarts, int use_chirality, int max_matches) {
+  if (!smiles || !smarts) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    ChemicalSystemState st;
+    const std::int32_t sp = parse_smiles(st, smiles, d);
+    const SmartsQuery q = parse_smarts(smarts, d);
+    if (sp < 0 || !q.valid()) return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}";
+    SmartsMatchOptions o;
+    o.use_chirality = use_chirality != 0;
+    o.max_matches = max_matches > 0 ? static_cast<std::size_t>(max_matches) : 0;
+    const auto matches = match_smarts(st, static_cast<std::uint32_t>(sp), q, o);
+    const std::uint32_t base = st.species[static_cast<std::size_t>(sp)].atom_begin;
+    std::string m = "[";
+    for (std::size_t k = 0; k < matches.size(); ++k) {
+      m += k ? ",[" : "[";
+      for (std::size_t a = 0; a < matches[k].size(); ++a) m += (a ? "," : "") + std::to_string(matches[k][a] - base);
+      m += "]";
+    }
+    m += "]";
+    return "{\"ok\":true,\"count\":" + std::to_string(matches.size()) + ",\"matches\":" + m +
+           ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_similarity_json(const char* smiles_a, const char* smiles_b, int radius, int bits) {
+  if (!smiles_a || !smiles_b) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    ChemicalSystemState st;
+    const std::int32_t a = parse_smiles(st, smiles_a, d);
+    const std::int32_t b = parse_smiles(st, smiles_b, d);
+    if (a < 0 || b < 0) return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}";
+    MorganOptions o;
+    if (radius > 0) o.radius = radius;
+    if (bits > 0) o.bits = bits;
+    const Fingerprint fa = morgan_fingerprint(st, static_cast<std::uint32_t>(a), o);
+    const Fingerprint fb = morgan_fingerprint(st, static_cast<std::uint32_t>(b), o);
+    return "{\"ok\":true,\"tanimoto\":" + jnum(tanimoto(fa, fb)) + ",\"dice\":" + jnum(dice(fa, fb)) +
+           ",\"bits_a\":" + std::to_string(fa.count()) + ",\"bits_b\":" + std::to_string(fb.count()) +
+           ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* oc_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits) {
+  if (!smiles_lines) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    const std::string sm = smarts ? smarts : "";
+    const std::string qs = query_smiles ? query_smiles : "";
+    SmartsQuery q;
+    if (!sm.empty()) {
+      q = parse_smarts(sm, d);
+      if (!q.valid()) return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}";
+    }
+    MorganOptions o;
+    if (radius > 0) o.radius = radius;
+    if (bits > 0) o.bits = bits;
+    Fingerprint ref;
+    if (!qs.empty()) {
+      ChemicalSystemState qst;
+      const std::int32_t qsp = parse_smiles(qst, qs, d);
+      if (qsp < 0) return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}";
+      ref = morgan_fingerprint(qst, static_cast<std::uint32_t>(qsp), o);
+    }
+    std::string res = "[";
+    const std::string all = smiles_lines;
+    std::size_t start = 0, line = 0;
+    while (start <= all.size()) {
+      std::size_t end = all.find('\n', start);
+      if (end == std::string::npos) end = all.size();
+      std::string smi = all.substr(start, end - start);
+      while (!smi.empty() && (smi.back() == '\r' || smi.back() == ' ')) smi.pop_back();
+      ++line;
+      if (!smi.empty()) {
+        ChemicalSystemState st;
+        Diagnostics local;
+        const std::int32_t sp = parse_smiles(st, smi, local);
+        if (res.size() > 1) res += ',';
+        res += "{\"line\":" + std::to_string(line);
+        if (sp < 0) {
+          res += ",\"ok\":false}";
+        } else {
+          res += ",\"ok\":true";
+          if (q.valid()) res += ",\"count\":" + std::to_string(match_smarts(st, static_cast<std::uint32_t>(sp), q).size());
+          if (!qs.empty()) res += ",\"similarity\":" + jnum(tanimoto(ref, morgan_fingerprint(st, static_cast<std::uint32_t>(sp), o)));
+          res += "}";
+        }
+      }
+      if (end == all.size()) break;
+      start = end + 1;
+    }
+    res += "]";
+    return "{\"ok\":true,\"results\":" + res + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }
 

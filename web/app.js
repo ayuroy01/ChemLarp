@@ -373,6 +373,7 @@
       const text = await file.text();
       const r = (await engine('read', { text, format: file.name, max: 500 })).result;
       const good = r.ok ? r.records.filter((x) => x.ok) : [];
+      lastFile = good.length ? { name: file.name, records: good } : lastFile;
       const warnings = r.diagnostics.filter((d) => d.severity === 'warning').length;
       if (good.length === 1 && r.records.length === 1) {
         await openCompound(good[0].smiles);
@@ -399,6 +400,118 @@
     } catch (err) { fail(out, err); }
   }
 
+  // ---- search: SMARTS, similarity, screening ----------------------------------------------
+  let lastFile = null;  // records of the last structure file opened
+
+  // Draws the open compound with the atoms (and bonds between them) of `atoms` highlighted.
+  function highlightDrawing(c, matches) {
+    const host = h('div', { class: 'drawing', role: 'img', 'aria-label': `Structure of ${c.formula} with matches highlighted` }, h('div', { class: 'spinner' }));
+    let current = null;
+    const paint = (sel) => {
+      if (!current) return;
+      const svg = host.querySelector('svg');
+      if (!svg) return;
+      svg.querySelector('g.hl')?.remove();
+      const ns = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('class', 'hl');
+      const on = new Set(sel.flat());
+      const pos = new Map(current.atoms.map((a, i) => [a.atom, { x: a.x, y: a.y, i }]));
+      const idx = new Map(current.atoms.map((a, i) => [i, a.atom]));
+      for (const b of current.bonds) {
+        const A = idx.get(b.a), B = idx.get(b.b);
+        if (!on.has(A) || !on.has(B)) continue;
+        const pa = pos.get(A), pb = pos.get(B);
+        const l = document.createElementNS(ns, 'line');
+        for (const [k, v] of Object.entries({ x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y })) l.setAttribute(k, v);
+        g.append(l);
+      }
+      for (const a of on) {
+        const p = pos.get(a);
+        if (!p) continue;
+        const ci = document.createElementNS(ns, 'circle');
+        ci.setAttribute('cx', p.x); ci.setAttribute('cy', p.y); ci.setAttribute('r', 11);
+        g.append(ci);
+      }
+      svg.insertBefore(g, svg.firstChild);
+    };
+    depiction(c, drawFlags() & ~2).then((r) => {
+      if (!r.ok) { host.replaceChildren(h('p', { class: 'muted', text: 'No drawing for this structure.' })); return; }
+      current = r;
+      host.innerHTML = r.svg;  // engine-generated SVG
+      paint(matches);
+    }).catch(() => host.replaceChildren());
+    return { host, paint };
+  }
+
+  async function runSearch() {
+    const out = $('sr-out');
+    if (!compound) { out.replaceChildren(status('warn', 'Open a compound first', 'Search works on the open compound')); return; }
+    const smarts = $('sr-smarts').value.trim();
+    const like = $('sr-like').value.trim();
+    const chiral = checked($('sr-chiral')).dataset.chiral === '1';
+    busy(out, 'Searching…');
+    try {
+      const cards = [];
+      if (smarts) {
+        const r = (await engine('smarts', { smiles: compound.input, smarts, chiral, max: 500 })).result;
+        if (!r.ok) {
+          cards.push(status('bad', 'This SMARTS cannot be read'), ...diagnostics(r.diagnostics, smarts));
+        } else {
+          const d = highlightDrawing(compound, r.matches);
+          const list = r.matches.slice(0, 60).map((m, i) => h('button', {
+            type: 'button', class: 'chip', title: 'Highlight this match only',
+            onclick: (e) => {
+              const btn = e.currentTarget;
+              const was = btn.getAttribute('aria-pressed') === 'true';
+              btn.parentNode.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+              btn.setAttribute('aria-pressed', String(!was));
+              d.paint(was ? r.matches : [m]);
+            },
+            text: `${i + 1}: ${m.map((a) => a + 1).join(' ')}`,
+          }));
+          cards.push(
+            status(r.count ? 'ok' : 'warn', r.count ? `${r.count} match${r.count === 1 ? '' : 'es'} in ${compound.formula}` : `No match in ${compound.formula}`,
+              r.count ? 'Matched atoms are highlighted; numbers are atom positions' : smarts),
+            h('div', { class: 'glass-card card' },
+              h('div', { class: 'card-head' }, h('h2', { text: 'Substructure' }), h('span', { class: 'meta mono', text: smarts })),
+              d.host,
+              r.count ? h('div', { class: 'samples match-list', role: 'group', 'aria-label': 'Matches' }, list) : null,
+              r.count > 60 ? h('p', { class: 'muted', text: `First 60 of ${r.count} shown.` }) : null));
+        }
+      }
+      if (like) {
+        const r = (await engine('similarity', { a: compound.input, b: like })).result;
+        if (!r.ok) cards.push(status('bad', 'The comparison SMILES cannot be read'), ...diagnostics(r.diagnostics, like));
+        else cards.push(h('div', { class: 'glass-card card' },
+          h('div', { class: 'card-head' }, h('h2', { text: 'Similarity' }), h('span', { class: 'meta', text: 'Morgan radius 2 (ECFP4), 2048 bits' })),
+          h('div', { class: 'metrics' }, metric('Tanimoto', fmt(r.tanimoto, 3)), metric('Dice', fmt(r.dice, 3)),
+            metric('Bits set', `${r.bits_a} / ${r.bits_b}`))));
+      }
+      if (lastFile && lastFile.records.length > 1) {
+        const query = like || compound.input;
+        const r = (await engine('search', { lines: lastFile.records.map((x) => x.smiles).join('\n'), smarts, query })).result;
+        if (r.ok) {
+          const rows = r.results.map((x) => ({ ...x, rec: lastFile.records[x.line - 1] }))
+            .filter((x) => x.ok && (!smarts || x.count > 0))
+            .sort((a, b) => b.similarity - a.similarity);
+          cards.push(h('div', { class: 'glass-card card' },
+            h('div', { class: 'card-head' }, h('h2', { text: `Screen ${lastFile.name}` }),
+              h('span', { class: 'meta', text: `${rows.length} of ${lastFile.records.length} records${smarts ? ' match' : ''} · ranked by similarity to ${like ? 'the comparison SMILES' : 'the open compound'}` })),
+            rows.length ? h('div', { class: 'record-list' }, rows.slice(0, 100).map((x) =>
+              h('button', { type: 'button', class: 'record', onclick: () => { openCompound(x.rec.smiles); location.hash = 'structure'; }, title: x.rec.smiles },
+                h('span', { class: 'r-title', text: x.rec.title || `Record ${x.line}` }),
+                h('span', { class: 'r-formula', text: `${fmt(x.similarity, 3)}${smarts ? ` · ${x.count}×` : ''}` }),
+                h('span', { class: 'r-smiles', text: x.rec.smiles }))))
+              : h('p', { class: 'muted', text: 'No record contains this substructure.' })));
+        }
+      } else {
+        cards.push(h('p', { class: 'muted', text: 'Open an SD file (folder button or drag and drop) to screen its records here.' }));
+      }
+      out.replaceChildren(...cards);
+    } catch (err) { fail(out, err); }
+  }
+
   // ---- recents --------------------------------------------------------------------------
   function remember_(c) {
     const list = store.get('recents', []).filter((x) => x.canonical !== c.canonical);
@@ -415,8 +528,8 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'reaction', 'equilibrium', 'phases', 'kinetics', 'roadmap'];
-  const autorun = { reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form' };
+  const views = ['structure', 'model3d', 'search', 'reaction', 'equilibrium', 'phases', 'kinetics', 'roadmap'];
+  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
   function show() {
@@ -655,6 +768,8 @@
   // ---- wiring -------------------------------------------------------------------------------
   $('compound-form').addEventListener('submit', (e) => { e.preventDefault(); openCompound($('compound').value); });
   $('open-file').addEventListener('click', () => $('file-input').click());
+  $('sr-form').addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
+  segmented($('sr-chiral'), () => $('sr-form').requestSubmit());
   $('file-input').addEventListener('change', (e) => { openFile(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('dragover', (e) => {
     if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); }

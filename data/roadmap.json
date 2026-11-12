@@ -1,6 +1,6 @@
 {
   "title": "OmniChem Core roadmap",
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "weights": {
     "S": 1,
     "M": 2.5,
@@ -50,7 +50,7 @@
         {
           "name": "Substructure search (SMARTS) and fingerprints",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "InChI and InChIKey; CIP rules 1b, 3-5 (r/s)",

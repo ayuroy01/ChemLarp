@@ -24,6 +24,13 @@ struct Ring {
 
 std::vector<Ring> find_sssr(const ChemicalSystemState& state, std::uint32_t species);
 
+// Relevant cycles (Vismara, Electron. J. Combin. 4 (1997) R9): every cycle that
+// is not a sum of strictly shorter cycles. Unlike an SSSR this set is unique, so
+// it does not depend on atom order; in bridged systems it can hold more rings
+// than the cyclomatic number (all three six-rings of bicyclo[2.2.2]octane).
+// Candidates are all shortest cycles through each ring bond (up to 64 per bond).
+std::vector<Ring> find_relevant_rings(const ChemicalSystemState& state, std::uint32_t species);
+
 // Pi electrons atom `a` contributes to a ring, or -1 if it cannot be aromatic.
 int aromatic_pi_electrons(const ChemicalSystemState& state, std::uint32_t atom);
 

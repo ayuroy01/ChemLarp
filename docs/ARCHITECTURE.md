@@ -14,6 +14,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 |---|---|
 | SMILES parsing, aromaticity | OpenSMILES spec (opensmiles.org); Weininger, *JCICS* 28 (1988) 31 |
 | MOL/SDF, PDB, CML | BIOVIA CTfile Formats (2020); wwPDB Atomic Coordinate Entry Format 3.3; Murray-Rust & Rzepa, *JCICS* 39 (1999) 928 (CML); Cordero et al., *Dalton Trans.* (2008) 2832 (covalent radii) |
+| SMARTS, fingerprints | Daylight Theory Manual ch. 4 (SMARTS); Rogers & Hahn, *JCIM* 50 (2010) 742 (ECFP); Vismara, *Electron. J. Combin.* 4 (1997) R9 (relevant cycles); Willett, Barnard & Downs, *JCICS* 38 (1998) 983 (similarity coefficients) |
 | InChI | Heller et al., *J. Cheminform.* 7 (2015) 23; InChI Technical Manual. Written from the published description; the reference software is used only to produce test strings |
 | R/S, E/Z | IUPAC 2013 recommendations P-92 (CIP rules); Hanson et al., *JCIM* 58 (2018) 1755 (CIP algorithm validation) |
 | 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
@@ -116,6 +117,9 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | UFF force field (bond, angle, torsion, inversion, vdW; analytic gradient) + L-BFGS | **done**; gradients exact vs finite differences, geometries vs experiment in tests |
 | SDF (V2000) and XYZ output | **done**; writers mark open double bonds "either" and give the valence field where MDL implicit-H rules would differ |
 | Readers: MOL V2000/V3000, SDF (data items), PDB (CONECT, LINK, amino-acid templates, first model/altloc), CML | **done**; stereo from wedges (2D) or coordinates (3D). Same structure as RDKit reading the same files: 999/999 PubChem 2D, 865/866 PubChem 3D and 1465/1468 of our own 3D files by canonical SMILES (the rest: cage/imine stereo outside the CIP model, or a distorted 3D input); crambin and ubiquitin identical InChIKey. Not read: query features, R-groups, S-group expansion, enhanced stereo, nucleic-acid bond orders, XYZ |
+| SMARTS substructure search (full Daylight atom/bond logic, recursive $(), ring/valence primitives, optional chirality) | **done**; unique match counts identical to RDKit on 187,338 of 187,375 pattern-molecule pairs (99.98%: 125 patterns incl. RDKit's fragment set × 1,499 PubChem compounds); the rest are aromaticity-model differences in 5 molecules. 1,500 fuzzed patterns: no crash or hang under UBSan |
+| Relevant cycles (unique ring set) | **done**; used by SMARTS R/r so ring counts do not depend on atom order (bicyclo[2.2.2]octane: 3 rings) |
+| Morgan / ECFP fingerprints, Tanimoto, Dice | **done**; total environment counts identical to RDKit's Morgan for 1,499/1,499 compounds at radius 1-3 and distinct counts for 99.7% (rest: aromaticity); own 32-bit hash, so bit positions differ from RDKit |
 | Multiphase / condensed-phase equilibrium, activity models | planned |
 | Mechanism format `.ocm` (SMILES-bound species, CHEMKIN-style reactions, units, third-body efficiencies) | **done**, with error vector (5xx) |
 | Mass-action rates, modified Arrhenius, third bodies, detailed-balance reverse rates, analytic Jacobian | **done**; relaxes exactly to the Gibbs equilibrium (tested) |

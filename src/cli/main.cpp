@@ -39,9 +39,11 @@
 #include "omnichem/gibbs.hpp"
 #include "omnichem/inchi.hpp"
 #include "omnichem/json.hpp"
+#include "omnichem/fingerprint.hpp"
 #include "omnichem/kinetics.hpp"
 #include "omnichem/molio.hpp"
 #include "omnichem/reaction.hpp"
+#include "omnichem/smarts.hpp"
 #include "omnichem/smiles.hpp"
 #include "omnichem/thermo.hpp"
 
@@ -59,6 +61,9 @@ int usage() {
       "  omnichem psat <SMILES> -T K [--srk]\n"
       "  omnichem inchi <SMILES> [--key]\n"
       "  omnichem read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
+      "  omnichem match <SMILES> <SMARTS> [--chiral]          substructure matches (atom indices)\n"
+      "  omnichem similarity <SMILES> <SMILES> [--radius N] [--bits N]\n"
+      "  omnichem search <file.smi|.sdf|...> [--smarts Q] [--like SMILES] [--min T] [--radius N] [--bits N]\n"
       "  omnichem depict <SMILES> [-o file.svg] [--mol file.mol] [--cip] [--numbers] [--mono] [--bond px]\n"
       "  omnichem kinetics <mechanism> [--thermo therm.dat] [--smiles map.smi]\n"
       "                    [-m iso-v|iso-p|adiabatic-v|adiabatic-p] [-T K] [-P bar] [-t s]\n"
@@ -410,6 +415,147 @@ int cmd_read(const std::vector<std::string>& args) {
   return failed || records.empty() ? 1 : 0;
 }
 
+int cmd_match(const std::vector<std::string>& args) {
+  std::vector<std::string> pos;
+  bool chiral = false;
+  for (const auto& a : args) {
+    if (a == "--chiral") chiral = true;
+    else pos.push_back(a);
+  }
+  if (pos.size() != 2) return usage();
+  ChemicalSystemState st;
+  Diagnostics d;
+  const std::int32_t sp = parse_smiles(st, pos[0], d);
+  print_diagnostics(d, pos[0]);
+  Diagnostics dq;
+  const SmartsQuery q = parse_smarts(pos[1], dq);
+  print_diagnostics(dq, pos[1]);
+  if (sp < 0 || !q.valid()) return 1;
+  SmartsMatchOptions o;
+  o.use_chirality = chiral;
+  o.max_matches = 0;
+  const auto matches = match_smarts(st, static_cast<std::uint32_t>(sp), q, o);
+  const std::uint32_t base = st.species[static_cast<std::size_t>(sp)].atom_begin;
+  std::printf("%zu match%s\n", matches.size(), matches.size() == 1 ? "" : "es");
+  for (const auto& m : matches) {
+    for (std::size_t k = 0; k < m.size(); ++k) std::printf("%s%u", k ? " " : "", m[k] - base);
+    std::printf("\n");
+  }
+  return 0;
+}
+
+bool parse_int_arg(const std::string& s, int& out) {
+  char* end = nullptr;
+  const long v = std::strtol(s.c_str(), &end, 10);
+  if (!end || *end || end == s.c_str() || v <= 0 || v > 1 << 20) return false;
+  out = static_cast<int>(v);
+  return true;
+}
+
+int cmd_similarity(const std::vector<std::string>& args) {
+  std::vector<std::string> pos;
+  MorganOptions o;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "--radius" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.radius)) return usage(); }
+    else if (args[i] == "--bits" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.bits)) return usage(); }
+    else pos.push_back(args[i]);
+  }
+  if (pos.size() != 2) return usage();
+  ChemicalSystemState st;
+  Diagnostics d;
+  const std::int32_t a = parse_smiles(st, pos[0], d);
+  const std::int32_t b = parse_smiles(st, pos[1], d);
+  print_diagnostics(d, {});
+  if (a < 0 || b < 0) return 1;
+  const Fingerprint fa = morgan_fingerprint(st, static_cast<std::uint32_t>(a), o);
+  const Fingerprint fb = morgan_fingerprint(st, static_cast<std::uint32_t>(b), o);
+  std::printf("tanimoto %.4f\ndice     %.4f\n", tanimoto(fa, fb), dice(fa, fb));
+  return 0;
+}
+
+// Screens a SMILES file (one per line, optional name after whitespace) or any structure file.
+int cmd_search(const std::vector<std::string>& args) {
+  std::string path, smarts, like;
+  double min_sim = 0.0;
+  MorganOptions o;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "--smarts" && i + 1 < args.size()) smarts = args[++i];
+    else if (args[i] == "--like" && i + 1 < args.size()) like = args[++i];
+    else if (args[i] == "--min" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), min_sim)) return usage(); }
+    else if (args[i] == "--radius" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.radius)) return usage(); }
+    else if (args[i] == "--bits" && i + 1 < args.size()) { if (!parse_int_arg(args[++i], o.bits)) return usage(); }
+    else if (path.empty()) path = args[i];
+    else return usage();
+  }
+  if (path.empty() || (smarts.empty() && like.empty())) return usage();
+  std::ifstream in(path, std::ios::binary);
+  if (!in) { std::fprintf(stderr, "cannot read %s\n", path.c_str()); return 1; }
+  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  Diagnostics d;
+  SmartsQuery q;
+  if (!smarts.empty()) {
+    q = parse_smarts(smarts, d);
+    if (!q.valid()) { print_diagnostics(d, smarts); return 1; }
+  }
+  ChemicalSystemState st;
+  Fingerprint ref;
+  if (!like.empty()) {
+    const std::int32_t r = parse_smiles(st, like, d);
+    if (r < 0) { print_diagnostics(d, like); return 1; }
+    ref = morgan_fingerprint(st, static_cast<std::uint32_t>(r), o);
+  }
+  struct Hit { std::string smiles, title; std::size_t count; double sim; };
+  std::vector<Hit> hits;
+  std::size_t total = 0;
+  auto consider = [&](std::uint32_t sp, const std::string& title) {
+    ++total;
+    std::size_t count = 0;
+    if (q.valid()) {
+      count = match_smarts(st, sp, q).size();
+      if (count == 0) return;
+    }
+    double sim = 0;
+    if (!like.empty()) {
+      sim = tanimoto(ref, morgan_fingerprint(st, sp, o));
+      if (sim < min_sim) return;
+    }
+    hits.push_back({st.species[sp].canonical_smiles, title, count, sim});
+  };
+  const MolFormat fmt = detect_format(text, path);
+  if (fmt == MolFormat::Auto) {  // SMILES file
+    std::size_t start = 0;
+    while (start < text.size()) {
+      std::size_t end = text.find('\n', start);
+      if (end == std::string::npos) end = text.size();
+      std::string line = text.substr(start, end - start);
+      start = end + 1;
+      while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+      if (line.empty() || line[0] == '#') continue;
+      const std::size_t cut = line.find_first_of(" \t");
+      const std::string smi = line.substr(0, cut);
+      const std::string title = cut == std::string::npos ? "" : line.substr(line.find_first_not_of(" \t", cut));
+      Diagnostics local;
+      const std::int32_t sp = parse_smiles(st, smi, local);
+      if (sp >= 0) consider(static_cast<std::uint32_t>(sp), title);
+    }
+  } else {
+    ReadOptions ro;
+    ro.format = fmt;
+    for (const MolRecord& r : read_molecules(st, text, d, ro))
+      if (r.species >= 0) consider(static_cast<std::uint32_t>(r.species), r.title);
+  }
+  if (!like.empty())
+    std::stable_sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.sim > b.sim; });
+  for (const Hit& h : hits) {
+    std::printf("%s\t%s", h.smiles.c_str(), h.title.c_str());
+    if (q.valid()) std::printf("\tmatches=%zu", h.count);
+    if (!like.empty()) std::printf("\ttanimoto=%.3f", h.sim);
+    std::printf("\n");
+  }
+  std::fprintf(stderr, "%zu of %zu structures\n", hits.size(), total);
+  return 0;
+}
+
 int cmd_depict(const std::vector<std::string>& args) {
   std::string smiles, svg_path, mol_path;
   DepictOptions opt;
@@ -565,6 +711,9 @@ int main(int argc, char** argv) {
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "read" && !args.empty()) return cmd_read(args);
+  if (cmd == "match" && !args.empty()) return cmd_match(args);
+  if (cmd == "similarity" && !args.empty()) return cmd_similarity(args);
+  if (cmd == "search" && !args.empty()) return cmd_search(args);
   if (cmd == "kinetics" && !args.empty()) return cmd_kinetics(args);
   if (cmd == "equilibrate") return cmd_equilibrate(args);
   return usage();

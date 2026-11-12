@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "read_molecules", "smarts_match", "similarity", "search", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "OmniChemError", "library_path"]
 
 
 class OmniChemError(RuntimeError):
@@ -86,6 +86,9 @@ _oc_kinetics = _sig("oc_kinetics_json", ctypes.c_void_p, ctypes.c_char_p, ctypes
                     ctypes.c_size_t, ctypes.c_double)
 _oc_embed = _sig("oc_embed_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64, ctypes.c_int, ctypes.c_int)
 _oc_inchi = _sig("oc_inchi_json", ctypes.c_void_p, ctypes.c_char_p)
+_oc_smarts = _sig("oc_smarts_match_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
+_oc_similarity = _sig("oc_similarity_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
+_oc_search = _sig("oc_search_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _oc_read = _sig("oc_read_molecules_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _oc_depict = _sig("oc_depict_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _oc_flash = _sig("oc_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
@@ -214,6 +217,36 @@ def read_molecules(source, format: str = "", keep_hydrogens: bool = False, max_r
     for rec in r["records"]:
         rec["properties"] = dict(rec["properties"])
     return r["records"]
+
+
+def smarts_match(smiles: str, smarts: str, use_chirality: bool = False, max_matches: int = 1000) -> list[tuple[int, ...]]:
+    """Matches of a SMARTS pattern: one tuple of atom indices (SMILES order) per match, in query-atom order.
+
+    Matches are unique by atom set. Raises OmniChemError on an invalid SMILES or SMARTS.
+    """
+    r = _take_json(_oc_smarts(smiles.encode(), smarts.encode(), int(use_chirality), max_matches))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    return [tuple(m) for m in r["matches"]]
+
+
+def similarity(smiles_a: str, smiles_b: str, radius: int = 2, bits: int = 2048) -> dict:
+    """Morgan (ECFP) fingerprint similarity: {'tanimoto', 'dice', 'bits_a', 'bits_b', 'diagnostics'}."""
+    r = _take_json(_oc_similarity(smiles_a.encode(), smiles_b.encode(), radius, bits))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    return r
+
+
+def search(smiles: list[str], smarts: str = "", query: str = "", radius: int = 2, bits: int = 2048) -> list[dict]:
+    """Screens a list of SMILES: per entry {'ok', 'count' (SMARTS matches), 'similarity' (Tanimoto to query)}."""
+    r = _take_json(_oc_search("\n".join(smiles).encode(), smarts.encode(), query.encode(), radius, bits))
+    if not r["ok"]:
+        raise OmniChemError(r["diagnostics"])
+    out = [{"ok": False} for _ in smiles]
+    for x in r["results"]:
+        out[x["line"] - 1] = {k: v for k, v in x.items() if k != "line"}
+    return out
 
 
 def flash(feed: dict[str, float], temperature_K: float, pressure_Pa: float, eos: str = "pr") -> dict:

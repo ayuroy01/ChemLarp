@@ -492,3 +492,10 @@ body.dropping::after {
   border: 2px dashed var(--accent); border-radius: var(--r-window); background: var(--accent-wash);
   color: var(--accent); font: 600 17px var(--font-display); pointer-events: none;
 }
+
+/* Search: match highlight drawn behind the structure */
+.drawing svg g.hl line { stroke: var(--accent); stroke-opacity: .28; stroke-width: 9; stroke-linecap: round; }
+.drawing svg g.hl circle { fill: var(--accent); fill-opacity: .22; }
+.match-list { margin-top: 10px; }
+.match-list .chip { font: 12px var(--mono); }
+.match-list .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }

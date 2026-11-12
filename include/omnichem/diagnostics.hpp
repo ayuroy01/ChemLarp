@@ -93,6 +93,10 @@ enum class DiagCode : std::uint16_t {
   UnsupportedFileFeature,   // query atoms/bonds, atom lists, R-groups, ...
   BondOrdersGuessed,        // warning: the file has no bond orders for some atoms (PDB)
   FileContentIgnored,       // warning: content read but not used (S-groups, extra models, alternate locations)
+
+  // 10xx — queries (SMARTS)
+  SmartsSyntax = 1000,      // malformed SMARTS
+  SmartsUnsupported,        // valid SMARTS feature this engine does not implement
 };
 
 enum class Severity : std::uint8_t { Warning, Error };

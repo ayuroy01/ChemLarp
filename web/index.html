@@ -25,6 +25,7 @@
     <symbol id="i-phases" viewBox="0 0 24 24"><path d="M6 3.5h12M7.5 3.5v6.2L4.2 17a2.4 2.4 0 0 0 2.2 3.5h11.2a2.4 2.4 0 0 0 2.2-3.5l-3.3-7.3V3.5"/><path d="M5.6 14h12.8"/><circle cx="10" cy="17.3" r=".7"/><circle cx="14" cy="16.6" r=".7"/></symbol>
     <symbol id="i-roadmap" viewBox="0 0 24 24"><path d="M4 20V5m0 0h11l-1.8 3.2L15 11.5H4"/><path d="M4 20h16"/></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M12 11v5m-2.3-2.3L12 11l2.3 2.7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/><path d="M8 10.5h5M10.5 8v5"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.9A2.4 2.4 0 0 0 13.1 4.5H6.9A2.4 2.4 0 0 0 4.5 6.9v6.2a2.4 2.4 0 0 0 2.4 2.4h1.6"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
     <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
@@ -48,6 +49,7 @@
         <div class="list-heading">Compound</div>
         <a href="#structure" data-tool="structure" data-key="1"><svg><use href="#i-structure"/></svg><span>Structure</span><kbd>⌘1</kbd></a>
         <a href="#model3d" data-tool="model3d" data-key="2"><svg><use href="#i-3d"/></svg><span>3D Model</span><kbd>⌘2</kbd></a>
+        <a href="#search" data-tool="search" data-key="7"><svg><use href="#i-search"/></svg><span>Search</span><kbd>⌘7</kbd></a>
         <div class="list-heading">Thermodynamics</div>
         <a href="#reaction" data-tool="reaction" data-key="3"><svg><use href="#i-reaction"/></svg><span>Reaction</span><kbd>⌘3</kbd></a>
         <a href="#equilibrium" data-tool="equilibrium" data-key="4"><svg><use href="#i-equilibrium"/></svg><span>Equilibrium</span><kbd>⌘4</kbd></a>
@@ -221,6 +223,46 @@ CCCCC 0.2</textarea>
         </div>
       </section>
 
+      <!-- Search -->
+      <section class="view" id="search" hidden>
+        <header class="view-head">
+          <h1>Search</h1>
+          <p>Find substructures in the open compound with SMARTS, compare compounds by fingerprint similarity, and screen an opened SD file.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="sr-form">
+            <div class="field">
+              <label for="sr-smarts">Substructure (SMARTS)</label>
+              <input id="sr-smarts" class="mono" spellcheck="false" value="[CX3]=[OX1]" placeholder="e.g. [CX3](=O)[OX2H1]">
+            </div>
+            <div class="samples compact">
+              <span class="samples-label">Examples</span>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="[CX3](=O)[OX2H1]">Carboxylic acid</button>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="[NX3;H2,H1;!$(NC=O)]">Amine</button>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="a1aaaaa1">Aromatic 6-ring</button>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="[F,Cl,Br,I]">Halogen</button>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="[#6][CX3](=O)[OX2][#6]">Ester</button>
+              <button type="button" class="chip" data-fill="sr-smarts" data-value="[CX4;!R;H2,H3]">Chain CH2/CH3</button>
+            </div>
+            <div class="field">
+              <label>Stereochemistry in the pattern</label>
+              <div class="segmented" role="radiogroup" aria-label="Stereochemistry in the pattern" id="sr-chiral">
+                <button type="button" role="radio" aria-checked="true" data-chiral="0">Ignore</button>
+                <button type="button" role="radio" aria-checked="false" data-chiral="1">Match @ / @@</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="sr-like">Compare with (SMILES, optional)</label>
+              <input id="sr-like" class="mono" spellcheck="false" placeholder="e.g. OC(=O)c1ccccc1O">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+          </form>
+          <div class="stack" id="sr-out"></div>
+        </div>
+      </section>
+
       <!-- Kinetics -->
       <section class="view" id="kinetics" hidden>
         <header class="view-head">
@@ -305,6 +347,7 @@ AR=7</textarea>
     <nav class="tabbar glass" aria-label="Tools">
       <a href="#structure" data-tool="structure"><svg><use href="#i-structure"/></svg><span>Structure</span></a>
       <a href="#model3d" data-tool="model3d"><svg><use href="#i-3d"/></svg><span>3D</span></a>
+      <a href="#search" data-tool="search"><svg><use href="#i-search"/></svg><span>Search</span></a>
       <a href="#reaction" data-tool="reaction"><svg><use href="#i-reaction"/></svg><span>Reaction</span></a>
       <a href="#equilibrium" data-tool="equilibrium" aria-label="Equilibrium"><svg><use href="#i-equilibrium"/></svg><span>Equil.</span></a>
       <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>

@@ -4,7 +4,7 @@ OmniChem Core is a terminal-native chemistry engine written in C++20. It covers 
 
 ## Use it in your browser (any OS, installable)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, opening MOL/SDF/PDB/CML files, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
 
 - **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
 - **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
@@ -78,6 +78,8 @@ The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
 ```bash
 ./build/omnichem inchi 'C[C@@H](C(=O)O)N'                                              # InChI and InChIKey
 ./build/omnichem read compounds.sdf --inchi             # MOL/SDF, PDB, CML -> canonical SMILES, title, InChIKey
+./build/omnichem match 'CC(=O)Oc1ccccc1C(=O)O' '[CX3](=O)[OX2H1]'                     # SMARTS matches
+./build/omnichem search compounds.sdf --smarts 'c1ccccc1C(=O)O' --like 'OC(=O)c1ccccc1O' --min 0.3   # screen a file
 ./build/omnichem depict 'C[C@@H](C(=O)O)N' -o alanine.svg --mol alanine.mol --cip   # 2D drawing with wedges
 ```
 
@@ -109,6 +111,8 @@ with omnichem.System() as s:
 omnichem.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
 omnichem.inchi("N[C@@H](C)C(=O)O")["key"]   # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
 omnichem.read_molecules("compounds.sdf")     # [{'title', 'smiles', 'formula', 'properties': {...}}, ...]
+omnichem.smarts_match("CC(=O)Oc1ccccc1C(=O)O", "[CX3](=O)[OX2H1]")   # [(10, 11, 12)]
+omnichem.similarity("CC(=O)Oc1ccccc1C(=O)O", "OC(=O)c1ccccc1O")["tanimoto"]   # ECFP4 Tanimoto
 omnichem.depict("N[C@@H](C)C(=O)O")["svg"]  # 2D drawing (SVG + molfile with wedges)
 omnichem.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
 omnichem.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
@@ -126,6 +130,8 @@ include/omnichem/   public headers (C++ API + omnichem_c.h C ABI)
   cip.hpp             CIP priorities (rules 1a-5), R/S, r/s, E/Z
   inchi.hpp           standard InChI and InChIKey
   molio.hpp           readers for MOL V2000/V3000, SDF, PDB, CML
+  smarts.hpp          SMARTS parser and substructure matcher
+  fingerprint.hpp     Morgan (ECFP) fingerprints, Tanimoto and Dice
   reaction.hpp        equation parser, element/charge balance, ΔrG°, K
   thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
   joback.hpp          group-additivity ΔfH°/ΔfG° from the graph

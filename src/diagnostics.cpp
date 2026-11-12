@@ -69,6 +69,8 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::UnsupportedFileFeature: return "UnsupportedFileFeature";
     case DiagCode::BondOrdersGuessed: return "BondOrdersGuessed";
     case DiagCode::FileContentIgnored: return "FileContentIgnored";
+    case DiagCode::SmartsSyntax: return "SmartsSyntax";
+    case DiagCode::SmartsUnsupported: return "SmartsUnsupported";
   }
   return "Unknown";
 }

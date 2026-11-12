@@ -93,7 +93,105 @@ std::vector<std::vector<std::uint32_t>> candidate_cycles(const ChemicalSystemSta
   return out;
 }
 
+// Every shortest cycle through `bond` (ring bonds only), up to `cap` of them.
+std::vector<std::vector<std::uint32_t>> all_shortest_cycles(const ChemicalSystemState& st, const Species& s,
+                                                            std::uint32_t bond, std::size_t cap) {
+  const std::uint32_t src = st.bonds.begin[bond], dst = st.bonds.end[bond];
+  const std::uint32_t base = s.atom_begin, n = s.atom_count;
+  std::vector<int> dist(n, -1);
+  std::vector<std::uint32_t> queue{src};
+  dist[src - base] = 0;
+  for (std::size_t head = 0; head < queue.size(); ++head) {
+    const std::uint32_t x = queue[head];
+    auto nb = st.adjacency.neighbors(x);
+    auto bd = st.adjacency.bonds_of(x);
+    for (std::size_t k = 0; k < nb.size(); ++k) {
+      if (bd[k] == bond || !(st.bonds.flags[bd[k]] & kBondInRing) || dist[nb[k] - base] >= 0) continue;
+      dist[nb[k] - base] = dist[x - base] + 1;
+      queue.push_back(nb[k]);
+    }
+  }
+  std::vector<std::vector<std::uint32_t>> out;
+  if (dist[dst - base] < 0) return out;
+  // Walk back from dst along strictly decreasing distances, enumerating every shortest path.
+  std::vector<std::uint32_t> path;
+  auto walk = [&](auto&& self, std::uint32_t y) -> void {
+    if (out.size() >= cap) return;
+    if (y == src) {
+      std::vector<std::uint32_t> cyc = path;
+      cyc.push_back(bond);
+      std::sort(cyc.begin(), cyc.end());
+      out.push_back(std::move(cyc));
+      return;
+    }
+    auto nb = st.adjacency.neighbors(y);
+    auto bd = st.adjacency.bonds_of(y);
+    for (std::size_t k = 0; k < nb.size(); ++k) {
+      if (bd[k] == bond || !(st.bonds.flags[bd[k]] & kBondInRing)) continue;
+      if (dist[nb[k] - base] != dist[y - base] - 1) continue;
+      path.push_back(bd[k]);
+      self(self, nb[k]);
+      path.pop_back();
+    }
+  };
+  walk(walk, dst);
+  return out;
+}
+
 }  // namespace
+
+std::vector<Ring> find_relevant_rings(const ChemicalSystemState& st, std::uint32_t sp) {
+  const Species& s = st.species[sp];
+  std::vector<Ring> rings;
+  if (s.bond_count == 0) return rings;
+  std::set<std::vector<std::uint32_t>> uniq;
+  for (std::uint32_t b = s.bond_begin; b < s.bond_begin + s.bond_count; ++b) {
+    if (!(st.bonds.flags[b] & kBondInRing)) continue;
+    for (auto& c : all_shortest_cycles(st, s, b, 64)) uniq.insert(std::move(c));
+  }
+  std::vector<std::vector<std::uint32_t>> cands(uniq.begin(), uniq.end());
+  std::stable_sort(cands.begin(), cands.end(), [](const auto& a, const auto& b) { return a.size() < b.size(); });
+  // A cycle is relevant when it is not a GF(2) sum of strictly shorter cycles.
+  std::vector<BitRow> basis;
+  std::vector<std::size_t> pivots;
+  auto reduce = [&](BitRow row) {
+    for (std::size_t k = 0; k < basis.size(); ++k) {
+      const std::size_t p = pivots[k];
+      if (row[p / 64] >> (p % 64) & 1)
+        for (std::size_t w = 0; w < row.size(); ++w) row[w] ^= basis[k][w];
+    }
+    return row;
+  };
+  auto pivot_of = [](const BitRow& row) {
+    for (std::size_t w = 0; w < row.size(); ++w)
+      if (row[w]) return w * 64 + static_cast<std::size_t>(std::countr_zero(row[w]));
+    return SIZE_MAX;
+  };
+  for (std::size_t i = 0; i < cands.size();) {
+    std::size_t j = i;
+    while (j < cands.size() && cands[j].size() == cands[i].size()) ++j;
+    std::vector<BitRow> group;
+    for (std::size_t k = i; k < j; ++k) {
+      BitRow row = to_bits(cands[k], s.bond_begin, s.bond_count);
+      const BitRow red = reduce(row);  // against strictly shorter cycles only
+      if (pivot_of(red) == SIZE_MAX) continue;
+      Ring r;
+      r.bonds = cands[k];
+      if (!cycle_atoms(st, cands[k], r.atoms)) continue;
+      rings.push_back(std::move(r));
+      group.push_back(red);
+    }
+    for (BitRow& row : group) {  // now add this size class to the basis
+      row = reduce(row);
+      const std::size_t p = pivot_of(row);
+      if (p == SIZE_MAX) continue;
+      basis.push_back(row);
+      pivots.push_back(p);
+    }
+    i = j;
+  }
+  return rings;
+}
 
 std::vector<Ring> find_sssr(const ChemicalSystemState& st, std::uint32_t sp) {
   const Species& s = st.species[sp];
