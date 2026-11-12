@@ -18,11 +18,13 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
