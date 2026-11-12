@@ -291,3 +291,23 @@ TEST(canonical_ring_para_stereo) {
     if (canon(rnd) != ref) throw octest::Failure(rnd + " -> " + canon(rnd) + ", expected " + ref);
   }
 }
+
+// E/Z on a double bond whose other bonds are aromatic ring bonds (quinone
+// imines, dyes): the '/' mark goes on the Kekulé-single ring bond (c/c(=N/C)),
+// as RDKit writes it; it used to be dropped.
+TEST(canonical_ez_next_to_aromatic_ring) {
+  const std::string dye = "O=S(=O)(O)c1cc2c(cc1Nc1ccccc1)Oc1c(c(Cl)c3oc4c/c(=N/c5ccccc5)c(S(=O)(=O)O)cc-4nc3c1Cl)N2";
+  const std::string c = canon(dye);
+  CHECK(c.find("=N/") != std::string::npos || c.find("=N\\") != std::string::npos);
+  CHECK_EQ(canon(c), c);  // idempotent
+  ChemicalSystemState st;
+  Diagnostics d;
+  const std::int32_t sp = parse_smiles(st, dye, d);
+  for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+    SmilesWriteOptions o;
+    o.canonical = false;
+    o.random_seed = seed;
+    const std::string rnd = write_smiles(st, static_cast<std::uint32_t>(sp), o);
+    if (canon(rnd) != c) throw octest::Failure(rnd + " -> " + canon(rnd) + ", expected " + c);
+  }
+}

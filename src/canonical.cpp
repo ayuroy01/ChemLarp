@@ -479,7 +479,11 @@ class Writer {
   int t_side(int e, int x, std::uint32_t b) const {
     return sign_[b - sp_.bond_begin] * (pre_[static_cast<std::size_t>(x)] < pre_[static_cast<std::size_t>(e)] ? 1 : -1);
   }
-  bool markable(std::uint32_t b) const { return st_.bonds.order[b] == 1 && !(st_.bonds.flags[b] & kBondAromatic); }
+  // A '/' '\\' mark needs a Kekulé-single bond. Next to a (non-aromatic) stereo
+  // double bond every other bond of its atoms is single in any Kekulé form, so an
+  // aromatic ring bond may carry the mark too (c/c(=N/C)...); plain single bonds
+  // are preferred.
+  bool markable(std::uint32_t b) const { return st_.bonds.order[b] == 1; }
 
   bool consistent(const ActiveDb& d) const {
     std::array<std::vector<std::pair<int, int>>, 2> marks;
@@ -521,6 +525,9 @@ class Writer {
           const bool sa = sign_[static_cast<std::uint32_t>(bond_between(e, a)) - sp_.bond_begin] != 0;
           const bool sb = sign_[static_cast<std::uint32_t>(bond_between(e, b)) - sp_.bond_begin] != 0;
           if (sa != sb) return sa;
+          const bool ra = (st_.bonds.flags[static_cast<std::uint32_t>(bond_between(e, a))] & kBondAromatic) != 0;
+          const bool rb = (st_.bonds.flags[static_cast<std::uint32_t>(bond_between(e, b))] & kBondAromatic) != 0;
+          if (ra != rb) return rb;
           return pre_[static_cast<std::size_t>(a)] < pre_[static_cast<std::size_t>(b)];
         });
         return c;

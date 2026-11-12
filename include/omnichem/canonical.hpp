@@ -22,8 +22,9 @@
 //
 // Known limitations: tie-breaking is canonical whenever the remaining tied
 // atoms are symmetry-equivalent, which refinement guarantees for ordinary
-// molecules but not for some highly regular graphs (cages). E/Z marks in some
-// partly aromatic macrocycles (chlorins) depend on the spelling.
+// molecules but not for some highly regular graphs (cages). E/Z marks on the
+// meso double bonds of chlorin-type macrocycles depend on the spelling: their
+// 18-pi circuit is not perceived as aromatic (rings.hpp tests rings and pairs).
 
 #include <cstdint>
 #include <string>
