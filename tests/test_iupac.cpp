@@ -38,7 +38,7 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(ClC(Br)F)", R"(bromo(chloro)(fluoro)methane)"},
       {R"(CCN(CC)CC)", R"(N,N-diethylethanamine)"},
       {R"(O=C1CCCN1C)", R"(1-methylpyrrolidin-2-one)"},
-      {R"(CC(=O)OCCOC(C)=O)", R"(2-(acetyloxy)ethyl acetate)"},
+      {R"(CC(=O)OCCOC(C)=O)", R"(ethane-1,2-diyl diacetate)"},
       {R"(c1ccc2[nH]ccc2c1)", R"(1H-indole)"},
       {R"(O=c1cc[nH]c(=O)[nH]1)", R"(1,2,3,4-tetrahydropyrimidine-2,4-dione)"},
       {R"(C1CCc2ccccc2C1)", R"(1,2,3,4-tetrahydronaphthalene)"},
@@ -122,7 +122,7 @@ TEST(iupac_names_round_trip_through_opsin) {
       {R"(CN1CCN(CC1)C1=Nc2ccccc2Sc2ccc(C)cc12)", R"(2-methyl-11-(4-methylpiperazin-1-yl)benzo[b][1,4]benzothiazepine)"},
       {R"(C[N+]1(C)CCCCC1)", R"(1,1-dimethylpiperidin-1-ium)"},
       {R"(C[NH+]1CCCC1C(=O)[O-])", R"(1-methylpyrrolidin-1-ium-2-carboxylate)"},
-      {R"(C[n+]1ccc(cc1)-c1cc[n+](C)cc1)", R"(1-methyl-4-(1-methylpyridin-1-ium-4-yl)pyridin-1-ium)"},
+      {R"(C[n+]1ccc(cc1)-c1cc[n+](C)cc1)", R"(1,1'-dimethyl[4,4'-bipyridine]-1,1'-diium)"},
       {R"(NNc1ccccc1)", R"(phenylhydrazine)"},
       {R"(CC(C)=NNc1ccccc1)", R"(1-phenyl-2-(propan-2-ylidene)hydrazine)"},
       {R"(OC(=O)CC=NNc1ccccc1)", R"(3-(2-phenylhydrazinylidene)propanoic acid)"},
@@ -313,6 +313,132 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"C1=CC(=CC=C1C=NNC(=O)C2=CC3=C(O2)C=CC(=C3)Br)C(=O)O", "4-{[2-(5-bromo-1-benzofuran-2-carbonyl)hydrazinylidene]methyl}benzoic acid"},
       {"CC(C)CON", "O-(2-methylpropyl)hydroxylamine"},
       {"CNOc1ccccc1", "N-methyl-O-phenylhydroxylamine"},
+      // three indicated hydrogens in one mancude parent (calanolide skeleton); one and two still as before
+      {"C1=CC2=C(OC1)C1=C(OCC=C1)C1=C2OCC=C1", "2H,6H,10H-dipyrano[2,3-f:2',3'-h][1]benzopyran"},
+      {"CCCC1=CC(=O)OC2=C1C3=C(C=CC(O3)(C)C)C4=C2C(C(C(O4)C)C)O",
+       "12-hydroxy-6,6,10,11-tetramethyl-4-propyl-11,12-dihydro-2H,6H,10H-dipyrano[2,3-f:2',3'-h][1]benzopyran-2-one"},
+      {"C1C=Cc2ccccc21", "1H-indene"},
+      {"C1=CC=C2CC=CC3=C2N1C=C3", "7H-pyrrolo[3,2,1-ij]quinoline"},
+      // diazo compounds, amidinium cations, amidines on aromatic ring nitrogen, diazeniumdiolates
+      {"C(CC(=O)C=[N+]=[N-])C(C(=O)O)N", "2-amino-6-diazo-5-oxohexanoic acid"},
+      {"CCOC(=O)C=[N+]=[N-]", "ethyl 2-diazoacetate"},
+      {"[N-]=[N+]=CC(=O)O", "2-diazoacetic acid"},
+      {"C1=CC2=C(C=C1C(=[NH2+])N)NC=N2", "1H-benzimidazole-6-carboximidamidium"},
+      {"CCC(=[NH2+])NC", "N-methylpropanimidamidium"},
+      {"C1=CC2=CN(N=C2C(=C1)[N+](=O)[O-])C(=N)N", "7-nitro-2H-indazole-2-carboximidamide"},
+      {"CN(C)N(O)N=O", "1-hydroxy-2,2-dimethyl-1-nitrosohydrazine"},
+      {"CNCCCN(C)N(N=O)O", "3-(2-hydroxy-1-methyl-2-nitrosohydrazin-1-yl)-N-methylpropan-1-amine"},
+      // boronic acids (P-68.1.4): senior to amides, a "borono" prefix below carboxylic acids
+      {"OB(O)c1ccccc1", "phenylboronic acid"},
+      {"B(C1=CC(=CC=C1)[N+](=O)[O-])(O)O", "(3-nitrophenyl)boronic acid"},
+      {"B(C(CC1=CC(=CC=C1)C(=O)O)NC(=O)CC2=CC=CC=C2)(O)O", "3-[2-borono-2-(2-phenylacetamido)ethyl]benzoic acid"},
+      // P-H acids, carbamoyl phosphate, di- and triphosphate anions
+      {"OP(=O)O", "phosphonic acid"},
+      {"OP(=O)[O-]", "hydrogen phosphonate"},
+      {"CP(=O)O", "methylphosphinic acid"},
+      {"OC(=O)CCP(=O)O", "3-(hydroxyphosphinoyl)propanoic acid"},
+      {"COC(=O)CP(=O)O", "(2-methoxy-2-oxoethyl)phosphinic acid"},
+      {"C(=O)(N)OP(=O)(O)O", "carbamoyl dihydrogen phosphate"},
+      {"OP(=O)(O)OP(=O)(O)[O-]", "trihydrogen diphosphate"},
+      {"COP(=O)([O-])OP(=O)([O-])[O-]", "methyl diphosphate"},
+      {"COP(=O)(O)OP(=O)([O-])[O-]", "methyl hydrogen diphosphate"},
+      // small inorganic molecules and ions by exact match (IR-2005); larger structures never match the table,
+      // and molecules with an organic preferred name keep it (HCN: formonitrile)
+      {"O", "water"},
+      {"N", "ammonia"},
+      {"[OH-].[Na+]", "sodium hydroxide"},
+      {"OS(=O)O", "sulfurous acid"},
+      {"OS(=O)[O-].[Na+]", "sodium hydrogen sulfite"},
+      {"[O-]S(=O)(=S)[O-].[Na+].[Na+]", "disodium thiosulfate"},
+      {"[NH3+]O.[Cl-]", "hydroxylammonium chloride"},
+      {"[C-]#N.[K+]", "potassium cyanide"},
+      {"O=C=O", "carbon dioxide"},
+      {"C#N", "formonitrile"},
+      {"CC(=O)[O-].[NH4+]", "azanium acetate"},
+      {"CCCCCCC(=O)O", "heptanoic acid"},
+      // phosphate-sulfate anhydrides, hydrodisulfides, thiosulfate S-esters
+      {"COP(=O)(O)OS(=O)(=O)O", "[hydroxy(methoxy)phosphoryl] hydrogen sulfate"},
+      {"OP(=O)(O)OS(=O)(=O)O", "(dihydroxyphosphoryl) hydrogen sulfate"},
+      {"NC(CSS)C(=O)O", "2-amino-3-disulfanylpropanoic acid"},
+      {"CCSS(=O)(=O)O", "S-ethyl hydrogen sulfurothioate"},
+      {"CCSS(=O)(=O)[O-].[Na+]", "sodium S-ethyl sulfurothioate"},
+      {"NC(CSS(=O)(=O)O)C(=O)O", "2-amino-3-(sulfosulfanyl)propanoic acid"},
+      // audit regressions: multiplied ions use bis(...) where "di" would be ambiguous ("diazanium" is
+      // hydrazinium) or malformed; simple names keep di/tri; phosphoryl organyls are enclosed
+      {"[NH4+].[NH4+].[O-]S(=O)(=O)[O-]", "bis(azanium) sulfate"},
+      {"[NH4+].[NH4+].[NH4+].[O-]P(=O)([O-])[O-]", "tris(azanium) phosphate"},
+      {"C[S+](C)C.C[S+](C)C.[O-]S(=O)(=O)[O-]", "bis(trimethylsulfanium) sulfate"},
+      {"[Ca+2].CN(C)C(=S)[S-].CN(C)C(=S)[S-]", "calcium bis(N,N-dimethylcarbamodithioate)"},
+      {"[Ca+2].CC(=O)[O-].CC(=O)[O-]", "calcium diacetate"},
+      {"[Mg+2].[Cl-].[Cl-]", "magnesium dichloride"},
+      {"COP(=O)(O)OS(=O)(=O)[O-]", "[hydroxy(methoxy)phosphoryl] sulfate"},
+      {"CS(=O)(=O)OP(=O)(O)O", "(dihydroxyphosphoryl) methanesulfonate"},
+      {"NS(=O)(=O)OP(=O)(O)O", "(dihydroxyphosphoryl) sulfamate"},
+      {"CC(=O)O.N", "acetic acid—ammonia (1/1)"},
+      {"[OH2]", "water"},
+      {"C1=NC(=C2C(=N1)N(C=N2)C3C(C(C(O3)COP(=O)(O)OS(=O)(=O)O)O)O)N",
+       "({[5-(6-amino-9H-purin-9-yl)-3,4-dihydroxyoxolan-2-yl]methoxy}(hydroxy)phosphoryl) hydrogen sulfate"},
+      // acid phosphorothioate esters (O-hydrogen); identical organyls multiplied across locant letters
+      {"CCOP(=S)(O)OCC", "O,O-diethyl O-hydrogen phosphorothioate"},
+      {"CCOP(=S)(O)O", "O-ethyl O,O-dihydrogen phosphorothioate"},
+      {"COP(=O)(O)SC", "O,S-dimethyl O-hydrogen phosphorothioate"},
+      {"COP(=O)(OC)SC", "O,O,S-trimethyl phosphorothioate"},
+      {"COP(=S)(OC)OC1=CC=C(C=C1)[N+](=O)[O-]", "O,O-dimethyl O-(4-nitrophenyl) phosphorothioate"},
+      // two-benzene ring assemblies (P-28.2.1): parent and substituent; brackets only before a suffix or free
+      // valence; ranked as benzene, so a larger ring system stays the parent; terphenyls are not cut down
+      {"c1ccccc1-c1ccccc1", "1,1'-biphenyl"},
+      {"Oc1cccc(c1O)-c1ccccc1", "[1,1'-biphenyl]-2,3-diol"},
+      {"Cc1ccc(cc1)-c1ccc(cc1)C(=O)O", "4'-methyl[1,1'-biphenyl]-4-carboxylic acid"},
+      {"Clc1ccc(cc1)-c1ccc(Cl)cc1", "4,4'-dichloro-1,1'-biphenyl"},
+      {"Oc1ccc(cc1)-c1ccc(O)cc1", "[1,1'-biphenyl]-4,4'-diol"},
+      {"CC(C(=O)O)c1ccc(cc1)-c1ccccc1", "2-([1,1'-biphenyl]-4-yl)propanoic acid"},
+      {"OC(=O)CCc1ccc(cc1)-c1ccc(F)cc1", "3-(4'-fluoro[1,1'-biphenyl]-4-yl)propanoic acid"},
+      {"c1ccc2ccccc2c1-c1ccccc1", "1-phenylnaphthalene"},
+      {"c1ccc(cc1)-c1ccc(cc1)-c1ccccc1", "1,1':4',1''-terphenyl"},
+      // assemblies of identical heteromonocycles (P-28.2.2): own ring numbering, lowest junction locants,
+      // elision inside the brackets; mixed pairs and three rings stay substitutive
+      {"c1ccnc(c1)-c1ccccn1", "2,2'-bipyridine"},
+      {"c1ccnc(c1)-c1cccnc1", "2,3'-bipyridine"},
+      {"OC(=O)c1ccnc(c1)-c1cc(ccn1)C(=O)O", "[2,2'-bipyridine]-4,4'-dicarboxylic acid"},
+      {"Oc1cccnc1-c1ccccn1", "[2,2'-bipyridin]-3-ol"},
+      {"O=Cc1ccc(s1)-c1cccs1", "[2,2'-bithiophene]-5-carbaldehyde"},
+      {"OC(=O)Cc1ccnc(c1)-c1ccccn1", "2-([2,2'-bipyridin]-4-yl)acetic acid"},
+      {"c1ccnc(c1)-c1cccs1", "2-(thiophen-2-yl)pyridine"},
+      {"c1ccnc(c1)-c1cccc(n1)-c1ccccn1", "2,2':6',2''-terpyridine"},
+      // polyol phosphates on one parent: multiplicative names (P-65.6.3.2.3), free valences lowest; acyl phosphates
+      // and phosphates on different parents keep the substitutive form
+      {"OP(=O)(O)OCCOP(=O)(O)O", "ethane-1,2-diyl bis(dihydrogen phosphate)"},
+      {"OP(=O)(O)OCC(OP(=O)(O)O)COP(=O)(O)O", "propane-1,2,3-triyl tris(dihydrogen phosphate)"},
+      {"OP(=O)(O)OC1C(OP(=O)(O)O)C(OP(=O)(O)O)C(OP(=O)(O)O)C(OP(=O)(O)O)C1OP(=O)(O)O",
+       "cyclohexane-1,2,3,4,5,6-hexayl hexakis(dihydrogen phosphate)"},
+      {"OC1C(O)C(OP(=O)(O)O)C(O)C(O)C1OP(=O)(O)O", "2,3,5,6-tetrahydroxycyclohexane-1,4-diyl bis(dihydrogen phosphate)"},
+      {"OC(COP(=O)(O)O)C(O)C(=O)COP(=O)(O)O", "2,3-dihydroxy-4-oxopentane-1,5-diyl bis(dihydrogen phosphate)"},
+      {"OP(=O)(O)Oc1ccc(OP(=O)(O)O)cc1", "1,4-phenylene bis(dihydrogen phosphate)"},
+      {"OP(=O)(O)Oc1cc(OP(=O)(O)O)cc(OP(=O)(O)O)c1", "benzene-1,3,5-triyl tris(dihydrogen phosphate)"},
+      {"OP(=O)(O)OCC(O)C(=O)OP(=O)(O)O", "2-hydroxy-3-(phosphonooxy)propanoyl dihydrogen phosphate"},
+      {"OP(=O)(O)OCC1OC(OP(=O)(O)O)C(O)C1O", "3,4-dihydroxy-5-[(phosphonooxy)methyl]oxolan-2-yl dihydrogen phosphate"},
+      // polyol esters of one carboxylic acid: multiplicative (P-65.6.3.2.3); mixed acids and different parents not
+      {"CC(=O)OCC(OC(=O)C)COC(=O)C", "propane-1,2,3-triyl triacetate"},
+      {"CC(C)C(=O)OCCOC(=O)C(C)C", "ethane-1,2-diyl bis(2-methylpropanoate)"},
+      {"CC(=O)Oc1ccc(OC(=O)C)cc1", "1,4-phenylene diacetate"},
+      {"CC(=O)OCCOC(=O)CC", "2-(acetyloxy)ethyl propanoate"},
+      {"CC(=O)OCC1OC(OC(C)=O)C(OC(C)=O)C1OC(C)=O", "[3,4,5-tris(acetyloxy)oxolan-2-yl]methyl acetate"},
+      // three-unit assemblies and units with locants in their names; four units stay substitutive
+      {"c1ccc(cc1)-c1cccc(c1)-c1ccccc1", "1,1':3',1''-terphenyl"},
+      {"Oc1ccc(cc1)-c1ccc(cc1)-c1ccccc1", "[1,1':4',1''-terphenyl]-4-ol"},
+      {"Nc1cc(ccc1-c1ccccc1)-c1ccccc1", "[1,1':4',1''-terphenyl]-2'-amine"},
+      {"c1csc(n1)-c1nccs1", "2,2'-bi-1,3-thiazole"},
+      {"OC(=O)c1csc(n1)-c1nccs1", "[2,2'-bi-1,3-thiazole]-4-carboxylic acid"},
+      {"c1ccc(cc1)-c1ccc(cc1)-c1ccc(cc1)-c1ccccc1", "1-phenyl-4-(4-phenylphenyl)benzene"},
+      // two assemblies in one molecule: a substituent never takes an assembly that contains its parent ring
+      // (this recursed until the stack overflowed)
+      {"C1=CC=C(C(=C1)OCC2=NC(=CC=C2)C3=CC=CC=N3)OCC4=NC=C(C=C4)C5=CN=CC=C5",
+       "6-({2-[([2,2'-bipyridin]-6-yl)methoxy]phenoxy}methyl)-3,3'-bipyridine"},
+      // multiplying prefixes of three or more never fuse with a numeral: tris(decanoate), not "tridecanoate" (C13)
+      {"CCCCCCCCCC(=O)OCC(OC(=O)CCCCCCCCC)COC(=O)CCCCCCCCC", "propane-1,2,3-triyl tris(decanoate)"},
+      {"CCCCCCCCCCOP(=O)(OCCCCCCCCCC)OCCCCCCCCCC", "tris(decyl) phosphate"},
+      {"CCCCCCCCCCN(CCCCCCCCCC)CCCCCCCCCC", "N,N-didecyldecan-1-amine"},
+      {"CCCCCCCCCCCCCCCC(=O)OCC(OC(=O)CCCCCCCCCCCCCCC)COC(=O)CCCCCCCCCCCCCCC", "propane-1,2,3-triyl trihexadecanoate"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
@@ -325,7 +451,8 @@ TEST(iupac_name_is_independent_of_input_order) {
 }
 
 TEST(iupac_unsupported_structures_are_reported_not_guessed) {
-  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "C1=CC=CP1C", "C1CC2(C1)CC1(CCC1)C2", "[N-]=[N+]=CC(=O)O", "CC1=CC=CC=C1NP(=S)(C)C",
+  for (const char* smiles : {"CC[B](C)C", "CC(=O)[O-].CCO", "C1=CC=CP1C", "C1CC2(C1)CC1(CCC1)C2", "NC(=[NH2+])N", "O=C1CCCCC1=[N+]=[N-]", "B(C1=CC=CC=C1)(C2=CC=CC=C2)OCCN", "[2H]O[2H]", "[18OH2]", "[OH]", "N.N", "CCO.CCO", "N.Cl",
+                              "B(O)(O)c1ccc(cc1)B(O)O", "OS(=O)(=O)SCCSS(=O)(=O)O", "CSS(=O)(=O)C", "OP(=S)(O)O", "CCOP(=S)(O)S", "CC1=CC=CC=C1NP(=S)(C)C",
                               "[Na+].[Cl-].c1ccccc1", "C1CC2(C1)C1(CC1)c1ccccc21"}) {
     Diagnostics d;
     const NameResult r = iupac_name_from_smiles(smiles, d);
