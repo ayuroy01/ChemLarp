@@ -427,7 +427,7 @@ const std::vector<SmartsQuery>& template_queries() {
 // Seniority of classes (P-41), lower = more senior.
 // Sulfonyl and Sulfinyl mark sulfones/sulfoxides (never suffixes).
 enum class Cls : int {
-  Carboxylate = -60, CarbonicAnion = -55, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, PhosAnion = -45, Sulfonate = -50, Olate = -40, Ammonium = -30, RingCation = -20,  // anions, then cations (P-41: ions first)
+  Carboxylate = -60, CarbonicAnion = -55, Azanide = -44, Borate = -43, Nitrate = -42, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, PhosAnion = -45, Sulfonate = -50, Olate = -40, Ammonium = -30, Sulfonium = -25, Phosphonium = -24, Diazonium = -22, RingCation = -20,  // anions, then cations (P-41: ions first)
   Acid = 10, CarbonicAcid = 15, IsothioAcid = 16, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
   SulfEster = 44, Isothiourea = 45, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
   PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
@@ -587,6 +587,9 @@ class Namer {
   std::vector<char> pseudo_, pseudoIn_;
   // semicarbazides R2N-C(=O/S)-NR-NR2: the carbonyl carbon; acyl groups on their hydrazine nitrogens
   std::vector<char> semC_, acylSub_;
+  // centres of simple ions named by ligands or suffixes: diazonium N, sulfonium S, phosphonium P,
+  // borate B, sulfonyl azanide N, nitrate N (Cls value stored); their terminal atoms go in pseudoIn_
+  std::vector<Cls> ionC_;
   std::vector<char> carbX_;  // O and S atoms on a carbonic or carbamic acid carbon (acid, ester or anion)
   std::vector<std::uint32_t> only_;  // restrict to these global atoms (one component of a salt)
   std::vector<int> ringsys_;
@@ -897,6 +900,60 @@ bool Namer::perceive() {
   }
   for (int a = 0; a < n(); ++a)
     if (is_Ominus(a) && at_[a].bo[0] == 1 && (cationN_[at_[a].nb[0]] || ringCat_[at_[a].nb[0]])) anionO_[a] = 2;  // N-oxide oxygen
+  ionC_.assign(n(), Cls::None);
+  for (int a = 0; a < n(); ++a) {
+    const NAtom& A = at_[a];
+    if (A.ring || A.arom) continue;
+    const bool singles = std::all_of(A.bo.begin(), A.bo.end(), [](int o) { return o == 1; });
+    auto all_C = [&] { return std::all_of(A.nb.begin(), A.nb.end(), [&](int b) { return at_[b].z == 6; }); };
+    if (A.z == 7 && A.q == 1 && deg(a) == 2 && A.h == 0) {  // C-N+#N
+      int c = -1, t = -1;
+      for (std::size_t k = 0; k < A.nb.size(); ++k) {
+        const int b = A.nb[k];
+        if (A.bo[k] == 1 && at_[b].z == 6) c = b;
+        if (A.bo[k] == 3 && at_[b].z == 7 && deg(b) == 1 && at_[b].q == 0) t = b;
+      }
+      if (c >= 0 && t >= 0) ionC_[a] = Cls::Diazonium, pseudoIn_[t] = 1;
+    } else if (A.z == 16 && A.q == 1 && deg(a) == 3 && A.h == 0 && singles && all_C()) {
+      ionC_[a] = Cls::Sulfonium;
+    } else if (A.z == 15 && A.q == 1 && deg(a) == 4 && A.h == 0 && singles && all_C()) {
+      ionC_[a] = Cls::Phosphonium;
+    } else if (A.z == 5 && A.q == -1 && deg(a) == 4 && A.h == 0 && singles) {  // borates: F, Cl, OH, C ligands
+      bool ok = true;
+      for (int b : A.nb) ok &= at_[b].z == 6 || ((at_[b].z == 9 || at_[b].z == 17) && deg(b) == 1) || is_OH(b);
+      if (ok) {
+        ionC_[a] = Cls::Borate;
+        for (int b : A.nb)
+          if (at_[b].z != 6) pseudoIn_[b] = 1;
+      }
+    } else if (A.z == 7 && A.q == -1 && deg(a) == 2 && A.h == 0 && singles) {  // sulfonyl azanides R-SO2-N(-)-R'
+      int S = -1, C = -1;
+      for (int b : A.nb) {
+        if (at_[b].z == 16) S = b;
+        else if (at_[b].z == 6) C = b;
+      }
+      int dOs = 0, cS = 0;
+      if (S >= 0)
+        for (std::size_t k = 0; k < at_[S].nb.size(); ++k) {
+          const int y = at_[S].nb[k];
+          dOs += at_[S].bo[k] == 2 && at_[y].z == 8 && deg(y) == 1;
+          cS += at_[S].bo[k] == 1 && at_[y].z == 6;
+        }
+      if (S >= 0 && C >= 0 && dOs == 2 && cS == 1 && deg(S) == 4) ionC_[a] = Cls::Azanide;
+    } else if (A.z == 7 && A.q == 1 && deg(a) == 3) {  // nitric acid and nitrate
+      int dOn = 0, oh = 0, om = 0;
+      for (std::size_t k = 0; k < A.nb.size(); ++k) {
+        const int b = A.nb[k];
+        if (A.bo[k] == 2 && at_[b].z == 8 && deg(b) == 1) ++dOn;
+        else if (is_OH(b)) ++oh;
+        else if (is_Ominus(b)) ++om;
+      }
+      if (dOn == 1 && oh + om == 2 && om >= 1) {
+        ionC_[a] = Cls::Nitrate;
+        for (int b : A.nb) pseudoIn_[b] = 1;
+      }
+    }
+  }
   // hydrazides C(=O)-NR-NR2 / C(=O)-NR-N=CR2 and N-hydroxy amides C(=O)-NR-OH
   hydrN_.assign(n(), 0);
   amidN_.assign(n(), 0);
@@ -1355,6 +1412,7 @@ bool Namer::perceive() {
     for (int o : A.bo) val += o;
     if (pseudoIn_[a]) continue;
     if (pseudo_[a]) continue;
+    if (ionC_[a] != Cls::None) continue;
     if (A.q != 0 && !nitro_[a] && !nitroO[a] && !cationN_[a] && !ringCat_[a] && !anionO_[a] && !(carbX_[a] && A.q == -1))
       return fail("charged atom " + sym(a) + " (ion type not covered)");
     switch (A.z) {
@@ -2182,6 +2240,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       if (others.empty()) return Named{"silyl", false, {}};
       return ligands(others, q, "silyl");
     case 15:
+      if (ionC_[q] == Cls::Phosphonium) return ligands(others, q, "phosphaniumyl");
       if (acyl_[q] == Cls::Phosphonic) return Named{"phosphono", false, {}};
       if (acyl_[q] == Cls::PhosEster || acyl_[q] == Cls::PhosAnion || acyl_[q] == Cls::PhosMono || acyl_[q] == Cls::PolyP || acyl_[q] == Cls::PhosOxide ||
           acyl_[q] == Cls::PhosphinicAcid || acyl_[q] == Cls::PhosThio)
@@ -2192,6 +2251,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       }
       return fail_n("unsupported phosphorus substituent at " + sym(q));
     case 16: {
+      if (ionC_[q] == Cls::Sulfonium) return ligands(others, q, "sulfaniumyl");
       if (thioP_[q] && others.size() == 1 && at_[others[0]].z == 15) {  // [(dimethoxyphosphorothioyl)sulfanyl]
         auto R = phosphoryl_name(others[0], q);
         if (!R) return std::nullopt;
@@ -2246,6 +2306,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
     }
     case 7: {
       if (nitro_[q]) return Named{"nitro", false, {}};
+      if (ionC_[q] == Cls::Diazonium) return Named{"diazonio", false, {}};
       if (cationN_[q]) {
         if (others.empty()) return Named{"azaniumyl", false, {}};
         return ligands(others, q, "azaniumyl");
@@ -2509,6 +2570,11 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
         if ((sp.principal == Cls::Alcohol && is_OH(q)) || (sp.principal == Cls::Thiol && is_SH(q)) ||
             (sp.principal == Cls::Peroxol && pseudo_[q] == Hydroperoxy) ||
             (sp.principal == Cls::Olate && is_Ominus(q) && at_[p].z == 6 && acyl_[p] != Cls::Carboxylate)) {
+          used[q] = 1;
+          c.suffix_at.push_back(p);
+          continue;
+        }
+        if (sp.principal == Cls::Diazonium && ionC_[q] == Cls::Diazonium) {
           used[q] = 1;
           c.suffix_at.push_back(p);
           continue;
@@ -4829,6 +4895,7 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
         case Cls::Alcohol: word = "ol"; break;
         case Cls::Thiol: word = "thiol"; break;
         case Cls::Peroxol: word = "peroxol"; break;
+        case Cls::Diazonium: word = "diazonium"; break;
         case Cls::Amine: word = "amine"; break;
         case Cls::Carboxylate: word = c.inchain ? "oate" : "carboxylate"; break;
         case Cls::Sulfonate: word = "sulfonate"; break;
@@ -5042,6 +5109,7 @@ std::optional<std::string> Namer::run() {
     if (is_OH(a) && at_[at_[a].nb[0]].z == 6 && acyl_[at_[a].nb[0]] != Cls::Acid && !carbX_[a]) senior(Cls::Alcohol);
     if (is_SH(a) && !carbX_[a]) senior(Cls::Thiol);
     if (pseudo_[a] == Hydroperoxy) senior(Cls::Peroxol);
+    if (ionC_[a] != Cls::None) senior(ionC_[a]);
     if (amineN_[a]) senior(Cls::Amine);
     if (cationN_[a]) senior(Cls::Ammonium);
     if (ringCat_[a]) senior(Cls::RingCation);
@@ -5421,6 +5489,51 @@ std::optional<std::string> Namer::run() {
     if (!result) {
       if (err_.empty()) err_ = "acid halide could not be named";
       return std::nullopt;
+    }
+  } else if (principal == Cls::Sulfonium || principal == Cls::Phosphonium || principal == Cls::Borate || principal == Cls::Azanide ||
+             principal == Cls::Nitrate) {
+    // "trimethylsulfanium", "tetramethylphosphanium", "tetrafluoroborate", "(benzenesulfonyl)(phenyl)azanide",
+    // "nitric acid", "nitrate" (P-73.1, P-72.2)
+    int centre = -1, count = 0;
+    for (int a = 0; a < n(); ++a)
+      if (ionC_[a] == principal) centre = a, ++count;
+    if (count != 1) {
+      err_ = "several ionic centres of one kind";
+      return std::nullopt;
+    }
+    if (principal == Cls::Nitrate) {
+      int oh = 0;
+      for (int x : at_[centre].nb) oh += is_OH(x);
+      if (n() != 4) {
+        err_ = "nitrate ester or nitric acid derivative";
+        return std::nullopt;
+      }
+      result = oh ? "nitric acid" : "nitrate";
+    } else {
+      std::vector<int> xs(at_[centre].nb.begin(), at_[centre].nb.end());
+      if (principal == Cls::Borate) {  // "(4-aminobutyl)trihydroxyborate": simple ligands unenclosed
+        std::map<std::string, std::pair<int, bool>> g;
+        for (int x : xs) {
+          auto R = sub(x, centre, 1);
+          if (!R) return std::nullopt;
+          cited.insert(cited.end(), R->stereo.begin(), R->stereo.end());
+          auto& e = g[R->text];
+          ++e.first;
+          e.second = R->compound;
+        }
+        std::vector<std::pair<std::string, std::pair<int, bool>>> v(g.begin(), g.end());
+        std::sort(v.begin(), v.end(), [](const auto& x, const auto& y) { return alpha_key(x.first) < alpha_key(y.first); });
+        std::string t;
+        for (const auto& [txt, e] : v)
+          t += e.second ? (e.first > 1 ? multiplier(e.first, true) : "") + enclose(txt) : multiplier(e.first, false) + txt;
+        result = t + "borate";
+      } else {
+        const char* word = principal == Cls::Sulfonium ? "sulfanium" : principal == Cls::Phosphonium ? "phosphanium" : "azanide";
+        auto R = ligands(xs, centre, word);
+        if (!R) return std::nullopt;
+        result = R->text;
+        cited = R->stereo;
+      }
     }
   } else if (principal == Cls::Isothiourea || principal == Cls::IsothioAcid) {
     // isothioureas as carbamimidothioates (P-66.4.1.2): "2-aminoethyl carbamimidothioate",

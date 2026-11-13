@@ -269,6 +269,16 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"CC(=O)N=C(N)NC", "N-[amino(methylamino)methylidene]acetamide"},
       {"C1CN(CC2=CC=CC=C21)C(=N)N", "1,2,3,4-tetrahydroisoquinoline-2-carboximidamide"},
       {"C1CCN(CC1)C(=NC)NC", "N,N'-dimethylpiperidine-1-carboximidamide"},
+      // sulfonium, phosphonium, diazonium, borate, sulfonyl azanide and nitrate ions (P-73, P-72)
+      {"C[S+](C)CCC(C(=O)O)N", "(3-amino-3-carboxypropyl)(dimethyl)sulfanium"},
+      {"C[S+](C)CC(=O)[O-]", "2-(dimethylsulfaniumyl)acetate"},
+      {"C1C2CC3CC1CC(C2)(C3)[P+](CO)(CO)CO", "(adamantan-1-yl)tris(hydroxymethyl)phosphanium"},
+      {"c1ccccc1[N+]#N.[Cl-]", "benzenediazonium chloride"},
+      {"COC1=CC(=C(C=C1)[N+]#N)C", "4-methoxy-2-methylbenzene-1-diazonium"},
+      {"[B-](F)(F)(F)F.[Na+]", "sodium tetrafluoroborate"},
+      {"[B-](CCCCC(C(=O)O)N)(O)(O)O", "(5-amino-5-carboxypentyl)trihydroxyborate"},
+      {"CC1=CC(=NC(=N1)C)[N-]S(=O)(=O)C2=CC=C(C=C2)N", "(4-aminobenzene-1-sulfonyl)(2,6-dimethylpyrimidin-4-yl)azanide"},
+      {"[N+](=O)([O-])[O-].[Na+]", "sodium nitrate"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
