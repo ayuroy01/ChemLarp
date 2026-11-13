@@ -30,7 +30,8 @@ struct CriticalProperties {
   double omega = 0.0;  // acentric factor
 };
 
-// Built-in table, looked up by structure (any SMILES spelling of the compound).
+// Built-in table (Poling et al. Appendix A, 30 compounds), then the pure-component database
+// (properties.hpp); looked up by structure (any SMILES spelling of the compound).
 std::optional<CriticalProperties> critical_properties(std::string_view smiles);
 
 enum class CubicEos { PengRobinson, SoaveRedlichKwong };

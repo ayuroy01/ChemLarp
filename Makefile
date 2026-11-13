@@ -35,7 +35,7 @@ TESTS    := build/chemlarp_tests$(EXE)
 
 all: build/libchemlarp.a $(SHARED) $(CLI) $(TESTS)
 
-build/obj/%.o: src/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h)
+build/obj/%.o: src/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h src/*.hpp src/*.inc)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 

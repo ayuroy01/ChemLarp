@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -94,6 +94,7 @@ _cl_qc = _sig("cl_qc_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, c
 _cl_read = _sig("cl_read_molecules_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_depict = _sig("cl_depict_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_flash = _sig("cl_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
+_cl_props = _sig("cl_pure_component_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double)
 _cl_vle = _sig("cl_vle_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
 _cl_reaction = _sig("cl_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
@@ -292,6 +293,16 @@ def vapor_pressure(smiles: str, temperature_K: float, eos: str = "pr") -> float:
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r["pressure_Pa"]
+
+
+def pure_component(smiles: str, temperature_K: float = 0.0, pressure_Pa: float = 0.0) -> dict:
+    """Pure-component constants from published compilations; with a temperature, also ideal-gas Cp, H, S,
+    enthalpy of vaporization, saturated liquid volume and density, liquid and low-pressure vapour viscosity
+    and thermal conductivity, and surface tension under "at" (SI units). Missing values are None."""
+    r = _take_json(_cl_props(smiles.encode(), temperature_K, pressure_Pa))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
 
 
 def vle(composition: dict[str, float], mode: str, value: float) -> dict:

@@ -1,4 +1,5 @@
 #include "chemlarp/eos.hpp"
+#include "chemlarp/properties.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -383,8 +384,11 @@ std::optional<CriticalProperties> critical_properties(std::string_view smiles) {
   const std::int32_t sp = parse_smiles(st, smiles, d);
   if (sp < 0) return std::nullopt;
   auto it = table().find(st.species[static_cast<std::size_t>(sp)].canonical_smiles);
-  if (it == table().end()) return std::nullopt;
-  return it->second;
+  if (it != table().end()) return it->second;
+  // Otherwise the pure-component database, when it has all three constants.
+  if (auto c = pure_component(smiles); c && std::isfinite(c->Tc_K) && std::isfinite(c->Pc_Pa) && std::isfinite(c->omega))
+    return CriticalProperties{c->name, c->Tc_K, c->Pc_Pa, c->omega};
+  return std::nullopt;
 }
 
 std::optional<EosMixture> mixture_from_smiles(const std::vector<std::string>& smiles, CubicEos eos, Diagnostics& diag) {

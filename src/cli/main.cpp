@@ -7,6 +7,7 @@
 //   chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
 //   chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> ...      (vapour-liquid equilibrium)
 //   chemlarp psat <SMILES> -T K [--srk]                              (vapour pressure)
+//   chemlarp props <SMILES> [-T K] [-P bar]                         (pure-component properties)
 //   chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> ...   (UNIFAC + Antoine VLE)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
@@ -47,6 +48,7 @@
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
 #include "chemlarp/molio.hpp"
+#include "chemlarp/properties.hpp"
 #include "chemlarp/qc.hpp"
 #include "chemlarp/reaction.hpp"
 #include "chemlarp/smarts.hpp"
@@ -65,6 +67,7 @@ int usage() {
       "  chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
       "  chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  chemlarp psat <SMILES> -T K [--srk]\n"
+      "  chemlarp props <SMILES> [-T K] [-P bar]   pure-component constants; correlations at T\n"
       "  chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "                                     UNIFAC activity coefficients, Antoine vapour pressures\n"
       "  chemlarp inchi <SMILES> [--key]\n"
@@ -364,6 +367,68 @@ int cmd_flash(const std::vector<std::string>& args) {
   for (std::size_t i = 0; i < smiles.size(); ++i)
     std::printf("  %-18s %-16s %10.5f %10.5f %10.5f %10.4g\n", smiles[i].c_str(), mix->components[i].name.c_str(), z[i] / zs, f.x[i], f.y[i], f.K[i]);
   std::printf("\n  Z liquid %.5f   Z vapour %.5f\n", f.liquid.Z, f.vapor.Z);
+  return 0;
+}
+
+int cmd_props(const std::vector<std::string>& args) {
+  double T = 0, P_bar = 1;
+  std::string smiles;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "-T" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), T)) return usage(); }
+    else if (args[i] == "-P" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), P_bar)) return usage(); }
+    else if (smiles.empty()) smiles = args[i];
+    else return usage();
+  }
+  if (smiles.empty()) return usage();
+  auto c = pure_component(smiles);
+  if (!c) {
+    std::fprintf(stderr, "error[NoPropertyData]: %s is not in the pure-component table\n", smiles.c_str());
+    return 1;
+  }
+  auto line = [](const char* label, double v, const char* unit, const char* fmt = "%.6g") {
+    std::printf("  %-28s ", label);
+    if (std::isfinite(v)) { std::printf(fmt, v); std::printf(" %s\n", unit); }
+    else std::printf("—\n");
+  };
+  const char* src = c->critical_source == 'I' ? "IUPAC" : c->critical_source == 'C' ? "CRC" : c->critical_source == 'P' ? "PSRK" : "none";
+  std::printf("%s (%s, CAS %s)\n\n", c->name.c_str(), c->smiles.c_str(), c->cas.c_str());
+  line("molar mass", c->molar_mass, "g/mol");
+  line("critical temperature", c->Tc_K, "K");
+  line("critical pressure", c->Pc_Pa / 1e5, "bar");
+  line("critical volume", c->Vc_m3mol * 1e6, "cm3/mol");
+  std::printf("  %-28s %s\n", "critical constants from", src);
+  line("acentric factor", c->omega, "");
+  line("melting point", c->Tm_K, "K");
+  line("normal boiling point", c->Tb_K, "K");
+  line("enthalpy of vap. at Tb", c->Hvap_Tb_Jmol / 1e3, "kJ/mol");
+  line("ideal gas dfH(298)", c->Hf_gas_Jmol / 1e3, "kJ/mol");
+  line("ideal gas dfG(298)", c->Gf_gas_Jmol / 1e3, "kJ/mol");
+  line("ideal gas S(298, 1 bar)", c->S_gas_JmolK, "J/(mol K)");
+  line("liquid Cp(298)", c->cp_liquid_298_JmolK, "J/(mol K)");
+  if (T > 0) {
+    Diagnostics d;
+    auto val = [](std::optional<double> v, double scale) { return v ? *v * scale : PureComponent::NaN; };
+    std::printf("\nat %.2f K, %.4g bar\n", T, P_bar);
+    line("ideal gas Cp", val(ideal_gas_cp(*c, T, d), 1), "J/(mol K)");
+    line("ideal gas H(T) - H(298.15)", val(ideal_gas_enthalpy(*c, T, d), 1e-3), "kJ/mol");
+    line("ideal gas S", val(ideal_gas_entropy(*c, T, P_bar * 1e5, d), 1), "J/(mol K)");
+    line("enthalpy of vaporization", val(enthalpy_of_vaporization(*c, T, d), 1e-3), "kJ/mol");
+    const auto V = saturated_liquid_volume(*c, T, d);
+    line("saturated liquid volume", val(V, 1e6), "cm3/mol");
+    line("saturated liquid density", V ? c->molar_mass * 1e-3 / *V : PureComponent::NaN, "kg/m3");
+    line("liquid viscosity", val(liquid_viscosity(*c, T, d), 1e3), "mPa s");
+    line("vapour viscosity (low P)", val(gas_viscosity(*c, T, d), 1e6), "uPa s");
+    line("liquid thermal conductivity", val(liquid_thermal_conductivity(*c, T, d), 1), "W/(m K)");
+    line("vapour thermal cond. (low P)", val(gas_thermal_conductivity(*c, T, d), 1), "W/(m K)");
+    line("surface tension", val(surface_tension(*c, T, d), 1e3), "mN/m");
+    std::printf("\n");
+    std::vector<std::string> seen;
+    for (const auto& it : d.items()) {
+      if (std::find(seen.begin(), seen.end(), it.message) != seen.end()) continue;
+      seen.push_back(it.message);
+      std::printf("note[%s]: %s\n", to_string(it.code), it.message.c_str());
+    }
+  }
   return 0;
 }
 
@@ -842,6 +907,7 @@ int main(int argc, char** argv) {
   if (cmd == "flash" && !args.empty()) return cmd_flash(args);
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "vle" && !args.empty()) return cmd_vle(args);
+  if (cmd == "props" && !args.empty()) return cmd_props(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

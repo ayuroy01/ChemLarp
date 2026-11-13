@@ -3,11 +3,31 @@ O'Connell, The Properties of Gases and Liquids, 5th ed. (McGraw-Hill 2001), as t
 Python package (MIT licence): log10(P/Pa) = A - B/(T/K + C), valid for Tmin <= T <= Tmax.
 Compounds are keyed by SMILES (resolved from CAS numbers with `chemicals`).
 
+Consistency check (reported on stderr): a row is dropped when a reference normal boiling point (CRC Handbook,
+Physical Constants of Organic Compounds, or Yaws) lies inside its fitted range (5 K margin) and the Antoine equation misses
+every reference by more than 2 K (trans-1,4-dimethylcyclohexane, nitrogen trifluoride, dinitrogen tetroxide).
+
 Usage: python scripts/gen_antoine_data.py > src/antoine_data.inc   (requires `pip install chemicals`)
 """
+import math
+import os
+import sys
+
 import chemicals
 import chemicals.identifiers as I
 import chemicals.vapor_pressure as V
+import pandas as pd
+
+
+def tb_references():
+    d = os.path.dirname(chemicals.__file__)
+    out = {}
+    for rel in ("Misc/Physical Constants of Organic Compounds.csv", "Phase Change/Yaws Boiling Points.tsv"):
+        df = pd.read_csv(os.path.join(d, rel), sep="\t", index_col=0)
+        for cas, tb in df["Tb"].items():
+            if isinstance(tb, float) and math.isfinite(tb):
+                out.setdefault(cas, []).append(tb)
+    return out
 
 
 def main():
@@ -16,7 +36,14 @@ def main():
     print(f"// The Properties of Gases and Liquids, 5th ed. (chemicals {chemicals.__version__}). Do not edit by hand.")
     print("// {SMILES, name, A, B (K), C (K), Tmin (K), Tmax (K)}: log10(P/Pa) = A - B/(T + C)")
     print("const AntoineRow kAntoine[] = {")
+    refs = tb_references()
     for cas, row in df.iterrows():
+        tb = row["B"] / (row["A"] - math.log10(101325.0)) - row["C"]
+        inside = [r for r in refs.get(cas, []) if row["Tmin"] - 5 <= r <= row["Tmax"] + 5]
+        if inside and min(abs(tb - r) for r in inside) > 2.0:
+            print(f"# {cas} {row['Chemical'].strip()}: Antoine Tb {tb:.1f} K, references {inside}; dropped",
+                  file=sys.stderr)
+            continue
         try:
             meta = I.search_chemical(cas)
         except Exception:

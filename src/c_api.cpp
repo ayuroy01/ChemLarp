@@ -4,6 +4,7 @@
 #endif
 #include "chemlarp/chemlarp_c.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,7 @@
 #include "chemlarp/diagnostics.hpp"
 #include "chemlarp/activity.hpp"
 #include "chemlarp/eos.hpp"
+#include "chemlarp/properties.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
@@ -732,6 +734,54 @@ char* cl_vle_text_json(const char* component_lines, const char* mode, double val
                json_escape(sys->antoine[i].name) + ",\"x\":" + jnum(r->x[i]) + ",\"y\":" + jnum(r->y[i]) +
                ",\"gamma\":" + jnum(r->gamma[i]) + "}";
       out += "]";
+    }
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* cl_pure_component_json(const char* smiles, double temperature_K, double pressure_Pa) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    Diagnostics d;
+    auto c = pure_component(smiles);
+    std::string out = std::string("{\"ok\":") + (c ? "true" : "false");
+    if (!c) {
+      d.error(DiagCode::NoPropertyData, std::string("no pure-component data for ") + smiles);
+      return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+    }
+    out += ",\"smiles\":" + json_escape(c->smiles) + ",\"name\":" + json_escape(c->name) + ",\"cas\":" + json_escape(c->cas) +
+           ",\"molar_mass\":" + jnum(c->molar_mass) + ",\"Tc_K\":" + jnum(c->Tc_K) + ",\"Pc_Pa\":" + jnum(c->Pc_Pa) +
+           ",\"Vc_m3mol\":" + jnum(c->Vc_m3mol) + ",\"critical_source\":" + json_escape(std::string(1, c->critical_source)) +
+           ",\"omega\":" + jnum(c->omega) + ",\"Tm_K\":" + jnum(c->Tm_K) + ",\"Tb_K\":" + jnum(c->Tb_K) +
+           ",\"Hvap_Tb_Jmol\":" + jnum(c->Hvap_Tb_Jmol) + ",\"cp_range_K\":[" + jnum(c->cp_Tmin_K) + "," +
+           jnum(c->cp_Tmax_K) + "],\"cp_liquid_298_JmolK\":" + jnum(c->cp_liquid_298_JmolK) + ",\"Z_RA\":" + jnum(c->Z_RA) +
+           ",\"Hf_gas_Jmol\":" + jnum(c->Hf_gas_Jmol) + ",\"Gf_gas_Jmol\":" + jnum(c->Gf_gas_Jmol) +
+           ",\"S_gas_JmolK\":" + jnum(c->S_gas_JmolK);
+    if (temperature_K > 0) {
+      // Each correlation reports its own missing data; collect those as warnings here, since the
+      // constants above are still valid.
+      Diagnostics q;
+      auto val = [&](std::optional<double> v) { return v ? jnum(*v) : std::string("null"); };
+      const double P = pressure_Pa > 0 ? pressure_Pa : kStandardPressure;
+      const auto V = saturated_liquid_volume(*c, temperature_K, q);
+      out += ",\"at\":{\"T_K\":" + jnum(temperature_K) + ",\"P_Pa\":" + jnum(P) +
+             ",\"cp_ideal_gas_JmolK\":" + val(ideal_gas_cp(*c, temperature_K, q)) +
+             ",\"H_ideal_gas_Jmol\":" + val(ideal_gas_enthalpy(*c, temperature_K, q)) +
+             ",\"S_ideal_gas_JmolK\":" + val(ideal_gas_entropy(*c, temperature_K, P, q)) +
+             ",\"Hvap_Jmol\":" + val(enthalpy_of_vaporization(*c, temperature_K, q)) +
+             ",\"V_liquid_m3mol\":" + val(V) +
+             ",\"rho_liquid_kgm3\":" + (V ? jnum(c->molar_mass * 1e-3 / *V) : std::string("null")) +
+             ",\"viscosity_liquid_Pas\":" + val(liquid_viscosity(*c, temperature_K, q)) +
+             ",\"viscosity_gas_Pas\":" + val(gas_viscosity(*c, temperature_K, q)) +
+             ",\"conductivity_liquid_WmK\":" + val(liquid_thermal_conductivity(*c, temperature_K, q)) +
+             ",\"conductivity_gas_WmK\":" + val(gas_thermal_conductivity(*c, temperature_K, q)) +
+             ",\"surface_tension_Nm\":" + val(surface_tension(*c, temperature_K, q)) + "}";
+      std::vector<std::string> seen;
+      for (const auto& it : q.items()) {
+        if (std::find(seen.begin(), seen.end(), it.message) != seen.end()) continue;
+        seen.push_back(it.message);
+        d.warn(it.code, it.message);
+      }
     }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });

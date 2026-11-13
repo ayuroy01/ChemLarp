@@ -111,9 +111,10 @@ TEST(flash_single_phase_regions) {
 
 TEST(eos_lookup_and_error_vectors) {
   CHECK(critical_properties("OCC")->name == "ethanol");  // any spelling of the structure
-  CHECK(!critical_properties("CCCCCCCCCCCCCCCC").has_value());
+  CHECK(critical_properties("CCCCCCCCCCCCCCCC")->name == "hexadecane");  // from the property database
+  CHECK(!critical_properties("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC").has_value());
   Diagnostics d;
-  CHECK(!mixture_from_smiles({"C", "CCCCCCCCCCCCCCCC"}, CubicEos::PengRobinson, d));
+  CHECK(!mixture_from_smiles({"C", "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}, CubicEos::PengRobinson, d));
   CHECK(d.contains(DiagCode::NoCriticalData));
   Diagnostics d2;
   CHECK(!saturation_pressure(comp("C"), CubicEos::PengRobinson, 200.0, d2));  // above Tc = 190.56 K

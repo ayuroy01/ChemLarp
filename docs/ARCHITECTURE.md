@@ -28,6 +28,8 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | Thermo data | GRI-Mech 3.0; NASA Glenn (McBride, Zehe & Gordon, NASA/TP-2002-211556); Burcat database |
 | Gibbs minimisation | White, Johnson & Dantzig, *JCP* 28 (1958) 751; Reynolds STANJAN (1986); Smith & Missen, *Chemical Reaction Equilibrium Analysis* (1982) |
 | Kinetics | modified Arrhenius / mass action; CHEMKIN-II format (Kee et al., Sandia SAND89-8009) |
+| Transport properties | Perry's Chemical Engineers' Handbook, 8th ed. (2008), Tables 2-312 to 2-315 (DIPPR); Mulero & Cachadiña, *J. Phys. Chem. Ref. Data* 41 (2012) 043105; Jasper, *J. Phys. Chem. Ref. Data* 1 (1972) 841; validation against VDI Heat Atlas (PPDS) and REFPROP |
+| Pure-component data | Critical constants: IUPAC critical-property series (Ambrose, Tsonopoulos, Young et al., *J. Chem. Eng. Data* 1995–2015), CRC Handbook, PSRK appendix (Horstmann et al., *Fluid Phase Equilib.* 227 (2005) 157); vapour-pressure equations of Poling et al. and McGarry (*Ind. Eng. Chem. Process Des. Dev.* 22 (1983) 313); Watson (1943); Rackett (1970), Spencer & Danner (1972); validation against NIST-JANAF (1998), TRC and VDI Heat Atlas (PPDS) data |
 | Activity models / EoS | NRTL: Renon & Prausnitz, *AIChE J.* 14 (1968) 135; UNIFAC: Fredenslund, Jones & Prausnitz, *AIChE J.* 21 (1975) 1086, subgroup and interaction tables published by DDBST (Hansen et al., *Ind. Eng. Chem. Res.* 30 (1991) 2352, and revisions); Antoine coefficients: Poling, Prausnitz & O'Connell, *The Properties of Gases and Liquids*, 5th ed. (2001); Peng–Robinson (1976) |
 | Flash / distillation | Rachford & Rice (1952); Michelsen, *Fluid Phase Equil.* 9 (1982) (stability); Naphtali–Sandholm (1971) |
 | Flowsheet convergence | Westerberg et al., *Process Flowsheeting* (1979); Biegler, Grossmann & Westerberg (1997) |
@@ -139,9 +141,10 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | MMFF94 / OPLS force fields; partial charges & electrostatics; velocity-Verlet MD | planned (UFF done) |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
-| Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds |
+| Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
 | Michelsen stability test + Rachford–Rice two-phase flash; pure-component vapour pressure | **done** |
-| NRTL and original UNIFAC activity coefficients (any number of components), UNIFAC subgroups from structure, Antoine vapour pressures (323 compounds), bubble and dew T and P by modified Raoult's law; `chemlarp vle`, `cl_vle_text_json`, Python `vle()` | **done** (`src/activity.cpp`); validation in "Activity models: validation" below. Not covered: NRTL parameter database (parameters are supplied by the caller), modified UNIFAC (Dortmund), vapour non-ideality, liquid-liquid splits (dew points that need one fail with VleNotConverged), web UI |
+| NRTL and original UNIFAC activity coefficients (any number of components), UNIFAC subgroups from structure, Antoine vapour pressures (320 compounds), bubble and dew T and P by modified Raoult's law; `chemlarp vle`, `cl_vle_text_json`, Python `vle()`; web Phase Behaviour panel with T–x–y / P–x–y diagrams and azeotrope marking for binaries | **done** (`src/activity.cpp`); validation in "Activity models: validation" below. Not covered: NRTL parameter database (parameters are supplied by the caller), modified UNIFAC (Dortmund), vapour non-ideality, liquid-liquid splits (dew points that need one fail with VleNotConverged) |
+| Pure-component property database (365 compounds keyed by structure: Tc, Pc, Vc, ω, Tm, Tb, ΔHvap(Tb), ideal-gas Cp polynomial, liquid Cp(298), Rackett Z_RA, ideal-gas ΔfH°, ΔfG°, S°) with ideal-gas Cp, H, S, Watson ΔHvap(T) and Rackett saturated liquid volume; transport properties from published correlations with their fitted ranges: liquid and low-pressure vapour viscosity and thermal conductivity (Perry 8th ed., DIPPR equations, about 180 compounds each) and surface tension (Mulero–Cachadiña, else Jasper; 225 compounds); `chemlarp props`, `cl_pure_component_json`, Python `pure_component()` | **done** (`src/properties.cpp`); validation in "Pure-component properties: validation" below. Scope: published data and the correlations above; a missing value is reported (NoPropertyData), never estimated, and use outside a fitted range is a warning. Not covered: estimation methods for compounds without data (Chung, Lucas, Brock–Bird), pressure corrections to vapour transport properties, liquid Cp(T), solid properties, web UI |
 | Column & flowsheet solvers | planned |
 | Installable web app (WebAssembly, PWA, GitHub Pages) | **done**: https://ayuroy01.github.io/ChemLarp/ |
 | Worker pool | planned (design above) |
@@ -165,7 +168,7 @@ All checks below use data not produced by ChemLarp. Tests: `tests/test_activity.
 
 The differences are mostly cases where DDBST's own choice is not determined by the group definitions: CH2 next to both an aromatic ring and an ether O or N (ACCH2 vs CH2O / CH2NH), non-benzenoid aromatics (azulene, cyclophanes) that DDBST splits into olefinic and aromatic groups, and two radicals. Refusals are structures with atoms or groups outside the supported subgroups (silicon, amides, carbonates, most heteroaromatics other than pyridine and thiophene); they get NoUnifacGroups, never a partial assignment.
 
-**Vapour pressures.** The Antoine fits reproduce CRC normal boiling points of the 12 compounds used below within 0.42 K (acetone, −0.42 K; all others within 0.25 K); 11 are in the tests with a 0.5 K tolerance.
+**Vapour pressures.** Three Antoine rows that miss a reference normal boiling point lying in (or within 5 K of) their fitted range by more than 2 K are dropped by the generator (trans-1,4-dimethylcyclohexane: 429.7 K against 392.5 K; nitrogen trifluoride; dinitrogen tetroxide). The Antoine fits reproduce CRC normal boiling points of the 12 compounds used below within 0.42 K (acetone, −0.42 K; all others within 0.25 K); 11 are in the tests with a 0.5 K tolerance.
 
 **Azeotropes at 101.325 kPa against experiment.** Reference: CRC Handbook of Chemistry and Physics (44th ed.) and Lange's Handbook of Chemistry (10th ed.), as compiled in the Wikipedia article "Azeotrope tables" (ethanol + cyclohexane from the Edinburgh Azeotrope Databank; methanol + hexane from CRC 101st ed.); composition converted from weight % to mole fraction. Homogeneous azeotropes only. The azeotrope is located where y − x changes sign along the UNIFAC bubble-point curve. x_B is the mole fraction of the second component.
 
@@ -190,4 +193,43 @@ The differences are mostly cases where DDBST's own choice is not determined by t
 | methanol + hexane | 333.15 | 322.42 | −10.73 | 0.484 | 0.492 | +0.008 |
 
 Sixteen of the 17 systems agree within 0.6 K and 0.05 in mole fraction, including the maximum-boiling acetone + chloroform azeotrope, and methanol + water correctly shows none. This is UNIFAC's predictive accuracy for these well-studied systems, not a numerical tolerance, and it will be worse for systems far from UNIFAC's fitting data. Methanol + hexane is unresolved: the tabulated 60 °C lies above the methanol + heptane azeotrope in the same table (59.1 °C), against the usual trend in a homologous series, and UNIFAC gives 49.3 °C. The source value has not been checked against a second compilation, so the system is reported here and left out of the tests. Five systems (water + ethanol, methanol + benzene, acetone + chloroform, benzene + cyclohexane, water + 2-propanol) are in the tests with tolerances of 0.6 K and 0.05.
+
+## Pure-component properties: validation
+
+Data come from published compilations (`scripts/gen_property_data.py` names the source of each field); each correlation below is compared with a source that did not supply its inputs. Scratch scripts compute the comparisons through `cl_pure_component_json`; spot values are in `tests/test_properties.cpp`.
+
+**Errors found in the compilations, and how the generator handles them.** These are confirmed by a disagreement between independent sources, not by our own estimates.
+
+- IUPAC critical table as distributed: rows of cyclohexane and methylcyclopentane exchanged; decane Tc = 611.7 K against 617.6-618.1 K elsewhere. Rule: IUPAC first, then CRC, then PSRK; an IUPAC row that disagrees with CRC (Tc 0.5%, Pc 5%) is replaced when another source (PSRK, Yaws, or the Tc and Pc published with a Wagner equation) confirms CRC. This replaces 10 IUPAC rows. Older compilations never outvote an evaluated one on their own, since they often share an origin.
+- Poling ideal-gas Cp polynomials: a polynomial that misses the databank's own Cp(298.15 K) by more than 2% is kept only if a third source (NIST-JANAF, else TRC) confirms it. Kept: acetylene, propadiene, chlorine, two perfluoroalkanes, butylamine, 2-methylnaphthalene (the tabulated Cp was the wrong value). Dropped: 3-methylpentane (coefficients mis-scaled, 33.5 against 140.1 J/(mol K)), cis- and trans-2-butene (polynomials apparently exchanged), sulfur dioxide, trideuteroammonia.
+- Acentric factor: a tabulated ω is tied to the Tc and Pc of its own table (PSRK gives 2-methyl-1-pentanol ω = 0.726 with Tc = 582 K; IUPAC has 604.4 K). ω is therefore computed from its definition, −log10(Psat(0.7 Tc)/Pc) − 1, with the chosen Tc and Pc and a Wagner (Poling, McGarry) or Antoine equation valid at 0.7 Tc; a tabulated ω is used only when its table's Tc and Pc agree with ours, and otherwise ω is left missing. Against Yaws's ω (311 compounds), median |Δω| fell from 0.005 to 0.002 and the largest from 0.216 to 0.137.
+
+**Results** (median and 90th percentile of the absolute deviation):
+
+| Property | Reference | n | Median | 90th pct. | Notes |
+|---|---|---|---|---|---|
+| Ideal-gas Cp, 300-900 K | TRC polynomial fits | 1,475 points | 0.19% | 0.65% | worst: formic acid (Poling 53.4 against TRC 45.7 J/(mol K) at 298 K) and 3,5-lutidine, where the two sources disagree |
+| Ideal-gas Cp, 300-900 K | NIST-JANAF tables | 225 points | 0.30% | 1.7% | hydrazine and SF4 3-7% below JANAF (Poling and TRC agree with each other) |
+| ΔHvap(T), Watson, 0.55-0.85 Tc | VDI PPDS correlations | 552 points | 1.0% | 3.9% | carboxylic acids up to 28% (vapour association; Watson does not apply); ethyl propyl ether 25% at high Tr |
+| ΔHvap(298 K), Watson from Tb | CRC ΔHvap(298) | 180 | 0.75% | 4.7% | long extrapolations (eicosane −11%) and acids |
+| Saturated liquid density, Rackett with Z_RA, 0.5-0.8 Tc | VDI PPDS | 316 points | 0.51% | 3.4% | N2O4 (equilibrium mixture with NO2) |
+| Saturated liquid density, Rackett with Zc (no Z_RA) | VDI PPDS | 356 points | 2.4% | 12.7% | reported as a warning; HF and formic acid up to 38% |
+| Tc | second compilation | 287 | 0.10 K | 1.0 K | the largest are the IUPAC errors above |
+| Pc | second compilation | 260 | 0.30% | 2.4% | pyrrole (5.7 against 8.0 MPa) and propadiene unresolved |
+| Peng–Robinson Psat with database Tc, Pc, ω, Tr = 0.6 | McGarry Wagner equations | 156 | 1.3% | 8.2% | alcohols worst (2-methyl-2-butanol 36%), a known limit of the PR α function |
+| Peng–Robinson Psat, Tr = 0.9 | McGarry Wagner equations | 163 | 0.92% | 4.7% | acetic anhydride −32% |
+
+**Unresolved.** Critical pressures of alkylphenols: IUPAC and CRC give about 4.1 MPa for p-cresol, PSRK, Yaws and McGarry about 5.15 MPa; the evaluated value is used and ω is computed consistently with it, but which Pc is right is not settled here. Ideal-gas Cp of formic acid and 3,5-lutidine (Poling against TRC), and ΔHvap of ethyl propyl ether at high reduced temperature (VDI against Watson from the CRC value), likewise need a fourth source.
+
+**Transport properties.** Two checks. (1) Implementation: ChemLarp's evaluation of the Perry, Mulero–Cachadiña and Jasper coefficients agrees with thermo 0.6.1's evaluation of the same coefficients to rounding at 2,826 points (three temperatures across each fitted range). (2) Data: comparison with the VDI Heat Atlas (PPDS) correlations, an independent compilation, at three temperatures inside both fitted ranges (below 0.9 Tc for liquids, at most 1000 K for vapours), and with thermo's fits to REFPROP for about 100 fluids.
+
+| Property | Against VDI: n, median, 90th pct. | Against REFPROP fits: n, median, 90th pct. | Notes |
+|---|---|---|---|
+| Liquid viscosity | 423, 0.63%, 8.9% | 199, 2.8%, 25% | VDI's p-cresol entry is broken (range 150.7-155.7 K, constant 1e-5 Pa s); Perry agrees with Viswanath & Natarajan and Dutt & Prasad for the cresols and phenol; light gases near their critical point (CF4, 1-butene, dimethyl ether) differ by 50-77% from REFPROP |
+| Vapour viscosity, low pressure | 429, 0.12%, 0.91% | 116, 1.3%, 6.6% | |
+| Liquid thermal conductivity | 420, 0.03%, 0.16% | 194, 3.1%, 13% | the near-identity with VDI suggests both were fitted to the same data, so this is a weak independence test |
+| Vapour thermal conductivity, low pressure | 432, 0.48%, 1.8% | 109, 1.6%, 6.5% | chloroform and CCl4 diverge from VDI above about 400 K (up to 109%); carboxylic acids (vapour dimerization) up to 39% |
+| Surface tension | 435, 0.95%, 7.3% | 267, 0.00%, 0.64% | REFPROP uses the same Mulero–Cachadiña fits, so that column is not independent; Jasper's dimethylamine is 27-47% above VDI, which itself differs from a third fit |
+
+For water, against REFPROP (IAPWS formulations) at 300 K: liquid viscosity +2.7% (876.5 against 853.7 µPa s), liquid thermal conductivity −0.1%, surface tension +0.1%. None of these disagreements has been settled by a third, evaluated source, so no transport data are dropped; the reference values in the tests carry the tolerances above.
 

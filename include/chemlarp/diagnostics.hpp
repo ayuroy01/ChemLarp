@@ -86,6 +86,8 @@ enum class DiagCode : std::uint16_t {
   NoUnifacGroups,          // a compound cannot be split into supported UNIFAC subgroups
   NoVaporPressureData,     // component has no vapour-pressure correlation
   VleNotConverged,         // bubble/dew point iteration did not converge
+  NoPropertyData,          // the pure-component table lacks the property (or the compound)
+  PropertyExtrapolated,    // warning: a correlation was used outside its stated range
 
   // 8xx — identifiers (InChI)
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does
