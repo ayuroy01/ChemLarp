@@ -303,6 +303,16 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"ON1CCCCC1", "1-hydroxypiperidine"},
       {"C1=CC(=S)N(C=C1)O", "1-hydroxy-1,2-dihydropyridine-2-thione"},
       {"CC1=NC2=CC=CC=C2C(=O)N1OCC(=O)OC", "methyl 2-[(2-methyl-4-oxo-3,4-dihydroquinazolin-3-yl)oxy]acetate"},
+      // thiocarbonyl substituents, N1/N4 locants for several amide or amine suffixes, acylhydrazinylidene,
+      // O-substituted hydroxylamines
+      {"CCC(=O)NC(=S)NNC(=O)C1=CC=C(C=C1)Cl", "N-[2-(4-chlorobenzoyl)hydrazine-1-carbothioyl]propanamide"},
+      {"COC(=O)c1ccccc1NC(=S)N1CCCCC1", "methyl 2-[(piperidine-1-carbothioyl)amino]benzoate"},
+      {"CNC(=O)c1ccc(cc1)C(=O)Nc1ccccc1", "N1-methyl-N4-phenylbenzene-1,4-dicarboxamide"},
+      {"COC1=CC=CC(NC(=O)C(=O)NCCCOC)=C1", "N1-(3-methoxyphenyl)-N2-(3-methoxypropyl)ethanediamide"},
+      {"CNc1ccc(NC)cc1", "N1,N4-dimethylbenzene-1,4-diamine"},
+      {"C1=CC(=CC=C1C=NNC(=O)C2=CC3=C(O2)C=CC(=C3)Br)C(=O)O", "4-{[2-(5-bromo-1-benzofuran-2-carbonyl)hydrazinylidene]methyl}benzoic acid"},
+      {"CC(C)CON", "O-(2-methylpropyl)hydroxylamine"},
+      {"CNOc1ccccc1", "N-methyl-O-phenylhydroxylamine"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

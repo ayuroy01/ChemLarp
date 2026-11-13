@@ -173,7 +173,7 @@ bool has_digit(const std::string& s) {
 void append_piece(std::string& out, const std::string& piece) {
   if (!out.empty() && !piece.empty()) {
     const char a = out.back(), b = piece[0];
-    const bool b_locant = (b >= '0' && b <= '9') || b == 'N';
+    const bool b_locant = (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z');  // numeric or letter locants (N, O, S)
     const bool a_end = (a >= 'a' && a <= 'z') || a == ')' || a == ']' || a == '}';
     if (b_locant && a_end) out += '-';
   }
@@ -995,7 +995,7 @@ bool Namer::perceive() {
     for (std::size_t k = 0; k < at_[na].nb.size(); ++k) {
       const int w = at_[na].nb[k];
       if (at_[na].bo[k] != 1) return -1;
-      if (w != y && (at_[w].z != 6 || dO(w) >= 0 || dS(w) >= 0)) return -1;
+      if (w != y && (at_[w].z != 6 || (dO(w) >= 0 && !plain_acyl(w)) || dS(w) >= 0)) return -1;
     }
     return na;
   };
@@ -2225,6 +2225,26 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
       out.compound = !e.empty();
       return out;
     }
+    if (A.z == 7 && hydrN2_[q] && deg(q) == 2) {  // =N-NH-C(=O)R: (2-benzoylhydrazinylidene)
+      int M = -1;
+      for (int y : A.nb)
+        if (y != from && hydrN_[y]) M = y;
+      if (M >= 0) {
+        std::vector<std::pair<std::string, Named>> e;
+        Named out;
+        for (std::size_t k = 0; k < at_[M].nb.size(); ++k) {
+          const int y = at_[M].nb[k];
+          if (y == q) continue;
+          auto R = (at_[y].z == 6 && dO(y) >= 0 && !at_[y].ring) ? acyl_name(y, M) : sub(y, M, at_[M].bo[k]);
+          if (!R) return std::nullopt;
+          out.stereo.insert(out.stereo.end(), R->stereo.begin(), R->stereo.end());
+          e.push_back({"2", *R});
+        }
+        out.text = format_prefixes(e, false) + "hydrazinylidene";
+        out.compound = true;
+        return out;
+      }
+    }
     if (A.z == 7 && imineN_[q]) {  // =N-H, =N-R, =N-OH, =N-OR
       int x = -1;
       for (int y : A.nb)
@@ -2535,6 +2555,18 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         int N = -1;
         for (int x : A.nb)
           if (x != from && at_[x].z == 7 && amideN_[x]) N = x;
+        if (N < 0 && from >= 0 && at_[from].z == 7)
+          for (int x : A.nb) {
+            if (x == from || at_[x].z != 7) continue;
+            if (acyl_[q] == Cls::ThioSemicarbazide && hzPartner_[x] >= 0) {  // (2-...hydrazine-1-carbothioyl)
+              auto R = sub(x, q, 1);
+              if (!R) return std::nullopt;
+              if (R->text == "hydrazinyl") return Named{"hydrazinecarbothioyl", true, R->stereo};
+              if (ends_with(R->text, "hydrazin-1-yl"))
+                return Named{R->text.substr(0, R->text.size() - 13) + "hydrazine-1-carbothioyl", true, R->stereo};
+            }
+            if (acyl_[q] == Cls::Thioamide && at_[x].ring) return build_sub(Mode::Carbonyl, q, from, x, "carbothioyl");  // piperidine-1-carbothioyl
+          }
         if (N < 0) return fail_n("thioacyl substituent at " + sym(q));
         std::vector<int> xs;
         for (int x : at_[N].nb)
@@ -2643,7 +2675,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
           if (x == A) continue;
           auto s = sub(x, b, order(x, b));
           if (!s) return false;
-          c.pre.push_back({-1, *s});
+          c.pre.push_back({-(1000 + at), *s});  // "N" or, with several amide suffixes, "N1", "N4"
           nprefix = true;
         }
     }
@@ -2705,7 +2737,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
             if (c.in[x]) return fail("amine nitrogen bridging the parent");
             auto s = sub(x, q, order(x, q));
             if (!s) return false;
-            c.pre.push_back({-1, *s});
+            c.pre.push_back({-(1000 + p), *s});
             nprefix = true;
           }
           continue;
@@ -2724,12 +2756,17 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
       if (bo == 2 && at_[q].z != 6) c.exo_double.push_back({p, q});  // C=C is cited by the ylidene prefix itself
     }
   }
-  if (nprefix && (sp.principal == Cls::Amine || sp.principal == Cls::Ammonium || sp.principal == Cls::Amide || sp.principal == Cls::Hydrazide ||
-                  sp.principal == Cls::Amidine || sp.principal == Cls::Thioamide || sp.principal == Cls::Sulfonamide ||
-                  sp.principal == Cls::SulfonoHydrazide ||
+  if (nprefix && (sp.principal == Cls::Hydrazide || sp.principal == Cls::Amidine || sp.principal == Cls::SulfonoHydrazide ||
                   sp.principal == Cls::Imine) &&
       c.suffix_at.size() > 1)
     return fail("N-substituents on several amine or amide groups (N,N' locants)");
+  // N-substituents of amides and amines: "N" with one such suffix, "N1", "N4" with several (P-62.2.1.1.2)
+  if (c.suffix_at.size() == 1)
+    for (auto& pr : c.pre)
+      if (pr.first <= -1000) pr.first = -1;
+  for (const auto& pr : c.pre)  // two N-substituted suffixes on one atom would need N1 and N1' (not covered)
+    if (pr.first <= -1000 && std::count(c.suffix_at.begin(), c.suffix_at.end(), -pr.first - 1000) > 1)
+      return fail("N-substituted suffixes sharing one parent atom");
   if (c.kind == PKind::VonBaeyer) c.nmult = rs_[c.rsys].unsat;
   if (c.kind == PKind::Chain || c.kind == PKind::Carbocycle) {
     const auto& o = c.orders[0];
@@ -4790,11 +4827,14 @@ Score Namer::score(const Spec& sp, const Cand& c, const std::vector<int>& o, boo
     }
   }
   std::vector<std::pair<std::string, std::string>> alpha;
-  for (const auto& [p, nm] : c.pre)
+  for (const auto& [p, nm] : c.pre) {
     if (p >= 0) {
       pre.push_back(L[p]);
       alpha.push_back({alpha_key(nm.text) + "\x01" + nm.text, L[p]});
+    } else if (p <= -1000) {  // N1/N4 prefixes: the first cited gets the lower suffix locant (P-31.1.4.3.4)
+      alpha.push_back({alpha_key(nm.text) + "\x01" + nm.text, L[-p - 1000]});
     }
+  }
   std::stable_sort(alpha.begin(), alpha.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
   std::vector<double> al;
   for (std::size_t i = 0; i < alpha.size();) {
@@ -4969,7 +5009,7 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
   for (const auto& [o2, at] : c.ester_o) out.ester_o.push_back({o2, L[at]});
 
   std::vector<std::pair<std::string, Named>> entries;
-  for (const auto& [p, nm] : c.pre) entries.push_back({p >= 0 ? L[p] : p == -1 ? "N" : "N'", nm});
+  for (const auto& [p, nm] : c.pre) entries.push_back({p >= 0 ? L[p] : p <= -1000 ? "N" + L[-p - 1000] : p == -1 ? "N" : "N'", nm});
   const std::string prefixes = format_prefixes(entries, omit);
 
   // parent hydride + suffix
@@ -5218,6 +5258,12 @@ std::optional<Built> Namer::build(const Spec& sp) {
     if (better) best = std::move(r);
   }
   if (!best) return std::nullopt;
+  // the principal characteristic group must be expressed as a suffix of the parent (P-41, P-44.1.1);
+  // a parent without it would cite the principal group as a prefix, which is not an IUPAC name
+  if (mol && sp.principal != Cls::None && best->senior[0] == 0) {
+    fail("the principal characteristic group could not be cited as a suffix");
+    return std::nullopt;
+  }
   return best->b;
 }
 
@@ -5358,6 +5404,36 @@ std::optional<std::string> Namer::run() {
       if (err_.empty()) err_ = "semicarbazide could not be named";
       return std::nullopt;
     }
+  } else if (principal == Cls::Amine && [&] {  // O-substituted hydroxylamines (P-68.3.1.1.1): "O-(2-methylpropyl)hydroxylamine"
+               int nam = 0, N = -1;
+               for (int a = 0; a < n(); ++a)
+                 if (amineN_[a]) ++nam, N = a;
+               if (nam != 1) return false;
+               for (int x : at_[N].nb)
+                 if (at_[x].z == 8 && nO_[x] && deg(x) == 2) return true;
+               return false;
+             }()) {
+    int N = -1, O = -1;
+    for (int a = 0; a < n(); ++a)
+      if (amineN_[a]) N = a;
+    for (int x : at_[N].nb)
+      if (at_[x].z == 8 && nO_[x]) O = x;
+    std::vector<std::pair<std::string, Named>> e;
+    std::vector<Key> extra;
+    for (int x : at_[N].nb) {
+      if (x == O) continue;
+      auto R = sub(x, N, 1);
+      if (!R) return std::nullopt;
+      extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+      e.push_back({"N", *R});
+    }
+    const int r = at_[O].nb[0] == N ? at_[O].nb[1] : at_[O].nb[0];
+    auto R = sub(r, O, 1);
+    if (!R) return std::nullopt;
+    extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+    e.push_back({"O", *R});
+    result = format_prefixes(e, false) + "hydroxylamine";
+    cited = extra;
   } else if (principal == Cls::Hydrazine) {
     // hydrazine as parent (P-68.3.1.2): "phenylhydrazine", "1,1-dimethylhydrazine", "(propan-2-ylidene)hydrazine"
     for (int N = 0; N < n(); ++N) {
