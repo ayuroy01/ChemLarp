@@ -287,6 +287,16 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"O=S1([N-]C(C2=C1C=CC=C2)=O)=O.[Na+]", "sodium 1,1,3-trioxo-2,3-dihydro-1λ6,2-benzothiazol-2-ide"},
       {"O=C1NC(=O)C(c2ccccc2)(c2ccccc2)[N-]1.[Na+]", "sodium 2,4-dioxo-5,5-diphenylimidazolidin-1-ide"},
       {"[CH-]1c2ccccc2-c2ccccc12", "9H-fluoren-9-ide"},
+      // sulfonyl groups on ring nitrogen, sulfuric diamides, sulfamates, sulfonohydrazides, thionitrites
+      {"C1=CN(C2=CC(=C(C(=C21)Cl)O)O)S(=O)(=O)O", "4-chloro-5,6-dihydroxy-1H-indole-1-sulfonic acid"},
+      {"C1CCN(CC1)S(=O)(=O)N", "piperidine-1-sulfonamide"},
+      {"CN(C)S(=O)(=O)N1CCC(CC1)NC(=O)C2CC2", "N-[1-(dimethylsulfamoyl)piperidin-4-yl]cyclopropanecarboxamide"},
+      {"CNS(=O)(=O)NC1=CC=CC=C1", "N-methyl-N'-phenylsulfuric diamide"},
+      {"NS(=O)(=O)OC", "methyl sulfamate"},
+      {"NS(=O)(=O)OCC(=O)O", "2-(sulfamoyloxy)acetic acid"},
+      {"C1=CC(=CC=C1C(=O)O)S(=O)(=O)N(Cl)Cl", "4-(dichlorosulfamoyl)benzoic acid"},
+      {"CNNS(=O)(=O)C1=CC=CC=C1", "N'-methylbenzenesulfonohydrazide"},
+      {"CC(=O)NC(CSN=O)C(=O)O", "2-acetamido-3-(nitrososulfanyl)propanoic acid"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

@@ -429,8 +429,8 @@ const std::vector<SmartsQuery>& template_queries() {
 enum class Cls : int {
   Carboxylate = -60, CarbonicAnion = -55, Azanide = -44, Borate = -43, Nitrate = -42, SulfateAnion = -48, SulfamateAnion = -47, SulfuricInorg = -46, PhosAnion = -45, Sulfonate = -50, RingAnion = -41, Olate = -40, Ammonium = -30, Sulfonium = -25, Phosphonium = -24, Diazonium = -22, RingCation = -20,  // anions, then cations (P-41: ions first)
   Acid = 10, CarbonicAcid = 15, IsothioAcid = 16, SulfonicAcid = 20, SulfamicAcid = 21, SulfinicAcid = 22, Phosphonic = 30, PhosphinicAcid = 31, Anhydride = 35, Ester = 40, ThioEster = 42,
-  SulfEster = 44, Isothiourea = 45, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
-  PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, Urea = 130,
+  SulfEster = 44, Isothiourea = 45, SulfamateEster = 46, Carbonate = 50, Carbamate = 60, PhosAcidInorg = 69, PhosMono = 70, PolyP = 71, PhosEster = 72, SulfateMono = 73, AcylHalide = 74,
+  PhosThio = 75, SulfonylHalide = 76, Amide = 80, Semicarbazide = 85, Thioamide = 90, ThioSemicarbazide = 95, Hydrazide = 100, Amidine = 110, Sulfonamide = 120, SulfonoHydrazide = 122, SulfuricDiamide = 125, Urea = 130,
   Thiourea = 140, Guanidine = 150, Nitrile = 160, Aldehyde = 170, Ketone = 180, PhosOxide = 181, Thione = 190, Alcohol = 200,
   Thiol = 210, Peroxol = 215, Amine = 220, Imine = 230, Hydrazine = 240, Phosphane = 400, Sulfonyl = 500, Sulfinyl = 510, AcylSub = 520, RingP = 530, None = 999
 };
@@ -442,7 +442,8 @@ bool is_acyl(Cls c) {
          c == Cls::Aldehyde;
 }
 bool is_sulfur_suffix(Cls c) {
-  return c == Cls::SulfonicAcid || c == Cls::SulfinicAcid || c == Cls::Sulfonate || c == Cls::SulfEster || c == Cls::Sulfonamide;
+  return c == Cls::SulfonicAcid || c == Cls::SulfinicAcid || c == Cls::Sulfonate || c == Cls::SulfEster || c == Cls::Sulfonamide ||
+         c == Cls::SulfonoHydrazide;
 }
 
 struct NAtom {
@@ -838,7 +839,8 @@ bool Namer::perceive() {
         const NAtom& D = at_[d1];
         if (D.ring) continue;
         // C-N=O on a plain carbon, or N-N=O on an acyclic or ring nitrogen
-        const bool host_ok = plainC(s1) || (at_[s1].z == 7 && at_[s1].q == 0 && !nitro_[s1]);
+        const bool host_ok = plainC(s1) || (at_[s1].z == 7 && at_[s1].q == 0 && !nitro_[s1]) ||
+                             (at_[s1].z == 16 && deg(s1) == 2 && at_[s1].q == 0 && !at_[s1].ring && plainC(other(s1, a)));  // thionitrites
         if (D.z == 8 && deg(d1) == 1 && D.q == 0 && host_ok) {
           pseudo_[a] = Nitroso, pseudoIn_[d1] = 1;
         } else if (D.z == 7 && D.q == 1 && deg(d1) == 2 && plainC(s1)) {
@@ -1328,6 +1330,42 @@ bool Namer::perceive() {
           continue;
         }
       }
+      if (dO_.size() == 2 && single.size() == 2 && nC == 0) {
+        // a ring nitrogen as the attachment atom ("indole-1-sulfonic acid", "piperidine-1-sulfonamide",
+        // "1-(piperidine-1-sulfonyl)piperazine"); sulfuric diamides; sulfamate esters
+        auto plainN = [&](int x) {
+          if (at_[x].z != 7 || at_[x].ring || at_[x].arom || at_[x].q != 0 || nitro_[x] || pseudo_[x]) return false;
+          for (std::size_t k = 0; k < at_[x].nb.size(); ++k) {
+            const int y = at_[x].nb[k];
+            if (y == a) continue;
+            if (at_[x].bo[k] != 1 || at_[y].z != 6 || dO(y) >= 0 || dS(y) >= 0) return false;
+          }
+          return true;
+        };
+        auto ringN = [&](int x) { return at_[x].z == 7 && at_[x].ring && at_[x].q == 0 && deg(x) == 3; };
+        const int x = single[0], y = single[1];
+        Cls k = Cls::None;
+        int amN = -1, amN2 = -1;
+        for (int sw = 0; sw < 2 && k == Cls::None; ++sw) {
+          const int r = sw ? y : x, o = sw ? x : y;
+          if (!ringN(r)) continue;
+          if (is_OH(o)) k = Cls::SulfonicAcid;
+          else if (is_Ominus(o)) k = Cls::Sulfonate;
+          else if (plainN(o)) k = Cls::Sulfonamide, amN = o;
+          else if (ringN(o)) k = Cls::Sulfonyl;
+        }
+        if (k == Cls::None && plainN(x) && plainN(y)) k = Cls::SulfuricDiamide, amN = x, amN2 = y;
+        if (k == Cls::None && nOR == 1 && (plainN(x) || plainN(y))) k = Cls::SulfamateEster, amN = plainN(x) ? x : y;
+        if (k != Cls::None) {
+          acyl_[a] = k;
+          if (amN >= 0) amideN_[amN] = 1;
+          if (amN2 >= 0) amideN_[amN2] = 1;
+          for (int b : dO_) okO[b] = 1;
+          for (int b : single)
+            if (at_[b].z == 8) okO[b] = 1;
+          continue;
+        }
+      }
       if (dO_.size() == 1 && nC == 2 && single.size() == 2) acyl_[a] = Cls::Sulfinyl;
       else if (dO_.size() == 2 && single.size() == 2 && nC == 2) acyl_[a] = Cls::Sulfonyl;
       else if (dO_.size() == 2 && single.size() == 2 && nC == 1 && nOH == 1) acyl_[a] = Cls::SulfonicAcid;
@@ -1335,8 +1373,21 @@ bool Namer::perceive() {
       else if (dO_.size() == 2 && single.size() == 2 && nC == 1 && N >= 0) {
         if (at_[N].ring) acyl_[a] = Cls::Sulfonyl;
         else {
+          int hz = -1;  // sulfonohydrazides R-SO2-NH-NR2
           for (int y : at_[N].nb) {
             if (y == a) continue;
+            if ((at_[y].z == 17 || at_[y].z == 35) && deg(y) == 1) continue;  // N-chloro, N-bromo
+            if (at_[y].z == 7 && !at_[y].ring && !at_[y].arom && at_[y].q == 0 && hz < 0 && [&] {
+                  for (std::size_t k = 0; k < at_[y].nb.size(); ++k) {
+                    const int w = at_[y].nb[k];
+                    if (w == N) continue;
+                    if (at_[y].bo[k] != 1 || at_[w].z != 6 || dO(w) >= 0 || dS(w) >= 0) return false;
+                  }
+                  return true;
+                }()) {
+              hz = y;
+              continue;
+            }
             if (at_[y].z != 6) return fail("N-heteroatom sulfonamide at " + sym(N));
             if (dO(y) >= 0 && !plain_acyl(y)) {  // sulfonylureas and sulfonyl carbamates: C(=O) between N and N/O
               int het = 0;
@@ -1346,8 +1397,14 @@ bool Namer::perceive() {
               if (het != 2 || !ok2) return fail("N-acyl sulfonamide at " + sym(N));
             }
           }
-          acyl_[a] = Cls::Sulfonamide;
-          amideN_[N] = 1;
+          if (hz >= 0) {
+            acyl_[a] = Cls::SulfonoHydrazide;
+            hydrN_[N] = 1;
+            hydrN2_[hz] = 1;
+          } else {
+            acyl_[a] = Cls::Sulfonamide;
+            amideN_[N] = 1;
+          }
         }
       } else return fail("unsupported sulfur oxide at " + sym(a));
       for (int b : dO_) okO[b] = 1;
@@ -1699,9 +1756,11 @@ bool Namer::perceive() {
           const int b = A.nb[k];
           if (A.bo[k] != 1 && !A.ab[k] && !ringbond_[a][k]) return fail("N=X double bond at " + sym(a) + " (imines, azo compounds, oximes, ...)");
           const bool sulfonyl_N = at_[b].z == 16 && (acyl_[b] == Cls::Sulfonamide || acyl_[b] == Cls::Sulfonyl || acyl_[b] == Cls::SulfamicAcid ||
-                                                    acyl_[b] == Cls::SulfamateAnion);
+                                                    acyl_[b] == Cls::SulfamateAnion || acyl_[b] == Cls::SulfuricDiamide ||
+                                                    acyl_[b] == Cls::SulfamateEster);
           const bool n_amino = (at_[b].z == 7 || acyl_[b] == Cls::RingP) && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
-          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
+          const bool halo_N = amideN_[a] && (at_[b].z == 17 || at_[b].z == 35) && deg(b) == 1;
+          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso && !halo_N) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
         break;
@@ -1731,13 +1790,13 @@ bool Namer::perceive() {
         if (val != 2) return fail("sulfur " + sym(a) + " in a higher oxidation state (sulfoxides, sulfones, sulfonic acids)");
         if (deg(a) == 0) return fail("hydrogen sulfide");
         for (std::size_t k = 0; k < A.nb.size(); ++k)
-          if (A.bo[k] != 1 || (at_[A.nb[k]].z != 6 && !(at_[A.nb[k]].z == 16 && deg(A.nb[k]) == 2 && !at_[A.nb[k]].arom &&
+          if (A.bo[k] != 1 || (at_[A.nb[k]].z != 6 && pseudo_[A.nb[k]] != Nitroso && !(at_[A.nb[k]].z == 16 && deg(A.nb[k]) == 2 && !at_[A.nb[k]].arom &&
                                                          acyl_[A.nb[k]] == Cls::None && !lambdaS_[A.nb[k]] && !thioP_[A.nb[k]])))
             return fail("unsupported sulfur bond at " + sym(a));
         break;
       }
       case 9: case 17: case 35: case 53:
-        if (deg(a) != 1 || A.bo[0] != 1 || (at_[A.nb[0]].z != 6 && acyl_[A.nb[0]] != Cls::SulfonylHalide))
+        if (deg(a) != 1 || A.bo[0] != 1 || (at_[A.nb[0]].z != 6 && acyl_[A.nb[0]] != Cls::SulfonylHalide && !(at_[A.nb[0]].z == 7 && amideN_[A.nb[0]])))
           return fail("halogen " + sym(a) + " not bonded to carbon");
         break;
       default:
@@ -2201,6 +2260,11 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         if (!R) return std::nullopt;
         return Named{(R->compound ? enclose(R->text) : R->text) + "oxy", true, R->stereo};
       }
+      if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfamateEster) {  // (sulfamoyloxy)
+        auto R = sub(others[0], q, 1);
+        if (!R) return std::nullopt;
+        return Named{(R->compound ? enclose(R->text) : R->text) + "oxy", true, R->stereo};
+      }
       if (others.size() == 1 && at_[others[0]].z == 16 && acyl_[others[0]] == Cls::SulfEster) {  // (methanesulfonyl)oxy
         auto R = sulfonyl_name(others[0], q);
         if (!R) return std::nullopt;
@@ -2286,11 +2350,33 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
               return Named{std::string(at_[x].z == 9 ? "fluoro" : at_[x].z == 17 ? "chloro" : at_[x].z == 35 ? "bromo" : "iodo") + "sulfonyl", true, {}};
           return fail_n("unsupported sulfonyl halide at " + sym(q));
         case Cls::Sulfonate: return Named{"sulfonato", false, {}};
+        case Cls::SulfamateEster: {
+          int N = -1, O = -1;
+          for (int x : A.nb) {
+            if (at_[x].z == 7) N = x;
+            if (at_[x].z == 8 && deg(x) == 2) O = x;
+          }
+          if (from == O) {  // sulfamoyl, then "oxy" on the oxygen
+            std::vector<int> xs;
+            for (int x : at_[N].nb)
+              if (x != q) xs.push_back(x);
+            if (xs.empty()) return Named{"sulfamoyl", false, {}};
+            return ligands(xs, N, "sulfamoyl");
+          }
+          auto alk = sub(O, q, 1);  // (methoxysulfonyl), reached from the nitrogen
+          if (!alk) return std::nullopt;
+          return Named{(alk->compound ? enclose(alk->text) : alk->text) + "sulfonyl", true, alk->stereo};
+        }
+        case Cls::SulfuricDiamide:
         case Cls::Sulfonamide: {
           int N = -1;
           for (int x : A.nb)
-            if (at_[x].z == 7) N = x;
-          if (N == from) return sulfonyl_name(q, from);  // N-sulfonyl amides and ureas
+            if (at_[x].z == 7 && amideN_[x] && (N < 0 || x != from)) N = x;
+          if (N < 0) return fail_n("unsupported sulfonamide substituent at " + sym(q));
+          if (N == from && acyl_[q] == Cls::SulfuricDiamide) {
+            for (int x : A.nb)
+              if (at_[x].z == 7 && x != from) N = x;
+          } else if (N == from) return sulfonyl_name(q, from);  // N-sulfonyl amides and ureas
           std::vector<int> xs;
           for (int x : at_[N].nb)
             if (x != q) xs.push_back(x);
@@ -2313,6 +2399,7 @@ std::optional<Named> Namer::sub_impl(int q, int from, int bo) {
         if (!R) return std::nullopt;
         return Named{(R->compound ? enclose(R->text) : R->text) + "disulfanyl", true, R->stereo};
       }
+      if (others.size() == 1 && pseudo_[others[0]] == Nitroso) return Named{"nitrososulfanyl", true, {}};
       if (others.size() != 1 || at_[others[0]].z != 6) return fail_n("unsupported sulfur substituent at " + sym(q));
       auto R = sub(others[0], q, 1);
       if (!R) return std::nullopt;
@@ -2505,7 +2592,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
       if (at_[b].ring) return fail("acyl group on a ring atom outside the parent at " + sym(A));
       used[b] = 1;
       if ((acyl_[A] == Cls::Ester || acyl_[A] == Cls::SulfEster || acyl_[A] == Cls::ThioEster) && b == ester_O(A)) c.ester_o.push_back({b, at});
-      if (acyl_[A] == Cls::Hydrazide && at_[b].z == 7)
+      if ((acyl_[A] == Cls::Hydrazide || acyl_[A] == Cls::SulfonoHydrazide) && at_[b].z == 7)
         for (int x : at_[b].nb) {
           if (x == A) continue;
           if (hydrN2_[x]) {
@@ -2623,6 +2710,7 @@ bool Namer::analyze(const Spec& sp, Cand& c) {
   }
   if (nprefix && (sp.principal == Cls::Amine || sp.principal == Cls::Ammonium || sp.principal == Cls::Amide || sp.principal == Cls::Hydrazide ||
                   sp.principal == Cls::Amidine || sp.principal == Cls::Thioamide || sp.principal == Cls::Sulfonamide ||
+                  sp.principal == Cls::SulfonoHydrazide ||
                   sp.principal == Cls::Imine) &&
       c.suffix_at.size() > 1)
     return fail("N-substituents on several amine or amide groups (N,N' locants)");
@@ -4900,6 +4988,7 @@ std::optional<Built> Namer::assemble(const Spec& sp, const Cand& c, const std::v
         case Cls::Acid: word = c.inchain ? "oic acid" : "carboxylic acid"; break;
         case Cls::SulfonicAcid: word = "sulfonic acid"; break;
         case Cls::Sulfonamide: word = "sulfonamide"; break;
+        case Cls::SulfonoHydrazide: word = "sulfonohydrazide"; break;
         case Cls::Ester: word = c.inchain ? "oate" : "carboxylate"; break;
         case Cls::Amide: word = c.inchain ? "amide" : "carboxamide"; break;
         case Cls::Nitrile: word = c.inchain ? "nitrile" : "carbonitrile"; break;
@@ -5553,6 +5642,56 @@ std::optional<std::string> Namer::run() {
         result = R->text;
         cited = R->stereo;
       }
+    }
+  } else if (principal == Cls::SulfuricDiamide || principal == Cls::SulfamateEster) {
+    // "N,N-dimethylsulfuric diamide" (P-66.1.1.4.3), "methyl N,N-dimethylsulfamate" (P-67.1.3.2)
+    for (int S = 0; S < n(); ++S) {
+      if (acyl_[S] != principal) continue;
+      std::vector<int> ns;
+      int org = -1;
+      for (int x : at_[S].nb) {
+        if (at_[x].z == 7) ns.push_back(x);
+        if (at_[x].z == 8 && deg(x) == 2) org = x;
+      }
+      std::vector<std::vector<Named>> nsubs;
+      std::vector<Key> extra;
+      bool ok = true;
+      for (int N : ns) {
+        nsubs.emplace_back();
+        for (int x : at_[N].nb) {
+          if (x == S) continue;
+          auto R = sub(x, N, 1);
+          if (!R) { ok = false; break; }
+          extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+          nsubs.back().push_back(*R);
+        }
+      }
+      if (!ok) continue;
+      std::vector<std::pair<std::string, Named>> e;
+      if (principal == Cls::SulfuricDiamide) {
+        int first = 0;
+        auto least = [](const std::vector<Named>& v) {
+          std::string m = "~";
+          for (const auto& x : v) m = std::min(m, alpha_key(x.text));
+          return m;
+        };
+        if (nsubs[1].size() > nsubs[0].size() || (nsubs[1].size() == nsubs[0].size() && !nsubs[0].empty() && least(nsubs[1]) < least(nsubs[0])))
+          first = 1;
+        for (const auto& nm : nsubs[first]) e.push_back({"N", nm});
+        for (const auto& nm : nsubs[1 - first]) e.push_back({"N'", nm});
+        finish(Built{}, format_prefixes(e, false) + "sulfuric diamide", extra);
+      } else {
+        const int r = at_[org].nb[0] == S ? at_[org].nb[1] : at_[org].nb[0];
+        auto R = sub(r, org, 1);
+        if (!R) continue;
+        extra.insert(extra.end(), R->stereo.begin(), R->stereo.end());
+        for (const auto& nm : nsubs[0]) e.push_back({"N", nm});
+        finish(Built{}, organyl(*R) + " " + format_prefixes(e, false) + "sulfamate", extra);
+      }
+    }
+    if (!result) {
+      if (err_.empty()) err_ = "sulfuric acid amide could not be named";
+      return std::nullopt;
     }
   } else if (principal == Cls::Isothiourea || principal == Cls::IsothioAcid) {
     // isothioureas as carbamimidothioates (P-66.4.1.2): "2-aminoethyl carbamimidothioate",
