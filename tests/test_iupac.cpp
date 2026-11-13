@@ -279,6 +279,14 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"[B-](CCCCC(C(=O)O)N)(O)(O)O", "(5-amino-5-carboxypentyl)trihydroxyborate"},
       {"CC1=CC(=NC(=N1)C)[N-]S(=O)(=O)C2=CC=C(C=C2)N", "(4-aminobenzene-1-sulfonyl)(2,6-dimethylpyrimidin-4-yl)azanide"},
       {"[N+](=O)([O-])[O-].[Na+]", "sodium nitrate"},
+      // ring anions with -ide at the deprotonated ring atom (P-72.2.2.2)
+      {"[N-]1C=CC2=CC=CC=C12", "1H-indol-1-ide"},
+      {"[Li+].C1=CC=CC=2C3=CC=CC=C3[N-]C12", "lithium 9H-carbazol-9-ide"},
+      {"N=1[N-]N=NC1C", "5-methyl-2H-tetrazol-2-ide"},
+      {"[N-]1CCCCC1.[Li+]", "lithium piperidin-1-ide"},
+      {"O=S1([N-]C(C2=C1C=CC=C2)=O)=O.[Na+]", "sodium 1,1,3-trioxo-2,3-dihydro-1λ6,2-benzothiazol-2-ide"},
+      {"O=C1NC(=O)C(c2ccccc2)(c2ccccc2)[N-]1.[Na+]", "sodium 2,4-dioxo-5,5-diphenylimidazolidin-1-ide"},
+      {"[CH-]1c2ccccc2-c2ccccc12", "9H-fluoren-9-ide"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }
