@@ -43,6 +43,7 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
     <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
     <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></symbol>
+    <symbol id="i-flowsheet" viewBox="0 0 24 24"><rect x="2.5" y="9" width="6" height="6" rx="1.5"/><rect x="15.5" y="4" width="6" height="6" rx="1.5"/><rect x="15.5" y="14" width="6" height="6" rx="1.5"/><path d="M8.5 12h3.5V7h3.5M12 12v5h3.5"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3Z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
     <symbol id="i-install" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M12 8v7m-3-3 3 3 3-3"/></symbol>
@@ -72,6 +73,8 @@
         <a href="#quantum" data-tool="quantum" data-key="9"><svg><use href="#i-quantum"/></svg><span>Quantum Chemistry</span><kbd>⌘9</kbd></a>
         <div class="list-heading">Kinetics</div>
         <a href="#kinetics" data-tool="kinetics" data-key="6"><svg><use href="#i-kinetics"/></svg><span>Batch Reactor</span><kbd>⌘6</kbd></a>
+        <div class="list-heading">Process</div>
+        <a href="#flowsheet" data-tool="flowsheet" data-key="0"><svg><use href="#i-flowsheet"/></svg><span>Flowsheet</span><kbd>⌘0</kbd></a>
       </nav>
       <div class="recents">
         <div class="list-heading">Recent compounds</div>
@@ -429,6 +432,73 @@ AR=7</textarea>
         </div>
       </section>
 
+      <!-- Flowsheet -->
+      <section class="view" id="flowsheet" hidden>
+        <header class="view-head">
+          <h1>Flowsheet</h1>
+          <p>Steady-state process simulation: unit operations joined by named streams, with recycle loops converged by Wegstein acceleration. Start from an example or write your own.</p>
+        </header>
+        <div class="split fs-split">
+          <form class="panel glass-card" id="fs-form">
+            <div class="field">
+              <label for="fs-example">Example</label>
+              <select id="fs-example"></select>
+            </div>
+            <div class="field">
+              <label for="fs-text">Flowsheet</label>
+              <textarea id="fs-text" class="mono fs-text" rows="14" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            </div>
+            <details class="fs-help">
+              <summary>Syntax</summary>
+              <pre class="mono">components &lt;SMILES&gt; …
+model ideal | unifac
+feed &lt;stream&gt; T=300 P=1bar flows &lt;SMILES&gt;=&lt;mol/s&gt; …
+guess &lt;stream&gt; T= P= flows …     (start value of a recycle)
+method wegstein | direct
+
+mixer      M  a b -&gt; c [P=]
+splitter   S  a -&gt; b c fractions=0.6,0.4
+heater     H  a -&gt; b T=350 | Q=20kW [P=]
+valve      V  a -&gt; b P=2bar
+flash      D  a -&gt; vap liq T= P= | P= (adiabatic)
+separator  X  a -&gt; top bot [T=] [P=] split &lt;SMILES&gt;=0.99 …
+pump       P  a -&gt; b P= [eff=0.75]
+compressor C  a -&gt; b P= [eff=0.72]
+exchanger  E  hot cold -&gt; hot' cold' Thot= | Tcold= | Q=
+reactor    R  a -&gt; b key=&lt;SMILES&gt; X=0.5 [T=] nu &lt;SMILES&gt;=-1 …
+
+Units: T in K or C (80C), P in Pa, kPa, bar, atm,
+Q in W, kW, MW; flows in mol/s.</pre>
+            </details>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Solve</button></div>
+          </form>
+          <div class="stack" id="fs-out"></div>
+        </div>
+        <div class="stack" id="fs-results" hidden>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Process flow diagram</h2><span class="meta">dashed: tear stream (recycle)</span></div>
+            <div class="fs-diagram" id="fs-diagram"></div>
+          </div>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Streams</h2>
+              <div class="segmented small" role="radiogroup" aria-label="Flow basis" id="fs-basis">
+                <button type="button" role="radio" aria-checked="true" data-basis="mol">mol/s</button>
+                <button type="button" role="radio" aria-checked="false" data-basis="frac">mole fraction</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="fs-streams"></div>
+          </div>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Units</h2><span class="meta">duty and work added from outside</span></div>
+            <div class="table-wrap" id="fs-units"></div>
+          </div>
+          <div class="glass-card chart-card" id="fs-conv-card">
+            <div class="card-head"><h2>Recycle convergence</h2><span class="meta">largest relative change of a tear stream</span></div>
+            <canvas class="chart" id="fs-chart" data-height="220"></canvas>
+          </div>
+        </div>
+      </section>
+
       <!-- Roadmap -->
       <section class="view" id="roadmap" hidden>
         <header class="view-head">
@@ -458,6 +528,7 @@ AR=7</textarea>
       <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>
       <a href="#quantum" data-tool="quantum"><svg><use href="#i-quantum"/></svg><span>Quantum</span></a>
       <a href="#kinetics" data-tool="kinetics"><svg><use href="#i-kinetics"/></svg><span>Kinetics</span></a>
+      <a href="#flowsheet" data-tool="flowsheet"><svg><use href="#i-flowsheet"/></svg><span>Flowsheet</span></a>
       <a href="#roadmap" data-tool="roadmap"><svg><use href="#i-roadmap"/></svg><span>Roadmap</span></a>
     </nav>
   </div>

@@ -9,6 +9,7 @@
 //   chemlarp psat <SMILES> -T K [--srk]                              (vapour pressure)
 //   chemlarp props <SMILES> [-T K] [-P bar]                         (pure-component properties)
 //   chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> ...   (UNIFAC + Antoine VLE)
+//   chemlarp flowsheet <file|-> [--json]                            (steady-state flowsheet with recycles)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -26,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -41,6 +43,7 @@
 #include "chemlarp/uff.hpp"
 #include "chemlarp/elements.hpp"
 #include "chemlarp/eos.hpp"
+#include "chemlarp/flowsheet.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
@@ -70,6 +73,7 @@ int usage() {
       "  chemlarp props <SMILES> [-T K] [-P bar]   pure-component constants; correlations at T\n"
       "  chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "                                     UNIFAC activity coefficients, Antoine vapour pressures\n"
+      "  chemlarp flowsheet <file|-> [--json]  steady-state flowsheet (format: include/chemlarp/flowsheet.hpp)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -468,6 +472,72 @@ int cmd_vle(const std::vector<std::string>& args) {
     std::printf("  %-18s %-22s %10.5f %10.5f %10.4f\n", smiles[i].c_str(), sys->antoine[i].name.c_str(), r->x[i], r->y[i],
                 r->gamma[i]);
   return 0;
+}
+
+int cmd_flowsheet(const std::vector<std::string>& args) {
+  std::string path;
+  bool json = false;
+  for (const auto& a : args) {
+    if (a == "--json") json = true;
+    else if (path.empty()) path = a;
+    else return usage();
+  }
+  if (path.empty()) return usage();
+  std::string text;
+  if (path == "-") {
+    text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+  } else {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      std::fprintf(stderr, "error: cannot read %s\n", path.c_str());
+      return 1;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  if (json) {
+    const std::string out = flowsheet_json(text);
+    std::printf("%s\n", out.c_str());
+    return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+  }
+  Diagnostics d;
+  auto spec = parse_flowsheet(text, d);
+  std::optional<FlowsheetResult> r;
+  if (spec) r = solve_flowsheet(*spec, d);
+  print_diagnostics(d, {});
+  if (!r) return 1;
+  const auto& c = r->components;
+  std::printf("%s after %d iteration%s", r->converged ? "converged" : "NOT converged", r->iterations,
+              r->iterations == 1 ? "" : "s");
+  if (!r->tears.empty()) {
+    std::printf(" (%s; tear streams:", spec->method == TearMethod::Direct ? "direct substitution" : "Wegstein");
+    for (const auto& t : r->tears) std::printf(" %s", t.c_str());
+    std::printf(")");
+  }
+  std::printf("\ncalculation order:");
+  for (const auto& o : r->order) std::printf(" %s", o.c_str());
+  std::printf("\n\n  %-10s %-8s %-9s %9s %9s %7s %12s %12s\n", "stream", "from", "to", "T (K)", "P (bar)", "vapour",
+              "flow (mol/s)", "H (kW)");
+  for (const auto& ns : r->streams)
+    std::printf("  %-10s %-8s %-9s %9.2f %9.4g %7.4f %12.6g %12.6g\n", ns.name.c_str(), ns.source.c_str(),
+                ns.destination.empty() ? "(product)" : ns.destination.c_str(), ns.stream.T_K, ns.stream.P_Pa / 1e5,
+                ns.stream.vapor_fraction, ns.stream.total(), ns.stream.H_W / 1e3);
+  std::printf("\n  component flows (mol/s)\n  %-10s", "stream");
+  for (std::size_t i = 0; i < c.size(); ++i) std::printf(" %12.12s", c.smiles[i].c_str());
+  std::printf("\n");
+  for (const auto& ns : r->streams) {
+    std::printf("  %-10s", ns.name.c_str());
+    for (double v : ns.stream.n) std::printf(" %12.6g", v);
+    std::printf("\n");
+  }
+  std::printf("\n  %-10s %-11s %12s %12s  other\n", "unit", "type", "duty (kW)", "work (kW)");
+  for (const auto& u : r->units) {
+    std::printf("  %-10s %-11s %12.6g %12.6g ", u.name.c_str(), to_string(u.kind), u.duty_W / 1e3, u.work_W / 1e3);
+    for (const auto& [k, v] : u.values) std::printf(" %s=%.6g", k.c_str(), v);
+    std::printf("\n");
+  }
+  std::printf("\nmass in %.9g kg/s, out %.9g kg/s; energy in - out %.3g W\n", r->mass_in_kgs, r->mass_out_kgs,
+              r->energy_imbalance_W);
+  return r->converged ? 0 : 1;
 }
 
 int cmd_inchi(const std::vector<std::string>& args) {
@@ -909,6 +979,7 @@ int main(int argc, char** argv) {
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
   if (cmd == "vle" && !args.empty()) return cmd_vle(args);
   if (cmd == "props" && !args.empty()) return cmd_props(args);
+  if (cmd == "flowsheet" && !args.empty()) return cmd_flowsheet(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

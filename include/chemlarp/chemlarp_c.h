@@ -120,6 +120,14 @@ CHEMLARP_API char* cl_pure_component_json(const char* smiles, double temperature
 
 CHEMLARP_API char* cl_vle_text_json(const char* component_lines, const char* mode, double value);
 
+/* Steady-state flowsheet: units connected by named streams, recycles converged by tear-stream iteration
+ * (Wegstein or direct substitution). `flowsheet_text` uses the format documented in chemlarp/flowsheet.hpp
+ * (components, model, feed, guess, tear, method, tolerance, max-iterations, and one line per unit:
+ * mixer, splitter, heater, valve, flash, separator, pump, compressor, exchanger, reactor). Returns
+ * {"ok","converged","iterations","method","tears","order","residuals","components","streams","units",
+ * "balance","diagnostics"}; see flowsheet.hpp for the fields. */
+CHEMLARP_API char* cl_flowsheet_json(const char* flowsheet_text);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

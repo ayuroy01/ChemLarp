@@ -767,14 +767,17 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'quantum', 'kinetics', 'roadmap'];
-  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form' };
+  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
+  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
   function show() {
     const name = current();
     for (const v of views) $(v).hidden = v !== name;
     document.querySelectorAll('[data-tool]').forEach((a) => (a.dataset.tool === name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+    // The phone tab bar scrolls sideways: keep the current tool in view.
+    const tab = document.querySelector('.tabbar a[aria-current]');
+    if (tab && tab.offsetParent) tab.parentElement.scrollTo({ left: tab.offsetLeft - (tab.parentElement.clientWidth - tab.offsetWidth) / 2 });
     $('content').scrollTop = 0;
     app.classList.remove('show-inspector');
     if (name === 'model3d') build3d();
@@ -1066,6 +1069,249 @@
   });
   window.addEventListener('resize', () => { if (lastKin && current() === 'kinetics') drawKinetics(); });
   window.addEventListener('resize', () => { if (lastVle && current() === 'phases') drawVle(); });
+
+  // ---- Flowsheet ------------------------------------------------------------------------------
+  const FS_EXAMPLES = [
+    { name: 'Flash with liquid recycle · benzene/toluene', text: `# Part of the flash liquid is recycled to the feed.
+components c1ccccc1 Cc1ccccc1
+feed F T=300 P=1atm flows c1ccccc1=50 Cc1ccccc1=50
+mixer M F R -> S1
+heater H S1 -> S2 T=368
+flash D S2 -> V L T=368 P=1atm
+splitter SP L -> R B fractions=0.6,0.4
+` },
+    { name: 'Propane dehydrogenation · Felder & Rousseau 4.7-2', text: `# 95 % overall conversion; the separator keeps 0.555 % of the
+# propane and 5 % of the propylene for recycle.
+components CCC C=CC [HH]
+feed F T=300 P=1bar flows CCC=100
+mixer M F R -> Q1
+reactor RX Q1 -> Q2 key=CCC X=0.095391 T=800 nu CCC=-1 C=CC=1 [HH]=1
+separator S Q2 -> P R T=300 split CCC=0.00555 C=CC=0.95 [HH]=1
+` },
+    { name: 'Methanol loop with purge · CO₂ + 3 H₂', text: `# Reactor feed 28 % CO2, 70 % H2, 2 % argon; 60 % single-pass H2
+# conversion; the condenser takes out methanol and water.
+components O=C=O [HH] [Ar] CO O
+feed F T=300 P=50bar flows O=C=O=15.7193 [HH]=45.4386 [Ar]=0.245614
+mixer M F R -> Q1
+reactor RX Q1 -> Q2 key=[HH] X=0.6 T=500 nu O=C=O=-1 [HH]=-3 CO=1 O=1
+separator C Q2 -> G L T=300 split O=C=O=1 [HH]=1 [Ar]=1
+splitter SP G -> R PURGE fractions=0.877193,0.122807
+` },
+    { name: 'Hydrodealkylation · feed–effluent exchanger', text: `# Toluene + H2 -> benzene + CH4. The reactor effluent preheats the feed.
+components Cc1ccccc1 [HH] c1ccccc1 C
+feed F T=300 P=25bar flows Cc1ccccc1=10 [HH]=50
+exchanger E Q2 F -> PROD Q0 Thot=500
+heater H Q0 -> Q1 T=890
+reactor RX Q1 -> Q2 key=Cc1ccccc1 X=0.75 nu Cc1ccccc1=-1 [HH]=-1 c1ccccc1=1 C=1
+` },
+    { name: 'Water pump, boiler and throttle', text: `# No recycle: one pass through the units.
+components O
+feed W T=25C P=1bar flows O=1
+pump P1 W -> W2 P=10bar eff=0.75
+heater B W2 -> S T=500
+valve V S -> S2 P=2bar
+cooler C S2 -> L T=330
+` },
+  ];
+  $('fs-example').replaceChildren(...FS_EXAMPLES.map((x, i) => h('option', { value: String(i), text: x.name })));
+  const fsSaved = store.get('flowsheet', null);
+  $('fs-text').value = fsSaved ?? FS_EXAMPLES[0].text;
+  if (fsSaved != null) $('fs-example').append(h('option', { value: 'saved', text: 'Your last flowsheet' })), ($('fs-example').value = 'saved');
+  $('fs-example').addEventListener('change', () => {
+    const x = FS_EXAMPLES[+$('fs-example').value];
+    if (x) { $('fs-text').value = x.text; $('fs-form').requestSubmit(); }
+  });
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs, ...kids) {
+    const n = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) if (v != null) n.setAttribute(k, v);
+    for (const c of kids.flat()) if (c != null) n.append(c);
+    return n;
+  }
+  const kW = (w) => fmt(w / 1e3, 4);
+  const streamTip = (s) => `${s.name}: ${fixed(s.T_K, 2)} K, ${fmt(s.P_Pa / 1e5, 4)} bar, ${fmt(s.flows.reduce((a, b) => a + b, 0), 4)} mol/s, vapour fraction ${fixed(s.vapor_fraction, 3)}`;
+
+  // Layered drawing: units in columns by longest path along non-tear streams, feeds just before the unit they
+  // enter, products just after the unit they leave; rows ordered by a barycentre sweep. Tear streams run back
+  // underneath, dashed.
+  function flowsheetDiagram(r) {
+    const tears = new Set(r.tears);
+    const edges = r.streams.map((s) => ({ s, from: s.from === 'feed' ? 'in:' + s.name : s.from, to: s.to || 'out:' + s.name, tear: tears.has(s.name) }));
+    const layer = new Map();
+    for (const u of r.order) {
+      let L = 1;
+      for (const e of edges) if (e.to === u && !e.tear && !e.from.startsWith('in:')) L = Math.max(L, layer.get(e.from) + 1);
+      layer.set(u, L);
+    }
+    for (const e of edges) {
+      if (e.from.startsWith('in:')) layer.set(e.from, (layer.get(e.to) ?? 1) - 1);
+      if (e.to.startsWith('out:')) layer.set(e.to, layer.get(e.from) + 1);
+    }
+    const nodes = [...layer.keys()];
+    const maxL = Math.max(...layer.values());
+    const cols = Array.from({ length: maxL + 1 }, () => []);
+    const rank = (n) => (n.startsWith('in:') || n.startsWith('out:') ? r.order.length : r.order.indexOf(n));
+    nodes.sort((a, b) => rank(a) - rank(b)).forEach((n) => cols[layer.get(n)].push(n));
+    const pos = new Map();
+    const place = () => cols.forEach((c) => c.forEach((n, i) => pos.set(n, i - (c.length - 1) / 2)));
+    place();
+    for (let sweep = 0; sweep < 3; sweep++) {
+      for (const c of cols) {
+        const bary = new Map(c.map((n) => {
+          const nb = edges.filter((e) => !e.tear && (e.to === n || e.from === n)).map((e) => pos.get(e.to === n ? e.from : e.to));
+          return [n, nb.length ? nb.reduce((a, b) => a + b, 0) / nb.length : pos.get(n)];
+        }));
+        c.sort((a, b) => bary.get(a) - bary.get(b));
+      }
+      place();
+    }
+    const colW = 168, rowH = 92, UW = 112, UH = 50, TW = 64, TH = 26, padX = 18;
+    const rows = Math.max(...cols.map((c) => c.length));
+    const top = 24 + (rows - 1) / 2 * rowH;
+    const box = (n) => {
+      const term = n.includes(':');
+      const w = term ? TW : UW, hh = term ? TH : UH;
+      const cx = padX + layer.get(n) * colW + UW / 2, cy = top + pos.get(n) * rowH;
+      return { x: cx - w / 2, y: cy - hh / 2, w, h: hh, cx, cy };
+    };
+    // Ports: inlets on the left, outlets on the right, in stream order.
+    const ins = new Map(), outs = new Map();
+    for (const e of edges) {
+      (ins.get(e.to) || ins.set(e.to, []).get(e.to)).push(e);
+      (outs.get(e.from) || outs.set(e.from, []).get(e.from)).push(e);
+    }
+    const port = (n, list, e, right) => {
+      const b = box(n), k = list.indexOf(e), m = list.length;
+      return [right ? b.x + b.w : b.x, b.y + b.h * (k + 1) / (m + 1)];
+    };
+    const width = padX * 2 + maxL * colW + UW;
+    let bottom = top + (rows - 1) / 2 * rowH + UH / 2 + 22;
+    const parts = [];
+    const labels = [];
+    let back = 0;
+    for (const e of edges) {
+      const [x1, y1] = port(e.from, outs.get(e.from), e, true);
+      const [x2, y2] = port(e.to, ins.get(e.to), e, false);
+      let d, lx, ly;
+      if (layer.get(e.to) > layer.get(e.from)) {
+        const dx = Math.max(28, (x2 - x1) / 2);
+        d = `M${x1} ${y1} C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`;
+        lx = (x1 + x2) / 2; ly = (y1 + y2) / 2;
+      } else {
+        const yb = bottom + back++ * 22;
+        d = `M${x1} ${y1} H${x1 + 16} V${yb} H${x2 - 16} V${y2} H${x2}`;
+        lx = (x1 + x2) / 2; ly = yb;
+      }
+      parts.push(svg('path', { d, class: 'fs-edge' + (e.tear ? ' tear' : ''), 'marker-end': `url(#fs-arrow${e.tear ? '-tear' : ''})` },
+        svg('title', {}, streamTip(e.s))));
+      if (!e.from.startsWith('in:') && !e.to.startsWith('out:')) labels.push([lx, ly, e.s.name, e.tear]);
+    }
+    const height = bottom + Math.max(0, back - 1) * 22 + (back ? 22 : 0);
+    for (const [x, y, t, tear] of labels) {
+      const w = 8 + t.length * 7.2;
+      parts.push(svg('g', { class: 'fs-label' + (tear ? ' tear' : '') }, svg('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }),
+        svg('text', { x, y: y + 4, 'text-anchor': 'middle' }, t)));
+    }
+    const unitOf = new Map(r.units.map((u) => [u.name, u]));
+    for (const n of nodes) {
+      const b = box(n);
+      if (n.includes(':')) {
+        const s = edges.find((e) => e.from === n || e.to === n).s;
+        parts.push(svg('g', { class: 'fs-term' }, svg('title', {}, streamTip(s)),
+          svg('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: b.h / 2 }),
+          svg('text', { x: b.cx, y: b.cy + 4, 'text-anchor': 'middle' }, s.name)));
+      } else {
+        const u = unitOf.get(n);
+        const tip = `${u.name} (${u.type})` + (u.duty_W ? `, duty ${kW(u.duty_W)} kW` : '') + (u.work_W ? `, work ${kW(u.work_W)} kW` : '');
+        parts.push(svg('g', { class: 'fs-unit' }, svg('title', {}, tip),
+          svg('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: 12 }),
+          svg('text', { x: b.cx, y: b.cy - 2, 'text-anchor': 'middle', class: 'name' }, u.name),
+          svg('text', { x: b.cx, y: b.cy + 14, 'text-anchor': 'middle', class: 'type' }, u.type)));
+      }
+    }
+    const arrow = (id) => svg('marker', { id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' },
+      svg('path', { d: 'M0 1 L9 5 L0 9 Z' }));
+    // Scales down to 70 % to fit narrow windows, then scrolls.
+    return svg('svg', { class: 'fs-svg', viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': 'Process flow diagram',
+      style: `width: 100%; max-width: ${width}px; min-width: ${Math.round(width * 0.7)}px; height: auto` },
+      svg('defs', {}, arrow('fs-arrow'), arrow('fs-arrow-tear')), ...parts);
+  }
+
+  const UNIT_VALUES = {
+    outlet_T_K: ['outlet', (v) => fixed(v, 2) + ' K'], T_K: ['T', (v) => fixed(v, 2) + ' K'],
+    vapor_fraction: ['vapour fraction', (v) => fixed(v, 4)], exchanger_duty_W: ['duty', (v) => kW(v) + ' kW'],
+    min_approach_K: ['min. approach', (v) => fmt(v, 4) + ' K'], UA_WK: ['UA', (v) => fmt(v / 1e3, 4) + ' kW/K'],
+    isentropic_work_W: ['isentropic', (v) => kW(v) + ' kW'], extent_mols: ['extent', (v) => fmt(v, 5) + ' mol/s'],
+    heat_of_reaction_Jmol: ['ΔrH°', (v) => fmt(v / 1e3, 4) + ' kJ/mol'],
+  };
+  let lastFs = null;
+  function fsStreamTable() {
+    const r = lastFs;
+    const frac = checked($('fs-basis')).dataset.basis === 'frac';
+    const head = h('tr', {}, h('th', { text: 'Stream' }), h('th', { text: 'From → to' }), h('th', { class: 'num', text: 'T (K)' }),
+      h('th', { class: 'num', text: 'P (bar)' }), h('th', { class: 'num', text: 'Vapour' }), h('th', { class: 'num', text: 'mol/s' }),
+      h('th', { class: 'num', text: 'kg/s' }), h('th', { class: 'num', text: 'H (kW)' }),
+      ...r.components.map((c) => h('th', { class: 'num', title: c.smiles, text: c.name })));
+    const rows = r.streams.map((s) => {
+      const F = s.flows.reduce((a, b) => a + b, 0);
+      return h('tr', { class: r.tears.includes(s.name) ? 'fs-tear-row' : null }, h('td', { class: 'mono', text: s.name }),
+        h('td', { text: `${s.from === 'feed' ? 'feed' : s.from} → ${s.to || 'product'}` }),
+        h('td', { class: 'num', text: fixed(s.T_K, 2) }), h('td', { class: 'num', text: fmt(s.P_Pa / 1e5, 4) }),
+        h('td', { class: 'num', text: F > 0 ? fixed(s.vapor_fraction, 3) : '—' }), h('td', { class: 'num', text: fmt(F, 5) }),
+        h('td', { class: 'num', text: fmt(s.mass_kgs, 4) }), h('td', { class: 'num', text: fmt(s.H_W / 1e3, 5) }),
+        ...s.flows.map((n) => h('td', { class: 'num', text: frac ? (F > 0 ? fixed(n / F, 4) : '—') : fmt(n, 5) })));
+    });
+    $('fs-streams').replaceChildren(h('table', { class: 'fs-table' }, h('thead', {}, head), h('tbody', {}, rows)));
+  }
+  segmented($('fs-basis'), () => lastFs && fsStreamTable());
+  function drawFsChart() {
+    if (!lastFs || !lastFs.residuals.length) return;
+    Charts.lineChart($('fs-chart'), [{ name: 'tear change', points: lastFs.residuals.map((v, i) => [i + 1, Math.max(v, 1e-16)]) }],
+      { xLabel: 'iteration', yLabel: 'relative change', logY: true });
+  }
+  $('fs-text').addEventListener('input', () => store.set('flowsheet', $('fs-text').value));
+  $('fs-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('fs-out');
+    busy(out, 'Solving the flowsheet…');
+    try {
+      const { result: r, ms } = await engine('flowsheet', { text: $('fs-text').value });
+      const errors = r.diagnostics.filter((d) => d.severity !== 'warning');
+      const warnings = r.diagnostics.filter((d) => d.severity === 'warning');
+      const warnBox = warnings.length ? h('details', { class: 'fs-warnings' }, h('summary', { text: `${warnings.length} note${warnings.length > 1 ? 's' : ''} on the property models` }), ...diagnostics(warnings)) : null;
+      if (!r.streams) {
+        $('fs-results').hidden = true;
+        lastFs = null;
+        out.replaceChildren(...[status('bad', 'The flowsheet could not be solved'), ...diagnostics(errors), warnBox].filter(Boolean));
+        return;
+      }
+      const recycle = r.tears.length ? `${r.method === 'direct' ? 'direct substitution' : 'Wegstein'} · tear ${r.tears.join(', ')}` : 'no recycle';
+      const massErr = r.balance.mass_in_kgs > 0 ? Math.abs(r.balance.mass_out_kgs - r.balance.mass_in_kgs) / r.balance.mass_in_kgs : 0;
+      out.replaceChildren(
+        r.converged ? status('ok', `Converged in ${r.iterations} iteration${r.iterations > 1 ? 's' : ''}`, recycle)
+          : status('bad', `Not converged after ${r.iterations} iterations`, recycle),
+        h('div', { class: 'metrics' },
+          metric('Mass in', fmt(r.balance.mass_in_kgs, 5), 'kg/s'),
+          metric('Mass balance', massErr < 1e-12 ? '0' : fmt(massErr, 2), 'relative'),
+          metric('Energy balance', fmt(r.balance.energy_imbalance_W, 2), 'W'),
+          metric('Compute time', String(Math.round(ms)), 'ms')),
+        ...diagnostics(errors), ...(warnBox ? [warnBox] : []));
+      lastFs = r;
+      $('fs-results').hidden = false;
+      $('fs-diagram').replaceChildren(flowsheetDiagram(r));
+      fsStreamTable();
+      $('fs-units').replaceChildren(h('table', {},
+        h('thead', {}, h('tr', {}, h('th', { text: 'Unit' }), h('th', { text: 'Type' }), h('th', { class: 'num', text: 'Duty (kW)' }),
+          h('th', { class: 'num', text: 'Work (kW)' }), h('th', { text: 'Results' }))),
+        h('tbody', {}, r.units.map((u) => h('tr', {}, h('td', { class: 'mono', text: u.name }), h('td', { text: u.type }),
+          h('td', { class: 'num', text: u.duty_W ? kW(u.duty_W) : '—' }), h('td', { class: 'num', text: u.work_W ? kW(u.work_W) : '—' }),
+          h('td', { class: 'fs-values', text: Object.entries(u.values).map(([k, v]) => (UNIT_VALUES[k] ? `${UNIT_VALUES[k][0]} ${UNIT_VALUES[k][1](v)}` : `${k} ${fmt(v, 4)}`)).join(' · ') || '—' }))))));
+      $('fs-conv-card').hidden = !r.residuals.length;
+      drawFsChart();
+    } catch (err) { fail(out, err); }
+  });
+  window.addEventListener('resize', () => { if (lastFs && current() === 'flowsheet') drawFsChart(); });
 
   // ---- Roadmap ---------------------------------------------------------------------------------
   // The roadmap changes with every deploy: fetch it fresh (no HTTP cache) whenever it is shown, and when

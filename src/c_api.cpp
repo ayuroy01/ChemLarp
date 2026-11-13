@@ -21,6 +21,7 @@
 #include "chemlarp/diagnostics.hpp"
 #include "chemlarp/activity.hpp"
 #include "chemlarp/eos.hpp"
+#include "chemlarp/flowsheet.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
@@ -786,6 +787,11 @@ char* cl_pure_component_json(const char* smiles, double temperature_K, double pr
     }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
+}
+
+char* cl_flowsheet_json(const char* flowsheet_text) {
+  if (!flowsheet_text) return nullptr;
+  return guarded([&] { return flowsheet_json(flowsheet_text); });
 }
 
 void cl_free_string(char* s) { std::free(s); }

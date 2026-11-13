@@ -90,6 +90,9 @@ enum class DiagCode : std::uint16_t {
   PropertyExtrapolated,    // warning: a correlation was used outside its stated range
   TemperatureCross,        // heat exchanger: the hot stream would be colder than the cold stream
   UnbalancedReaction,      // reactor stoichiometry does not conserve elements or charge
+  FlowsheetSyntax,         // a flowsheet line that cannot be read
+  FlowsheetTopology,       // streams not connected correctly (missing source, two sources, unused unit)
+  RecycleNotConverged,     // the tear streams did not converge within the iteration limit
 
   // 8xx — identifiers (InChI)
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does

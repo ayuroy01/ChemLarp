@@ -70,6 +70,9 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::PropertyExtrapolated: return "PropertyExtrapolated";
     case DiagCode::TemperatureCross: return "TemperatureCross";
     case DiagCode::UnbalancedReaction: return "UnbalancedReaction";
+    case DiagCode::FlowsheetSyntax: return "FlowsheetSyntax";
+    case DiagCode::FlowsheetTopology: return "FlowsheetTopology";
+    case DiagCode::RecycleNotConverged: return "RecycleNotConverged";
     case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
     case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
     case DiagCode::InchiUnsupported: return "InchiUnsupported";

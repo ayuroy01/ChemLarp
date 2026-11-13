@@ -80,6 +80,16 @@ struct FlashDrumResult {
 std::optional<FlashDrumResult> flash_drum(const ProcessComponents& c, const Stream& in, double T, double P, Diagnostics& diag);
 std::optional<FlashDrumResult> flash_drum_adiabatic(const ProcessComponents& c, const Stream& in, double P, Diagnostics& diag);
 
+// Component separator (a "Sep" block): fraction_to_first[i] of component i leaves in the first outlet, the rest
+// in the second. Each outlet is flashed at T and P (the inlet T and P when <= 0); the duty is reported.
+struct SeparatorResult {
+  Stream first, second;
+  double duty_W = 0.0;
+};
+std::optional<SeparatorResult> component_separator(const ProcessComponents& c, const Stream& in,
+                                                   const std::vector<double>& fraction_to_first, double T, double P,
+                                                   Diagnostics& diag);
+
 // Counter-current two-stream heat exchanger; heat flows from the hot to the cold stream. Specify the hot
 // outlet temperature, the cold outlet temperature, or the duty. The temperature profile is followed along
 // the exchanger (phase changes included); a temperature cross is an error (TemperatureCross). UA is the
@@ -111,13 +121,13 @@ std::optional<WorkResult> compressor(const ProcessComponents& c, const Stream& i
 // reactants; checked for element balance). The key component (nu < 0) is converted by the given fraction.
 // Outlet at T_out (duty reported), or adiabatic when T_out <= 0. Every reacting component needs a
 // tabulated ΔfH°. heat_of_reaction is Σ nu ΔfH° (ideal gas, 298.15 K) per unit extent.
-struct ReactorResult {
+struct ConversionReactorResult {
   Stream out;
   double duty_W = 0.0;
   double extent_mols = 0.0;
   double heat_of_reaction_Jmol = 0.0;
 };
-std::optional<ReactorResult> conversion_reactor(const ProcessComponents& c, const Stream& in, const std::vector<double>& nu,
+std::optional<ConversionReactorResult> conversion_reactor(const ProcessComponents& c, const Stream& in, const std::vector<double>& nu,
                                                 std::size_t key, double conversion, double T_out, double P_out,
                                                 Diagnostics& diag);
 

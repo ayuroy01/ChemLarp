@@ -477,6 +477,43 @@ std::optional<FlashDrumResult> flash_drum_adiabatic(const ProcessComponents& c, 
   return FlashDrumResult{ph[0], ph[1], 0.0};
 }
 
+std::optional<SeparatorResult> component_separator(const ProcessComponents& c, const Stream& in,
+                                                   const std::vector<double>& fraction_to_first, double T, double P,
+                                                   Diagnostics& diag) {
+  if (fraction_to_first.size() != c.size() || in.n.size() != c.size()) {
+    diag.error(DiagCode::InvalidMixtureInput, "a separator needs one split fraction per component");
+    return std::nullopt;
+  }
+  for (double f : fraction_to_first)
+    if (!(f >= 0.0 && f <= 1.0)) {
+      diag.error(DiagCode::InvalidMixtureInput, "separator split fractions must be in [0, 1]");
+      return std::nullopt;
+    }
+  const double To = T > 0.0 ? T : in.T_K, Po = P > 0.0 ? P : in.P_Pa;
+  std::vector<double> a(c.size()), b(c.size());
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    a[i] = in.n[i] * fraction_to_first[i];
+    b[i] = in.n[i] - a[i];
+  }
+  // An outlet without flow is returned empty at the outlet conditions, with no enthalpy.
+  auto outlet = [&](const std::vector<double>& n) -> std::optional<Stream> {
+    double F = 0.0;
+    for (double v : n) F += v;
+    if (F > 0.0) return stream_tp(c, To, Po, n, diag);
+    Stream e;
+    e.T_K = To;
+    e.P_Pa = Po;
+    e.n = n;
+    e.x = e.y = std::vector<double>(c.size(), 0.0);
+    return e;
+  };
+  auto s1 = outlet(a);
+  if (!s1) return std::nullopt;
+  auto s2 = outlet(b);
+  if (!s2) return std::nullopt;
+  return SeparatorResult{*s1, *s2, s1->H_W + s2->H_W - in.H_W};
+}
+
 namespace {
 
 // ∫ Cp_ig/T dT antiderivative (J/(mol K)) of the Poling polynomial.
@@ -622,7 +659,7 @@ std::optional<WorkResult> compressor(const ProcessComponents& c, const Stream& i
   return r;
 }
 
-std::optional<ReactorResult> conversion_reactor(const ProcessComponents& c, const Stream& in, const std::vector<double>& nu,
+std::optional<ConversionReactorResult> conversion_reactor(const ProcessComponents& c, const Stream& in, const std::vector<double>& nu,
                                                 std::size_t key, double conversion, double T_out, double P_out,
                                                 Diagnostics& diag) {
   const std::size_t n = c.size();
@@ -652,7 +689,7 @@ std::optional<ReactorResult> conversion_reactor(const ProcessComponents& c, cons
       diag.error(DiagCode::UnbalancedReaction, "the stoichiometry does not conserve the elements");
       return std::nullopt;
     }
-  ReactorResult r;
+  ConversionReactorResult r;
   r.extent_mols = conversion * in.n[key] / -nu[key];
   std::vector<double> out(n);
   const double F = in.total();

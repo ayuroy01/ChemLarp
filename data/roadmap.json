@@ -96,7 +96,7 @@
         {
           "name": "Flowsheet solver",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Pure-component property database",
