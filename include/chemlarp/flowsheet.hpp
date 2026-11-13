@@ -31,6 +31,9 @@
 //   exchanger  <name> <hot in> <cold in> -> <hot out> <cold out> Thot= | Tcold= | Q=
 //   reactor    <name> <in> -> <out> key=<SMILES> X=<conversion> [T=] [P=] nu <SMILES>=<coefficient> ...
 //              (no T: adiabatic)
+//   column     <name> <feed> [<feed> ...] -> <distillate> <bottoms> stages=<N> feed=<stage>[,<stage> ...]
+//              R=<reflux ratio> D=<mol/s> | B=<mol/s> P=<top> [Pbot=] [condenser=total|partial]
+//              (rigorous equilibrium stages, column.hpp; stage 1 is the condenser, N the reboiler)
 // A stream has one source (a feed or a unit outlet) and at most one destination; outlets without a
 // destination are products.
 
@@ -41,11 +44,12 @@
 #include <vector>
 
 #include "chemlarp/diagnostics.hpp"
+#include "chemlarp/column.hpp"
 #include "chemlarp/process.hpp"
 
 namespace chemlarp {
 
-enum class UnitKind { Mixer, Splitter, Heater, Valve, Flash, Separator, Pump, Compressor, Exchanger, Reactor };
+enum class UnitKind { Mixer, Splitter, Heater, Valve, Flash, Separator, Pump, Compressor, Exchanger, Reactor, Column };
 const char* to_string(UnitKind kind) noexcept;
 
 struct FeedSpec {
@@ -65,6 +69,11 @@ struct UnitSpec {
   std::vector<double> fractions;      // splitter
   std::vector<double> per_component;  // separator split fractions, or reactor coefficients
   std::size_t key = 0;                // reactor key component
+  // Column
+  std::size_t stages = 0;
+  std::vector<std::size_t> feed_stages;
+  double reflux_ratio = 0.0, distillate = 0.0, bottoms = 0.0, P_bottom_Pa = 0.0;
+  bool partial_condenser = false;
   int line = 0;
 };
 
@@ -90,6 +99,7 @@ struct UnitReport {
   double duty_W = 0.0;  // heat added from outside (zero for an exchanger, whose duty is internal)
   double work_W = 0.0;  // shaft work added
   std::vector<std::pair<std::string, double>> values;  // other results (exchanger duty, UA, extent, ...)
+  std::vector<ColumnStage> profile;                     // column stages, top to bottom
 };
 
 struct NamedStream {
@@ -116,7 +126,7 @@ std::optional<FlowsheetResult> solve_flowsheet(const FlowsheetSpec& spec, Diagno
 // Parses and solves a flowsheet text and returns the result as JSON:
 // {"ok","converged","iterations","method","tears","order","residuals","components":[{smiles,name,molar_mass}],
 //  "streams":[{name,from,to,T_K,P_Pa,vapor_fraction,H_W,mass_kgs,flows,x,y}],
-//  "units":[{name,type,duty_W,work_W,values:{...}}],"balance":{mass_in_kgs,mass_out_kgs,energy_imbalance_W},
+//  "units":[{name,type,duty_W,work_W,values:{...},profile?:[{T_K,P_Pa,L,V,x,y}]}],"balance":{mass_in_kgs,mass_out_kgs,energy_imbalance_W},
 //  "diagnostics"}. "ok" is true when the flowsheet solved and converged without errors.
 std::string flowsheet_json(std::string_view text);
 

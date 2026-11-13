@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 
 namespace chemlarp {
@@ -311,6 +312,32 @@ std::optional<ProcessComponents> process_components(const std::vector<std::strin
     for (const auto& s : cond) c.vle.antoine.push_back(*antoine_coefficients(s));
   }
   return c;
+}
+
+std::optional<std::vector<double>> component_enthalpies(const ProcessComponents& c, double T, double P, bool vapor,
+                                                        Diagnostics& diag) {
+  std::vector<double> h(c.size());
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    auto v = vapor ? h_vapor(c.pure[i], T, diag) : h_liquid(c.pure[i], T, diag);
+    if (!v) return std::nullopt;
+    h[i] = *v + (vapor ? 0.0 : liquid_pressure_term(c, i, T, P));
+  }
+  return h;
+}
+
+std::optional<std::vector<double>> k_values(const ProcessComponents& c, double T, double P, const std::vector<double>& x,
+                                            Diagnostics& diag) {
+  const std::size_t m = c.condensable.size();
+  std::vector<double> K(c.size(), std::numeric_limits<double>::infinity());
+  if (m == 0) return K;
+  std::vector<double> xc(m);
+  double s = 0.0;
+  for (std::size_t k = 0; k < m; ++k) s += (xc[k] = std::max(x[c.condensable[k]], 0.0));
+  for (double& v : xc) v = s > 0.0 ? v / s : 1.0 / static_cast<double>(m);
+  auto lg = activity_ln_gamma(c.vle, T, xc, diag);
+  if (!lg) return std::nullopt;
+  for (std::size_t k = 0; k < m; ++k) K[c.condensable[k]] = std::exp((*lg)[k]) * c.vle.antoine[k].pressure(T) / P;
+  return K;
 }
 
 std::optional<Stream> stream_tp(const ProcessComponents& c, double T, double P, const std::vector<double>& n,

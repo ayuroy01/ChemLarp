@@ -26,6 +26,7 @@ const char* to_string(UnitKind kind) noexcept {
     case UnitKind::Compressor: return "compressor";
     case UnitKind::Exchanger: return "exchanger";
     case UnitKind::Reactor: return "reactor";
+    case UnitKind::Column: return "column";
   }
   return "unit";
 }
@@ -179,6 +180,26 @@ struct Parser {
       else if (k == "eff") good = hasEff = to_number(v, u.efficiency) && u.efficiency > 0 && u.efficiency <= 1;
       else if (k == "X") good = hasX = to_number(v, u.conversion) && u.conversion >= 0 && u.conversion <= 1;
       else if (k == "key") key_name = v, good = hasKey = true;
+      else if (k == "stages") {
+        double n = 0;
+        good = to_number(v, n) && n >= 3 && n <= 500 && n == std::floor(n);
+        u.stages = static_cast<std::size_t>(n);
+      } else if (k == "feed" || k == "feeds") {
+        std::string item;
+        std::istringstream in(v);
+        while (std::getline(in, item, ',')) {
+          double n = 0;
+          if (!to_number(item, n) || n < 1 || n != std::floor(n)) return fail("bad feed stage '" + item + "'");
+          u.feed_stages.push_back(static_cast<std::size_t>(n));
+        }
+      } else if (k == "R") good = to_number(v, u.reflux_ratio) && u.reflux_ratio > 0;
+      else if (k == "D") good = to_number(v, u.distillate) && u.distillate > 0;
+      else if (k == "B") good = to_number(v, u.bottoms) && u.bottoms > 0;
+      else if (k == "Pbot") good = to_quantity(v, 'P', u.P_bottom_Pa) && u.P_bottom_Pa > 0;
+      else if (k == "condenser") {
+        good = v == "total" || v == "partial";
+        u.partial_condenser = v == "partial";
+      }
       else if (k == "fractions") {
         std::string item;
         std::istringstream in(v);
@@ -243,6 +264,17 @@ struct Parser {
         if (!ports(2, 2)) return false;
         if (int(hasTh) + int(hasTc) + int(u.has_duty) != 1) return fail(what + " needs one of Thot=, Tcold= or Q=");
         break;
+      case UnitKind::Column:
+        if (!ports(0, 2)) return false;
+        if (u.outlets.size() != 2) return fail(what + " needs two outlets: distillate and bottoms");
+        if (!u.stages) return fail(what + " needs stages=<N>");
+        if (u.feed_stages.size() != u.inlets.size()) return fail(what + " needs feed=<stage> for each inlet, in order");
+        for (std::size_t fs : u.feed_stages)
+          if (fs > u.stages) return fail(what + ": feed stage " + std::to_string(fs) + " is beyond stage " + std::to_string(u.stages));
+        if (!(u.reflux_ratio > 0)) return fail(what + " needs R=<reflux ratio>");
+        if ((u.distillate > 0) == (u.bottoms > 0)) return fail(what + " needs either D= or B= (mol/s)");
+        if (!hasP) return fail(what + " needs P= (top pressure)");
+        break;
       case UnitKind::Reactor: {
         if (!ports(1, 1)) return false;
         if (!hasKey || !hasX || u.per_component.empty())
@@ -266,7 +298,8 @@ struct Parser {
         {"cooler", UnitKind::Heater},       {"valve", UnitKind::Valve},         {"flash", UnitKind::Flash},
         {"separator", UnitKind::Separator}, {"sep", UnitKind::Separator},       {"pump", UnitKind::Pump},
         {"compressor", UnitKind::Compressor}, {"expander", UnitKind::Compressor}, {"turbine", UnitKind::Compressor},
-        {"exchanger", UnitKind::Exchanger}, {"reactor", UnitKind::Reactor}};
+        {"exchanger", UnitKind::Exchanger}, {"reactor", UnitKind::Reactor}, {"column", UnitKind::Column},
+        {"distillation", UnitKind::Column}};
     if (kw == "components") {
       if (!spec.components.empty()) fail("components are declared twice");
       else if (t.size() < 2) fail("components needs at least one SMILES");
@@ -331,7 +364,9 @@ void merge_prefixed(const Diagnostics& from, Diagnostics& to, const std::string&
 std::optional<std::vector<Stream>> run_unit(const ProcessComponents& c, const UnitSpec& u, const std::vector<Stream>& in,
                                             UnitReport& rep, Diagnostics& d) {
   const std::size_t nc = c.size();
-  rep = UnitReport{u.name, u.kind, 0.0, 0.0, {}};
+  rep = UnitReport{};
+  rep.name = u.name;
+  rep.kind = u.kind;
   const Stream& a = in[0];
   switch (u.kind) {
     case UnitKind::Mixer: {
@@ -419,6 +454,32 @@ std::optional<std::vector<Stream>> run_unit(const ProcessComponents& c, const Un
       rep.values.push_back({"min_approach_K", r->min_approach_K});
       rep.values.push_back({"UA_WK", r->UA_WK});
       return std::vector<Stream>{r->hot_out, r->cold_out};
+    }
+    case UnitKind::Column: {
+      ColumnSpec cs;
+      cs.stages = u.stages;
+      for (std::size_t k = 0; k < in.size(); ++k)
+        if (!is_empty(in[k])) cs.feeds.push_back({u.feed_stages[k], in[k]});
+      if (cs.feeds.empty()) {
+        Stream e = empty_stream(nc, a.T_K, u.P_Pa);
+        return std::vector<Stream>{e, e};
+      }
+      cs.P_top_Pa = u.P_Pa;
+      cs.P_bottom_Pa = u.P_bottom_Pa;
+      cs.condenser = u.partial_condenser ? Condenser::Partial : Condenser::Total;
+      cs.reflux_ratio = u.reflux_ratio;
+      cs.distillate_rate = u.distillate;
+      cs.bottoms_rate = u.bottoms;
+      auto r = distillation_column(c, cs, d);
+      if (!r) return std::nullopt;
+      rep.duty_W = r->condenser_duty_W + r->reboiler_duty_W;
+      rep.values.push_back({"condenser_duty_W", r->condenser_duty_W});
+      rep.values.push_back({"reboiler_duty_W", r->reboiler_duty_W});
+      rep.values.push_back({"top_T_K", r->stages.front().T_K});
+      rep.values.push_back({"bottom_T_K", r->stages.back().T_K});
+      rep.values.push_back({"newton_iterations", double(r->iterations)});
+      rep.profile = r->stages;
+      return std::vector<Stream>{r->distillate, r->bottoms};
     }
     case UnitKind::Reactor: {
       if (is_empty(a)) return std::vector<Stream>{empty_stream(nc, u.T_K > 0 ? u.T_K : a.T_K, u.P_Pa > 0 ? u.P_Pa : a.P_Pa)};
@@ -773,7 +834,17 @@ std::string flowsheet_json(std::string_view text) {
            ",\"duty_W\":" + jnum(u.duty_W) + ",\"work_W\":" + jnum(u.work_W) + ",\"values\":{";
       for (std::size_t j = 0; j < u.values.size(); ++j)
         o += (j ? "," : "") + json_escape(u.values[j].first) + ":" + jnum(u.values[j].second);
-      o += "}}";
+      o += "}";
+      if (!u.profile.empty()) {
+        o += ",\"profile\":[";
+        for (std::size_t j = 0; j < u.profile.size(); ++j) {
+          const auto& st = u.profile[j];
+          o += (j ? "," : "") + std::string("{\"T_K\":") + jnum(st.T_K) + ",\"P_Pa\":" + jnum(st.P_Pa) + ",\"L\":" +
+               jnum(st.L) + ",\"V\":" + jnum(st.V) + ",\"x\":" + jarr(st.x) + ",\"y\":" + jarr(st.y) + "}";
+        }
+        o += "]";
+      }
+      o += "}";
     }
     o += "],\"balance\":{\"mass_in_kgs\":" + jnum(r->mass_in_kgs) + ",\"mass_out_kgs\":" + jnum(r->mass_out_kgs) +
          ",\"energy_imbalance_W\":" + jnum(r->energy_imbalance_W) + "}";

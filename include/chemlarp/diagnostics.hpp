@@ -93,6 +93,7 @@ enum class DiagCode : std::uint16_t {
   FlowsheetSyntax,         // a flowsheet line that cannot be read
   FlowsheetTopology,       // streams not connected correctly (missing source, two sources, unused unit)
   RecycleNotConverged,     // the tear streams did not converge within the iteration limit
+  ColumnNotConverged,      // the column's MESH equations did not converge
 
   // 8xx — identifiers (InChI)
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does

@@ -73,6 +73,7 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::FlowsheetSyntax: return "FlowsheetSyntax";
     case DiagCode::FlowsheetTopology: return "FlowsheetTopology";
     case DiagCode::RecycleNotConverged: return "RecycleNotConverged";
+    case DiagCode::ColumnNotConverged: return "ColumnNotConverged";
     case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
     case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
     case DiagCode::InchiUnsupported: return "InchiUnsupported";

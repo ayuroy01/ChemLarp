@@ -46,6 +46,14 @@ struct Stream {
   double total() const noexcept;
 };
 
+// Per-component model functions (the definitions above), for stage-wise models such as columns.
+// Molar enthalpy of each component as liquid (with the v_L (P − P_sat) term) or as ideal-gas vapour, J/mol.
+std::optional<std::vector<double>> component_enthalpies(const ProcessComponents& c, double T, double P, bool vapor,
+                                                        Diagnostics& diag);
+// K-values y_i / x_i = γ_i(T, x) P_sat,i(T) / P (x over all components; infinite for non-condensables).
+std::optional<std::vector<double>> k_values(const ProcessComponents& c, double T, double P, const std::vector<double>& x,
+                                            Diagnostics& diag);
+
 // Phase split and enthalpy at given T and P (TP flash), and at given P and enthalpy flow (PH flash).
 std::optional<Stream> stream_tp(const ProcessComponents& c, double T, double P, const std::vector<double>& n,
                                 Diagnostics& diag);

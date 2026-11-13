@@ -91,7 +91,7 @@
         {
           "name": "Distillation columns",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Flowsheet solver",

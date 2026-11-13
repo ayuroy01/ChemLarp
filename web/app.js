@@ -1104,6 +1104,17 @@ exchanger E Q2 F -> PROD Q0 Thot=500
 heater H Q0 -> Q1 T=890
 reactor RX Q1 -> Q2 key=Cc1ccccc1 X=0.75 nu Cc1ccccc1=-1 [HH]=-1 c1ccccc1=1 C=1
 ` },
+    { name: 'Distillation · benzene/toluene', text: `# 15 equilibrium stages (1 = total condenser, 15 = reboiler).
+components c1ccccc1 Cc1ccccc1
+feed F T=360 P=1atm flows c1ccccc1=50 Cc1ccccc1=50
+column T1 F -> D B stages=15 feed=8 R=2 D=50 P=1atm
+` },
+    { name: 'Distillation · ethanol/water (UNIFAC)', text: `# The distillate cannot pass the azeotrope (about 89 % ethanol).
+components CCO O
+model unifac
+feed F T=350 P=1atm flows CCO=10 O=90
+column T1 F -> D B stages=20 feed=12 R=3 D=11 P=1atm
+` },
     { name: 'Water pump, boiler and throttle', text: `# No recycle: one pass through the units.
 components O
 feed W T=25C P=1bar flows O=1
@@ -1244,6 +1255,9 @@ cooler C S2 -> L T=330
     min_approach_K: ['min. approach', (v) => fmt(v, 4) + ' K'], UA_WK: ['UA', (v) => fmt(v / 1e3, 4) + ' kW/K'],
     isentropic_work_W: ['isentropic', (v) => kW(v) + ' kW'], extent_mols: ['extent', (v) => fmt(v, 5) + ' mol/s'],
     heat_of_reaction_Jmol: ['ΔrH°', (v) => fmt(v / 1e3, 4) + ' kJ/mol'],
+    condenser_duty_W: ['condenser', (v) => kW(v) + ' kW'], reboiler_duty_W: ['reboiler', (v) => kW(v) + ' kW'],
+    top_T_K: ['top', (v) => fixed(v, 2) + ' K'], bottom_T_K: ['bottom', (v) => fixed(v, 2) + ' K'],
+    newton_iterations: ['Newton iterations', (v) => String(v)],
   };
   let lastFs = null;
   function fsStreamTable() {
@@ -1265,7 +1279,19 @@ cooler C S2 -> L T=330
     $('fs-streams').replaceChildren(h('table', { class: 'fs-table' }, h('thead', {}, head), h('tbody', {}, rows)));
   }
   segmented($('fs-basis'), () => lastFs && fsStreamTable());
+  function drawColumnProfile() {
+    const col = lastFs && lastFs.units.find((u) => u.profile);
+    $('fs-col-card').hidden = !col;
+    if (!col) return;
+    $('fs-col-title').textContent = `Column ${col.name}: stage profile`;
+    const st = col.profile;
+    Charts.lineChart($('fs-col-t'), [{ name: 'Temperature (K)', points: st.map((s, j) => [j + 1, s.T_K]) }],
+      { xLabel: 'stage', yLabel: 'K' });
+    Charts.lineChart($('fs-col-x'), lastFs.components.map((c, i) => ({ name: c.name, points: st.map((s, j) => [j + 1, s.x[i]]) })),
+      { xLabel: 'stage', yLabel: 'liquid mole fraction' });
+  }
   function drawFsChart() {
+    drawColumnProfile();
     if (!lastFs || !lastFs.residuals.length) return;
     Charts.lineChart($('fs-chart'), [{ name: 'tear change', points: lastFs.residuals.map((v, i) => [i + 1, Math.max(v, 1e-16)]) }],
       { xLabel: 'iteration', yLabel: 'relative change', logY: true });

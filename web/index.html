@@ -466,6 +466,8 @@ pump       P  a -&gt; b P= [eff=0.75]
 compressor C  a -&gt; b P= [eff=0.72]
 exchanger  E  hot cold -&gt; hot' cold' Thot= | Tcold= | Q=
 reactor    R  a -&gt; b key=&lt;SMILES&gt; X=0.5 [T=] nu &lt;SMILES&gt;=-1 …
+column     T  f -&gt; dist bot stages=15 feed=8 R=2 D=50 | B=
+              P=1atm [Pbot=] [condenser=total|partial]
 
 Units: T in K or C (80C), P in Pa, kPa, bar, atm,
 Q in W, kW, MW; flows in mol/s.</pre>
@@ -491,6 +493,11 @@ Q in W, kW, MW; flows in mol/s.</pre>
           <div class="glass-card card">
             <div class="card-head"><h2>Units</h2><span class="meta">duty and work added from outside</span></div>
             <div class="table-wrap" id="fs-units"></div>
+          </div>
+          <div class="glass-card chart-card" id="fs-col-card" hidden>
+            <div class="card-head"><h2 id="fs-col-title">Column profile</h2><span class="meta">stage 1 is the condenser</span></div>
+            <canvas class="chart" id="fs-col-t" data-height="200"></canvas>
+            <canvas class="chart" id="fs-col-x" data-height="240"></canvas>
           </div>
           <div class="glass-card chart-card" id="fs-conv-card">
             <div class="card-head"><h2>Recycle convergence</h2><span class="meta">largest relative change of a tear stream</span></div>
