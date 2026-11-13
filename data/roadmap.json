@@ -122,7 +122,7 @@
         {
           "name": "Molecular dynamics",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Protein handling (PDB, residues, protonation)",

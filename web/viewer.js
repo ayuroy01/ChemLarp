@@ -45,14 +45,25 @@
       new ResizeObserver(() => this.draw()).observe(canvas);
     }
 
-    load(sdf) {
-      const m = parseSdf(sdf);
+    load(sdf) { this.loadAtoms(parseSdf(sdf)); }
+
+    // m: {atoms:[{el,x,y,z}], bonds:[{a,b,order}]}; centred on its geometric centre.
+    loadAtoms(m) {
       const c = m.atoms.reduce((s, a) => [s[0] + a.x, s[1] + a.y, s[2] + a.z], [0, 0, 0]).map((v) => v / m.atoms.length);
       m.atoms.forEach((a) => { a.x -= c[0]; a.y -= c[1]; a.z -= c[2]; });
+      this.centre = c;
       this.extent = Math.max(1.5, ...m.atoms.map((a) => Math.hypot(a.x, a.y, a.z) + 0.6));
       this.mol = m;
       this.R = mul(rotX(-0.35), rotY(0.5));
       this.zoom = 1;
+      this.draw();
+    }
+
+    // New coordinates (flat x0 y0 z0 x1 ...) for the loaded atoms, keeping the view: trajectory frames.
+    setPositions(xyz) {
+      if (!this.mol || xyz.length !== 3 * this.mol.atoms.length) return;
+      const c = this.centre || [0, 0, 0];
+      this.mol.atoms.forEach((a, i) => { a.x = xyz[3 * i] - c[0]; a.y = xyz[3 * i + 1] - c[1]; a.z = xyz[3 * i + 2] - c[2]; });
       this.draw();
     }
 

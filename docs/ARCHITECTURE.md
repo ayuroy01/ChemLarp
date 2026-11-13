@@ -22,7 +22,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
 | 2D→3D embedding | Crippen & Havel, *Distance Geometry and Molecular Conformation* (1988); Riniker & Landrum ETKDG, *JCIM* 55 (2015) 2562 |
 | Force fields | MMFF94: Halgren, *J. Comput. Chem.* 17 (1996), 5 parts; UFF: Rappé et al., *JACS* 114 (1992) 10024; OPLS-AA: Jorgensen et al., *JACS* 118 (1996) 11225 |
-| MD integrators | Verlet (1967); Swope et al. velocity Verlet, *JCP* 76 (1982) 637 |
+| MD integrators | Verlet (1967); Swope et al. velocity Verlet, *JCP* 76 (1982) 637; Bussi, Donadio & Parrinello, *JCP* 126 (2007) 014101 (stochastic velocity rescaling); Leimkuhler & Matthews, *Appl. Math. Res. Express* 2013, 34 (BAOAB Langevin); Marsaglia & Tsang, *ACM TOMS* 26 (2000) 363 (gamma deviates) |
 | Docking scoring | AutoDock Vina, Trott & Olson, *J. Comput. Chem.* 31 (2010) 455 (open, Apache-2) |
 | FEP / MBAR | Zwanzig (1954); Shirts & Chodera, *JCP* 129 (2008) 124105 |
 | Thermo data | GRI-Mech 3.0; NASA Glenn (McBride, Zehe & Gordon, NASA/TP-2002-211556); Burcat database |
@@ -140,7 +140,8 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Cross-format check: one mechanism as .ocm / CHEMKIN / YAML gives identical rates | **done** (`scripts/gen_h2o2_mechanism.py`, test `three_formats_give_identical_rates`) |
 | SRI fall-off, Chebyshev, FORD/RORD, NASA9 thermo, ionic species | planned (`UnsupportedReactionType` today) |
 | Sparse LU for large mechanisms (>~300 species) | planned; dense LU is O(S³) per step |
-| MMFF94 / OPLS force fields; partial charges & electrostatics; velocity-Verlet MD | planned (UFF done) |
+| MMFF94 / OPLS force fields; partial charges & electrostatics | planned (UFF done) |
+| Molecular dynamics (`include/chemlarp/md.hpp`): velocity Verlet (NVE), Bussi stochastic velocity rescaling with its conserved effective energy, and BAOAB Langevin dynamics; Maxwell–Boltzmann start with the centre-of-mass motion and overall rotation removed; platform-independent random numbers; harmonic normal modes (finite-difference Hessian, translations and rotations projected out, linear molecules detected from the moments of inertia); vibrational spectrum from the velocity autocorrelation; UFF molecules from SMILES; periodic Lennard-Jones fluid with block-averaged energy and pressure; `chemlarp md`, `chemlarp lj`, `cl_md_json`, `cl_lj_json`, Python `molecular_dynamics()` and `lennard_jones()`, web Molecular Dynamics panel with an animated trajectory, energy, temperature and spectrum charts and XYZ export | **done** (`src/md.cpp`); validation in "Molecular dynamics: validation" below. Not covered: periodic boxes for molecules, solvent, constraints (SHAKE/RATTLE), barostats (NPT), electrostatics (UFF has none here), neighbour lists for large systems, multiple time steps |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
@@ -326,4 +327,20 @@ The remaining differences in dilute solutions come from details ChemLarp leaves 
 Two known differences in the constants: PHREEQC raises the CO2(g) solubility constant by 0.002 (10 °C) to 0.017 (80 °C) log units and lowers CH4(g)'s by 0.04 with corrections not given in phreeqc.dat; ChemLarp uses the database constants (for CO2, Plummer & Busenberg 1982: log K_H = −1.468 at 25 °C, within the spread of measured values). For barite, PHREEQC's constant (−9.970 at 25 °C) differs from the analytic expression phreeqc.dat gives (−9.844), which ChemLarp evaluates as written; barite solubility is therefore 16% higher than PHREEQC's (unresolved).
 
 Against measurements: pKw at 25 °C 13.9948 (IUPAC 13.995); gypsum solubility 15.10 mmol/kg (measured 15.45, Marshall & Slusher 1966; PHREEQC 15.09); rain water at 10^-3.5 atm CO2 pH 5.66; calcite with atmospheric CO2 0.493 mmol/kg Ca, pH 8.28.
+
+## Molecular dynamics: validation
+
+`scripts/validate_md.py` (numpy) checks the dynamics against results that do not depend on it:
+
+| Check | Reference | Result |
+|---|---|---|
+| Lennard-Jones fluid, N = 108, r_c = 2.5 (truncated and shifted), ρ* = 0.8, T* = 1.0 | Metropolis Monte Carlo of the same model written in the script (6000 sweeps) | U/N −4.689 ± 0.005 (Bussi), −4.691 ± 0.004 (Langevin) against −4.702 ± 0.005; P 1.65 ± 0.02 and 1.65 ± 0.02 against 1.60 ± 0.03 (within 2σ) |
+| Same at ρ* = 0.4, T* = 1.5 | Monte Carlo | U/N −2.238 / −2.247 against −2.230 ± 0.004; P 0.451 / 0.443 against 0.442 ± 0.005 |
+| Kinetic temperature with both thermostats | target T | within 1.5% |
+| NVE energy drift, Lennard-Jones, dt = 0.002 | energy conservation | 1e-7 per particle per unit time |
+| Harmonic limit (1 K, NVE): peaks of the velocity spectrum of water, formaldehyde and HCN | normal-mode frequencies from the finite-difference Hessian | every mode found within the 5 cm⁻¹ spectral grid (HCN: 3N − 5 = 4 modes with the degenerate bend) |
+| Equipartition at 10 K: mean potential energy above the minimum | (3N − 6) kB T / 2 (classical harmonic limit) | ethanol 0.2110 / 0.2099 kcal/mol (Bussi / Langevin) against 0.2087; benzene 0.3017 against 0.2981 (the excess is anharmonicity) |
+| Velocity Verlet energy fluctuation, ethanol at 300 K, dt = 0.4, 0.2, 0.1 fs | O(dt²) | ratios 3.92 and 4.00 |
+
+Tests (tests/test_md.cpp) also check time reversibility (forward 2000 steps, reverse the velocities, back to the start within 1e-8 Å), reproducibility for a seed, and equipartition for water with both thermostats. The UFF frequencies themselves are those of the force field, which is not fitted to vibrational spectra (water: 1757, 3706, 3760 cm⁻¹ against 1595, 3657, 3756 measured).
 

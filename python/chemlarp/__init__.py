@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -98,6 +98,10 @@ _cl_props = _sig("cl_pure_component_json", ctypes.c_void_p, ctypes.c_char_p, cty
 _cl_vle = _sig("cl_vle_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double)
 _cl_flowsheet = _sig("cl_flowsheet_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_aqueous = _sig("cl_aqueous_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_md = _sig("cl_md_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_double,
+              ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+_cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
+              ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
 _cl_reaction = _sig("cl_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _cl_equil = _sig("cl_equilibrate_json", ctypes.c_void_p, _c_char_pp, ctypes.POINTER(ctypes.c_double),
@@ -336,6 +340,30 @@ def solution(text: str) -> dict:
     "temperature 25\nadd NaHCO3 2\nequilibrium Calcite 0\nequilibrium CO2(g) -3.5". Returns pH, ionic
     strength, species, saturation indices and phase amounts; raises ChemLarpError on errors."""
     r = _take_json(_cl_aqueous(_text_or_file(text)))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def molecular_dynamics(smiles: str, temperature_K: float = 300.0, steps: int = 2000, dt_fs: float = 0.5,
+                       thermostat: str = "bussi", tau_fs: float = 100.0, sample_every: int = 10, seed: int = 1,
+                       normal_modes: bool = False) -> dict:
+    """UFF molecular dynamics of one molecule (embedded in 3D with explicit hydrogens and minimized).
+    thermostat: "bussi", "langevin" or "none" (NVE). Returns energies per stored frame, positions (Å),
+    harmonic frequencies (cm-1) when normal_modes is set, a velocity spectrum and a multi-frame XYZ."""
+    r = _take_json(_cl_md(smiles.encode(), temperature_K, steps, dt_fs, thermostat.encode(), tau_fs, sample_every,
+                          seed, 1 if normal_modes else 0))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def lennard_jones(cells: int = 3, density: float = 0.8, temperature: float = 1.0, cutoff: float = 2.5,
+                  dt: float = 0.004, equilibration: int = 2000, production: int = 10000, thermostat: str = "bussi",
+                  seed: int = 1) -> dict:
+    """Lennard-Jones fluid by molecular dynamics in reduced units (4 cells^3 particles, potential truncated
+    and shifted at the cutoff): mean potential energy per particle and pressure with block errors."""
+    r = _take_json(_cl_lj(cells, density, temperature, cutoff, dt, equilibration, production, thermostat.encode(), seed))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

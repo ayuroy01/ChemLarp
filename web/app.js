@@ -767,7 +767,7 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
+  const views = ['structure', 'model3d', 'dynamics', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
   const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
@@ -1069,6 +1069,89 @@
   });
   window.addEventListener('resize', () => { if (lastKin && current() === 'kinetics') drawKinetics(); });
   window.addEventListener('resize', () => { if (lastVle && current() === 'phases') drawVle(); });
+
+  // ---- Molecular dynamics -----------------------------------------------------------------------
+  let mdViewer = null, mdRun = null, mdTimer = 0;
+  function mdShowFrame(i) {
+    if (!mdRun) return;
+    const k = Math.max(0, Math.min(mdRun.positions.length - 1, i));
+    $('md-frame').value = String(k);
+    mdViewer.setPositions(mdRun.positions[k]);
+    const t = mdRun.frames[Math.min(mdRun.frames.length - 1, k * mdRun.position_stride)].t;
+    $('md-tlabel').textContent = `${fmt(t, 4)} fs`;
+  }
+  function mdStop() { clearInterval(mdTimer); mdTimer = 0; $('md-play').textContent = '▶'; }
+  $('md-play').addEventListener('click', () => {
+    if (!mdRun) return;
+    if (mdTimer) { mdStop(); return; }
+    $('md-play').textContent = '❚❚';
+    mdTimer = setInterval(() => {
+      if (current() !== 'dynamics') { mdStop(); return; }
+      const next = (+$('md-frame').value + 1) % mdRun.positions.length;
+      mdShowFrame(next);
+    }, 40);
+  });
+  $('md-frame').addEventListener('input', () => { mdStop(); mdShowFrame(+$('md-frame').value); });
+  $('md-xyz').addEventListener('click', () => { if (mdRun) download(fileBase() + '-md.xyz', mdRun.xyz, 'chemical/x-xyz'); });
+  function drawMd() {
+    if (!mdRun) return;
+    const ps = (f) => f.t / 1000;
+    const fr = mdRun.frames;
+    const thermo = mdRun.thermostat !== 'none';
+    Charts.lineChart($('md-chart-e'), [
+      { name: 'potential', points: fr.map((f) => [ps(f), f.U]) },
+      { name: 'kinetic', points: fr.map((f) => [ps(f), f.K]) },
+      { name: 'total', points: fr.map((f) => [ps(f), f.E]) },
+      ...(thermo ? [{ name: 'conserved', points: fr.map((f) => [ps(f), f.conserved]) }] : []),
+    ], { xLabel: 'time (ps)', yLabel: 'kcal/mol' });
+    Charts.lineChart($('md-chart-t'), [{ name: 'T (K)', points: fr.map((f) => [ps(f), f.T]) }], { xLabel: 'time (ps)', yLabel: 'K' });
+    const sp = mdRun.spectrum.intensity, mx = mdRun.spectrum.max_cm1;
+    const pts = sp.map((v, i) => [(mx * i) / (sp.length - 1), v]);
+    Charts.lineChart($('md-chart-s'), [{ name: 'spectrum', points: pts }],
+      { xLabel: 'wavenumber (cm⁻¹)', yLabel: 'intensity', xRange: [0, mx], markers: (mdRun.modes || []).filter((f) => f > 0 && f < mx).map((f) => ({ x: f, y: 0 })) });
+  }
+  window.addEventListener('resize', () => { if (mdRun && current() === 'dynamics') drawMd(); });
+  $('md-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('md-out');
+    mdStop();
+    if (!compound) { out.replaceChildren(h('p', { class: 'muted', text: 'Open a compound to run its dynamics.' })); return; }
+    const dt = +$('md-dt').value, ps = +$('md-time').value;
+    const steps = Math.round((ps * 1000) / dt);
+    if (!(steps > 0) || steps > 400000) { fail(out, new Error('Choose a duration and time step giving 1 to 400,000 steps.')); return; }
+    const every = Math.max(1, Math.round(steps / 1500));
+    const thermostat = $('md-thermo').value;
+    busy(out, `Running ${steps.toLocaleString('en-US')} steps…`);
+    try {
+      const { result: r, ms } = await engine('md', {
+        smiles: compound.input, temperature: +$('md-t').value, steps, dt, thermostat, tau: +$('md-tau').value, every, modes: $('md-modes').checked,
+      });
+      if (!r.ok) { $('md-results').hidden = true; mdRun = null; out.replaceChildren(status('bad', 'The dynamics could not run'), ...diagnostics(r.diagnostics)); return; }
+      mdRun = { ...r, thermostat };
+      const nve = thermostat === 'none';
+      out.replaceChildren(
+        status('ok', `${(steps * dt / 1000).toLocaleString('en-US', { maximumFractionDigits: 3 })} ps of dynamics`,
+          `${r.elements.length} atoms · ${r.dof} kinetic degrees of freedom · ${nve ? 'NVE' : thermostat === 'bussi' ? 'Bussi NVT' : 'Langevin NVT'}`),
+        h('div', { class: 'metrics' },
+          metric('Mean temperature', fixed(r.mean_temperature_K, 1), 'K'),
+          metric('Mean potential', fmt(r.mean_potential - r.minimized_energy, 4), 'kcal/mol above min.'),
+          metric(nve ? 'Energy drift' : 'Conserved-energy drift', fmt(r.drift_kcal_mol_ps, 2), 'kcal/mol/ps'),
+          metric('Compute time', String(Math.round(ms)), 'ms')),
+        ...diagnostics(r.diagnostics));
+      $('md-results').hidden = false;
+      if (!mdViewer) mdViewer = new MoleculeViewer($('md-viewer'));
+      const p0 = r.positions[0];
+      mdViewer.loadAtoms({
+        atoms: r.elements.map((el, i) => ({ el, x: p0[3 * i], y: p0[3 * i + 1], z: p0[3 * i + 2] })),
+        bonds: r.bonds.map(([a, b, order]) => ({ a, b, order })),
+      });
+      $('md-frame').max = String(r.positions.length - 1);
+      mdShowFrame(0);
+      $('md-modes-card').hidden = !r.modes.length;
+      $('md-modes-list').replaceChildren(...r.modes.map((f) => h('span', { class: 'chip' + (f < 0 ? ' md-imag' : ''), text: f < 0 ? `${fixed(-f, 1)}i` : fixed(f, 1) })));
+      drawMd();
+    } catch (err) { fail(out, err); }
+  });
 
   // ---- Aqueous chemistry ------------------------------------------------------------------------
   const AQ_EXAMPLES = [

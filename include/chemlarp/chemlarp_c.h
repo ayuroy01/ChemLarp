@@ -135,6 +135,22 @@ CHEMLARP_API char* cl_flowsheet_json(const char* flowsheet_text);
  * "iterations","totals","species","saturation","phases","diagnostics"}. */
 CHEMLARP_API char* cl_aqueous_json(const char* solution_text);
 
+/* Molecular dynamics of one molecule with UFF (SMILES embedded in 3D with explicit hydrogens and minimized).
+ * thermostat: "none" (NVE), "bussi" or "langevin"; tau_fs: coupling time (Bussi) or 1/friction (Langevin);
+ * compute_modes != 0 adds the harmonic normal-mode frequencies. Returns {"ok","elements","bonds",
+ * "minimized_energy","dof","mean_temperature_K","mean_potential","drift_kcal_mol_ps","fluctuation",
+ * "frames":[{t,K,U,E,conserved,T}],"positions":[[3N per stored frame]],"position_stride","modes":[cm-1],
+ * "spectrum":{"max_cm1","intensity"},"xyz","diagnostics"}; units Å, fs, kcal/mol, K. */
+CHEMLARP_API char* cl_md_json(const char* smiles, double temperature_K, unsigned steps, double dt_fs,
+                              const char* thermostat, double tau_fs, unsigned sample_every, unsigned seed,
+                              int compute_modes);
+
+/* Lennard-Jones fluid in reduced units (4 cells^3 particles, truncated and shifted at `cutoff`), Bussi
+ * thermostat unless thermostat is "none" or "langevin". Returns {"ok","particles","box","energy_per_particle",
+ * "energy_error","pressure","pressure_error","temperature","drift","diagnostics"}. */
+CHEMLARP_API char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt,
+                              unsigned equilibration, unsigned production, const char* thermostat, unsigned seed);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

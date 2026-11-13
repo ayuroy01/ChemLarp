@@ -27,6 +27,7 @@
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
+#include "chemlarp/md.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/qc.hpp"
 #include "chemlarp/json.hpp"
@@ -798,6 +799,48 @@ char* cl_flowsheet_json(const char* flowsheet_text) {
 char* cl_aqueous_json(const char* solution_text) {
   if (!solution_text) return nullptr;
   return guarded([&] { return aqueous_json(solution_text); });
+}
+
+char* cl_md_json(const char* smiles, double temperature_K, unsigned steps, double dt_fs, const char* thermostat,
+                 double tau_fs, unsigned sample_every, unsigned seed, int compute_modes) {
+  if (!smiles) return nullptr;
+  MdOptions o;
+  o.temperature_K = temperature_K;
+  o.steps = steps;
+  if (dt_fs > 0) o.dt_fs = dt_fs;
+  const std::string th = thermostat ? thermostat : "bussi";
+  o.thermostat = th == "none" || th == "nve" ? Thermostat::None : th == "langevin" ? Thermostat::Langevin : Thermostat::Bussi;
+  if (tau_fs > 0) o.tau_fs = tau_fs;
+  if (sample_every > 0) o.sample_every = sample_every;
+  o.seed = seed;
+  if (steps > 2000000) return dup("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":\"at most 2,000,000 steps\"}]}");
+  return guarded([&] { return molecule_md_json(smiles, o, compute_modes != 0); });
+}
+
+char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt, unsigned equilibration,
+                 unsigned production, const char* thermostat, unsigned seed) {
+  return guarded([&] {
+    LjOptions o;
+    o.cells = cells;
+    o.density = density;
+    o.temperature = temperature;
+    if (cutoff > 0) o.cutoff = cutoff;
+    if (dt > 0) o.dt = dt;
+    o.equilibration = equilibration;
+    o.production = production > 0 ? production : 1;
+    const std::string th = thermostat ? thermostat : "bussi";
+    o.thermostat = th == "none" || th == "nve" ? Thermostat::None : th == "langevin" ? Thermostat::Langevin : Thermostat::Bussi;
+    o.seed = seed;
+    Diagnostics d;
+    auto r = lennard_jones_fluid(o, d);
+    std::string out = std::string("{\"ok\":") + (r ? "true" : "false");
+    if (r)
+      out += ",\"particles\":" + std::to_string(r->particles) + ",\"box\":" + jnum(r->box) + ",\"energy_per_particle\":" +
+             jnum(r->energy_per_particle) + ",\"energy_error\":" + jnum(r->energy_error) + ",\"pressure\":" + jnum(r->pressure) +
+             ",\"pressure_error\":" + jnum(r->pressure_error) + ",\"temperature\":" + jnum(r->temperature) +
+             ",\"drift\":" + jnum(r->drift);
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
 }
 
 void cl_free_string(char* s) { std::free(s); }

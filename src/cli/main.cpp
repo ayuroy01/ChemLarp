@@ -11,6 +11,8 @@
 //   chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> ...   (UNIFAC + Antoine VLE)
 //   chemlarp flowsheet <file|-> [--json]                            (steady-state flowsheet with recycles)
 //   chemlarp solution <file|-> [--json]                             (aqueous speciation, pH, solubility)
+//   chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--modes] [--xyz file]
+//   chemlarp lj [--cells n] [--density r] [-T t] [--steps N] [--thermostat ...]      (Lennard-Jones fluid)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -52,6 +54,7 @@
 #include "chemlarp/json.hpp"
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
+#include "chemlarp/md.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/qc.hpp"
@@ -77,6 +80,10 @@ int usage() {
       "                                     UNIFAC activity coefficients, Antoine vapour pressures\n"
       "  chemlarp flowsheet <file|-> [--json]  steady-state flowsheet (format: include/chemlarp/flowsheet.hpp)\n"
       "  chemlarp solution <file|-> [--json]   aqueous pH, speciation, solubility (format: include/chemlarp/aqueous.hpp)\n"
+      "  chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--tau fs]\n"
+      "              [--every N] [--seed N] [--modes] [--xyz file] [--json]   UFF molecular dynamics\n"
+      "  chemlarp lj [--cells n] [--density r] [-T t] [--cutoff rc] [--dt t] [--equil N] [--steps N]\n"
+      "              [--thermostat bussi|langevin|none] [--seed N]            Lennard-Jones fluid (reduced units)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -594,6 +601,101 @@ int cmd_solution(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_md(const std::vector<std::string>& args) {
+  MdOptions o;
+  std::string smiles, xyz_path, th = "bussi";
+  bool modes = false, json = false;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    auto next = [&](double& v) { return i + 1 < args.size() && parse_double(args[++i].c_str(), v); };
+    double v = 0;
+    if (a == "-T") { if (!next(o.temperature_K)) return usage(); }
+    else if (a == "--steps") { if (!next(v) || v < 0) return usage(); o.steps = std::size_t(v); }
+    else if (a == "--dt") { if (!next(o.dt_fs)) return usage(); }
+    else if (a == "--tau") { if (!next(o.tau_fs)) return usage(); }
+    else if (a == "--every") { if (!next(v) || v < 1) return usage(); o.sample_every = std::size_t(v); }
+    else if (a == "--seed") { if (!next(v) || v < 0) return usage(); o.seed = std::uint64_t(v); }
+    else if (a == "--thermostat" && i + 1 < args.size()) th = args[++i];
+    else if (a == "--modes") modes = true;
+    else if (a == "--json") json = true;
+    else if (a == "--xyz" && i + 1 < args.size()) xyz_path = args[++i];
+    else if (smiles.empty()) smiles = a;
+    else return usage();
+  }
+  if (smiles.empty() || (th != "bussi" && th != "langevin" && th != "none" && th != "nve")) return usage();
+  o.thermostat = th == "langevin" ? Thermostat::Langevin : th == "bussi" ? Thermostat::Bussi : Thermostat::None;
+  if (json) {
+    const std::string out = molecule_md_json(smiles, o, modes);
+    std::printf("%s\n", out.c_str());
+    return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+  }
+  Diagnostics d;
+  o.keep_positions = !xyz_path.empty();
+  auto r = molecule_md(smiles, o, modes, d);
+  print_diagnostics(d, {});
+  if (!r) return 1;
+  const auto& m = r->md;
+  std::printf("%zu atoms, %zu kinetic degrees of freedom, UFF minimum %.4f kcal/mol\n", r->masses.size(), m.degrees_of_freedom,
+              r->minimized_energy);
+  std::printf("%zu steps of %.3g fs (%s): mean T %.2f K, mean potential %.4f kcal/mol\n", o.steps, o.dt_fs, th.c_str(),
+              m.mean_temperature_K, m.mean_potential);
+  std::printf("conserved energy: drift %.3g kcal/mol/ps, fluctuation %.3g kcal/mol\n", m.drift_kcal_mol_ps, m.fluctuation);
+  if (r->modes) {
+    std::printf("\nharmonic frequencies (cm-1):");
+    for (std::size_t i = 0; i < r->modes->frequencies_cm1.size(); ++i)
+      std::printf("%s%.1f", i % 8 ? "  " : "\n  ", r->modes->frequencies_cm1[i]);
+    std::printf("\n");
+  }
+  std::printf("\n  %10s %12s %12s %12s %10s\n", "t (fs)", "K", "U", "E", "T (K)");
+  const std::size_t stride = std::max<std::size_t>(1, m.frames.size() / 20);
+  for (std::size_t i = 0; i < m.frames.size(); i += stride) {
+    const auto& f = m.frames[i];
+    std::printf("  %10.1f %12.5f %12.5f %12.5f %10.2f\n", f.time_fs, f.kinetic, f.potential, f.total, f.temperature_K);
+  }
+  if (!xyz_path.empty()) {
+    std::ofstream out(xyz_path, std::ios::binary);
+    for (const auto& f : m.frames) {
+      out << r->elements.size() << "\nt = " << f.time_fs << " fs\n";
+      for (std::size_t a = 0; a < r->elements.size(); ++a) {
+        char b[96];
+        std::snprintf(b, sizeof b, "%-2s %12.6f %12.6f %12.6f\n", r->elements[a].c_str(), f.x[3 * a], f.x[3 * a + 1], f.x[3 * a + 2]);
+        out << b;
+      }
+    }
+    std::printf("\ntrajectory written to %s (%zu frames)\n", xyz_path.c_str(), m.frames.size());
+  }
+  return 0;
+}
+
+int cmd_lj(const std::vector<std::string>& args) {
+  LjOptions o;
+  std::string th = "bussi";
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    auto next = [&](double& v) { return i + 1 < args.size() && parse_double(args[++i].c_str(), v); };
+    double v = 0;
+    if (a == "--cells") { if (!next(v)) return usage(); o.cells = int(v); }
+    else if (a == "--density") { if (!next(o.density)) return usage(); }
+    else if (a == "-T") { if (!next(o.temperature)) return usage(); }
+    else if (a == "--cutoff") { if (!next(o.cutoff)) return usage(); }
+    else if (a == "--dt") { if (!next(o.dt)) return usage(); }
+    else if (a == "--equil") { if (!next(v) || v < 0) return usage(); o.equilibration = std::size_t(v); }
+    else if (a == "--steps") { if (!next(v) || v < 1) return usage(); o.production = std::size_t(v); }
+    else if (a == "--seed") { if (!next(v) || v < 0) return usage(); o.seed = std::uint64_t(v); }
+    else if (a == "--thermostat" && i + 1 < args.size()) th = args[++i];
+    else return usage();
+  }
+  o.thermostat = th == "langevin" ? Thermostat::Langevin : th == "bussi" ? Thermostat::Bussi : Thermostat::None;
+  Diagnostics d;
+  auto r = lennard_jones_fluid(o, d);
+  print_diagnostics(d, {});
+  if (!r) return 1;
+  std::printf("{\"particles\":%zu,\"box\":%.10g,\"energy_per_particle\":%.10g,\"energy_error\":%.4g,\"pressure\":%.10g,"
+              "\"pressure_error\":%.4g,\"temperature\":%.10g,\"drift\":%.4g}\n",
+              r->particles, r->box, r->energy_per_particle, r->energy_error, r->pressure, r->pressure_error, r->temperature, r->drift);
+  return 0;
+}
+
 int cmd_inchi(const std::vector<std::string>& args) {
   std::string smiles;
   bool key_only = false;
@@ -1035,6 +1137,8 @@ int main(int argc, char** argv) {
   if (cmd == "props" && !args.empty()) return cmd_props(args);
   if (cmd == "flowsheet" && !args.empty()) return cmd_flowsheet(args);
   if (cmd == "solution" && !args.empty()) return cmd_solution(args);
+  if (cmd == "md" && !args.empty()) return cmd_md(args);
+  if (cmd == "lj") return cmd_lj(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);
