@@ -14,6 +14,7 @@
 //   chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--modes] [--xyz file]
 //   chemlarp lj [--cells n] [--density r] [-T t] [--steps N] [--thermostat ...]      (Lennard-Jones fluid)
 //   chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   (MMFF94 types, charges, energy)
+//   chemlarp protein <file.pdb|-> [--pH x] [--out file.pdb] [--json]   (protonation, sequences, pI)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -31,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <iostream>
 #include <iterator>
 #include <optional>
@@ -58,6 +60,7 @@
 #include "chemlarp/kinetics.hpp"
 #include "chemlarp/md.hpp"
 #include "chemlarp/mmff.hpp"
+#include "chemlarp/protein.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/qc.hpp"
@@ -88,6 +91,8 @@ int usage() {
       "                                                         molecular dynamics\n"
       "  chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   MMFF94 types, charges, energy\n"
       "  chemlarp mmff --file <file.sdf> [--coords file] [--mmff94s]   MMFF94 terms of each record (JSON)\n"
+      "  chemlarp protein <file.pdb|-> [--pH x] [--out file.pdb] [--json]\n"
+      "                                         chains, pI, disulfides, protonation states, hydrogens\n"
       "  chemlarp lj [--cells n] [--density r] [-T t] [--cutoff rc] [--dt t] [--equil N] [--steps N]\n"
       "              [--thermostat bussi|langevin|none] [--seed N]            Lennard-Jones fluid (reduced units)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
@@ -795,6 +800,70 @@ int cmd_mmff(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_protein(const std::vector<std::string>& args) {
+  std::string path, out_path;
+  double pH = 7.4;
+  bool json = false;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    if (a == "--json") json = true;
+    else if ((a == "--pH" || a == "--ph") && i + 1 < args.size()) pH = std::atof(args[++i].c_str());
+    else if (a == "--out" && i + 1 < args.size()) out_path = args[++i];
+    else if (path.empty()) path = a;
+    else return usage();
+  }
+  if (path.empty() || !(pH >= 0.0 && pH <= 14.0)) return usage();
+  std::string text;
+  if (path == "-") {
+    text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+  } else {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      std::fprintf(stderr, "error: cannot read %s\n", path.c_str());
+      return 1;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  if (json) {
+    const std::string out = protein_json(text, pH);
+    std::printf("%s\n", out.c_str());
+    return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+  }
+  Diagnostics d;
+  auto p = read_protein_pdb(text, d);
+  if (!p) {
+    print_diagnostics(d, {});
+    return 1;
+  }
+  ProtonationOptions opt;
+  opt.pH = pH;
+  const auto rep = protonate(*p, opt, d);
+  if (!p->title.empty()) std::printf("%s\n", p->title.c_str());
+  for (const auto& [chain, seq] : chain_sequences(*p))
+    std::printf("chain %s: %zu residues, pI %.2f, %.2f g/mol\n  %s\n", chain.empty() ? "_" : chain.c_str(), seq.size(),
+                isoelectric_point(seq), sequence_molecular_weight(seq), seq.c_str());
+  for (const auto& [a, b] : p->disulfides)
+    std::printf("disulfide %s%d-%s%d\n", p->residues[a].chain.c_str(), p->residues[a].number, p->residues[b].chain.c_str(),
+                p->residues[b].number);
+  std::printf("pH %.2f: net charge %+d; %zu hydrogens added (%zu removed), %zu atoms\n", pH, rep.net_charge,
+              rep.hydrogens_added, rep.hydrogens_removed, p->atom_count());
+  std::map<std::string, int> states;
+  for (const auto& r : p->residues)
+    if (!r.state.empty() && r.state != r.name) ++states[r.state];
+  for (const auto& r : p->residues)
+    if (r.state == "HIS" || r.state == "HID" || r.state == "HIE" || r.state == "HIP")
+      std::printf("  %s %s%d -> %s\n", r.name.c_str(), r.chain.c_str(), r.number, r.state.c_str());
+  for (const auto& [st, n] : states)
+    if (st != "HID" && st != "HIE" && st != "HIP") std::printf("  %d residue(s) as %s\n", n, st.c_str());
+  print_diagnostics(d, {});
+  if (!out_path.empty()) {
+    std::ofstream out(out_path, std::ios::binary);
+    out << write_protein_pdb(*p);
+    std::printf("wrote %s\n", out_path.c_str());
+  }
+  return 0;
+}
+
 int cmd_lj(const std::vector<std::string>& args) {
   LjOptions o;
   std::string th = "bussi";
@@ -1268,6 +1337,7 @@ int main(int argc, char** argv) {
   if (cmd == "md" && !args.empty()) return cmd_md(args);
   if (cmd == "lj") return cmd_lj(args);
   if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
+  if (cmd == "protein" && !args.empty()) return cmd_protein(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

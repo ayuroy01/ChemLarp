@@ -29,6 +29,7 @@
 #include "chemlarp/iupac.hpp"
 #include "chemlarp/md.hpp"
 #include "chemlarp/mmff.hpp"
+#include "chemlarp/protein.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/qc.hpp"
 #include "chemlarp/json.hpp"
@@ -831,6 +832,13 @@ char* cl_mmff_json(const char* smiles, const char* variant, int minimize) {
   return guarded([&] {
     return mmff_json(smiles, v == "MMFF94s" || v == "mmff94s" ? MmffVariant::Mmff94s : MmffVariant::Mmff94, minimize != 0);
   });
+}
+
+char* cl_protein_json(const char* pdb_text, double pH) {
+  if (!pdb_text) return nullptr;
+  if (!(pH >= 0.0 && pH <= 14.0))
+    return dup("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":\"pH must be between 0 and 14\"}]}");
+  return guarded([&] { return protein_json(pdb_text, pH); });
 }
 
 char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt, unsigned equilibration,

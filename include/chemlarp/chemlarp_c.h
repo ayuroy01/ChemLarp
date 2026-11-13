@@ -152,6 +152,13 @@ CHEMLARP_API char* cl_md_json(const char* smiles, double temperature_K, unsigned
  * "minimized","converged","iterations","empirical_parameters","sdf","xyz","diagnostics"}. */
 CHEMLARP_API char* cl_mmff_json(const char* smiles, const char* variant, int minimize);
 
+/* Protein from PDB text: chains, sequences, disulfides, protonation states at the pH, hydrogens rebuilt.
+ * Returns {"ok","title","chains":[{id,sequence,residues,pI,molecular_weight}],"residues":[titratable residues
+ * and termini {chain,number,icode,name,state,charge,n_terminal,c_terminal}],"disulfides","chain_breaks",
+ * "missing_atoms","unknown_residues","atoms","hydrogens_added","hydrogens_removed","net_charge","pI",
+ * "titration":[[pH,charge]],"pdb","diagnostics"}. */
+CHEMLARP_API char* cl_protein_json(const char* pdb_text, double pH);
+
 /* Lennard-Jones fluid in reduced units (4 cells^3 particles, truncated and shifted at `cutoff`), Bussi
  * thermostat unless thermostat is "none" or "langevin". Returns {"ok","particles","box","energy_per_particle",
  * "energy_error","pressure","pressure_error","temperature","drift","diagnostics"}. */

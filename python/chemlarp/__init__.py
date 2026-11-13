@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -101,6 +101,7 @@ _cl_aqueous = _sig("cl_aqueous_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_md = _sig("cl_md_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_double,
               ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_char_p)
 _cl_mmff = _sig("cl_mmff_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
+_cl_protein = _sig("cl_protein_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -364,6 +365,19 @@ def mmff(smiles: str, variant: str = "MMFF94", minimize: bool = True) -> dict:
     """MMFF94 (or "MMFF94s") atom types, partial charges and energy terms (kcal/mol) for a SMILES embedded
     in 3D with explicit hydrogens, minimized with MMFF unless minimize is False; includes the SDF."""
     r = _take_json(_cl_mmff(smiles.encode(), variant.encode(), 1 if minimize else 0))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def protein(pdb: str, pH: float = 7.4) -> dict:
+    """Read a protein from PDB text (or a path to a .pdb file): chain sequences, isoelectric points and
+    molecular weights, disulfides, protonation state of each titratable residue at the pH (PROPKA model
+    pKa values), and the structure with all hydrogens rebuilt ("pdb")."""
+    if "\n" not in pdb and pdb.lower().endswith((".pdb", ".ent")):
+        with open(pdb) as f:
+            pdb = f.read()
+    r = _take_json(_cl_protein(pdb.encode(), pH))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

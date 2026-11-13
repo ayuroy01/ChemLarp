@@ -46,6 +46,7 @@
     <symbol id="i-flowsheet" viewBox="0 0 24 24"><rect x="2.5" y="9" width="6" height="6" rx="1.5"/><rect x="15.5" y="4" width="6" height="6" rx="1.5"/><rect x="15.5" y="14" width="6" height="6" rx="1.5"/><path d="M8.5 12h3.5V7h3.5M12 12v5h3.5"/></symbol>
     <symbol id="i-aqueous" viewBox="0 0 24 24"><path d="M12 3.5c3.2 4.3 6 7.6 6 10.9a6 6 0 0 1-12 0c0-3.3 2.8-6.6 6-10.9Z"/><path d="M9 15.2a3 3 0 0 0 3 2.8"/></symbol>
     <symbol id="i-dynamics" viewBox="0 0 24 24"><circle cx="8" cy="12" r="2.6"/><circle cx="17" cy="9" r="2.1"/><path d="M10.5 11.3 15 9.6"/><path d="M3.5 18.5c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 5 0M3.5 5.5c2 1.3 3.5 1.2 5 0"/></symbol>
+    <symbol id="i-protein" viewBox="0 0 24 24"><path d="M6 3.5c6 1.5 6 4.5 0 6s-6 4.5 0 6 6 4.5 0 6"/><path d="M18 3.5c-6 1.5-6 4.5 0 6s6 4.5 0 6-6 4.5 0 6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3Z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
     <symbol id="i-install" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M12 8v7m-3-3 3 3 3-3"/></symbol>
@@ -73,6 +74,8 @@
         <a href="#equilibrium" data-tool="equilibrium" data-key="4"><svg><use href="#i-equilibrium"/></svg><span>Equilibrium</span><kbd>⌘4</kbd></a>
         <a href="#phases" data-tool="phases" data-key="5"><svg><use href="#i-phases"/></svg><span>Phase Behaviour</span><kbd>⌘5</kbd></a>
         <a href="#aqueous" data-tool="aqueous"><svg><use href="#i-aqueous"/></svg><span>Aqueous Chemistry</span></a>
+        <div class="list-heading">Biomolecules</div>
+        <a href="#protein" data-tool="protein"><svg><use href="#i-protein"/></svg><span>Protein</span></a>
         <div class="list-heading">Quantum</div>
         <a href="#quantum" data-tool="quantum" data-key="9"><svg><use href="#i-quantum"/></svg><span>Quantum Chemistry</span><kbd>⌘9</kbd></a>
         <div class="list-heading">Kinetics</div>
@@ -352,6 +355,57 @@ CCCCC 0.2</textarea>
           <div class="glass-card chart-card">
             <div class="card-head"><h2 id="ph-chart-title">Phase diagram</h2><span class="meta" id="ph-chart-meta"></span></div>
             <canvas class="chart" id="ph-chart" data-height="320"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Protein -->
+      <section class="view" id="protein" hidden>
+        <header class="view-head">
+          <h1>Protein</h1>
+          <p>Read a PDB structure: chains and sequences, disulfides, isoelectric point, protonation state of every titratable residue at a pH, and all hydrogens rebuilt with PDB names.</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="pr-form">
+            <div class="field">
+              <label for="pr-id">PDB ID</label>
+              <div class="row-input">
+                <input id="pr-id" class="mono" spellcheck="false" autocapitalize="characters" autocomplete="off" maxlength="4" placeholder="1CRN">
+                <button type="button" class="btn" id="pr-fetch">Fetch</button>
+              </div>
+              <span class="hint">Downloads from RCSB, or open a file:</span>
+              <input type="file" id="pr-file" accept=".pdb,.ent,.txt">
+            </div>
+            <div class="field">
+              <label for="pr-ph">pH</label>
+              <input id="pr-ph" type="number" min="0" max="14" step="0.1" value="7.4">
+            </div>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Protonate</button></div>
+          </form>
+          <div class="stack" id="pr-out"></div>
+        </div>
+        <div class="stack" id="pr-results" hidden>
+          <div class="viewport glass-dark md-viewport">
+            <canvas id="pr-viewer" aria-label="Protein structure with hydrogens"></canvas>
+            <div class="viewport-bar glass">
+              <div class="segmented small" role="radiogroup" aria-label="Atoms shown" id="pr-show">
+                <button type="button" role="radio" aria-checked="true" data-h="0">Heavy atoms</button>
+                <button type="button" role="radio" aria-checked="false" data-h="1">With hydrogens</button>
+              </div>
+              <button type="button" class="icon-btn" id="pr-save" title="Save protonated PDB" aria-label="Save protonated PDB"><svg><use href="#i-download"/></svg></button>
+            </div>
+          </div>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Chains</h2><span class="meta">pI and average mass from the sequence (Bjellqvist pKa set)</span></div>
+            <div id="pr-chains"></div>
+          </div>
+          <div class="glass-card chart-card">
+            <div class="card-head"><h2>Net charge with pH</h2><span class="meta">all chains, from the sequence</span></div>
+            <canvas class="chart" id="pr-titration" data-height="240"></canvas>
+          </div>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Titratable residues</h2><span class="meta">state at the pH from PROPKA model pKa values</span></div>
+            <div class="table-wrap" id="pr-residues"></div>
           </div>
         </div>
       </section>
@@ -671,6 +725,7 @@ Q in W, kW, MW; flows in mol/s.</pre>
       <a href="#equilibrium" data-tool="equilibrium" aria-label="Equilibrium"><svg><use href="#i-equilibrium"/></svg><span>Equil.</span></a>
       <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>
       <a href="#aqueous" data-tool="aqueous"><svg><use href="#i-aqueous"/></svg><span>Aqueous</span></a>
+      <a href="#protein" data-tool="protein"><svg><use href="#i-protein"/></svg><span>Protein</span></a>
       <a href="#quantum" data-tool="quantum"><svg><use href="#i-quantum"/></svg><span>Quantum</span></a>
       <a href="#kinetics" data-tool="kinetics"><svg><use href="#i-kinetics"/></svg><span>Kinetics</span></a>
       <a href="#flowsheet" data-tool="flowsheet"><svg><use href="#i-flowsheet"/></svg><span>Flowsheet</span></a>

@@ -767,8 +767,8 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'dynamics', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
-  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
+  const views = ['structure', 'model3d', 'dynamics', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'protein', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
+  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', protein: 'pr-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
   function show() {
@@ -1191,6 +1191,152 @@
       drawMd();
     } catch (err) { fail(out, err); }
   });
+
+  // ---- Protein ----------------------------------------------------------------------------------
+  let prViewer = null, prLast = null, prText = null, prName = '1CRN';
+  // Covalent bonds by distance on a 2.2 Å grid (PDB files carry no bond list for standard residues).
+  function proteinBonds(atoms) {
+    const cell = 2.2, grid = new Map(), bonds = [];
+    const key = (x, y, z) => `${x},${y},${z}`;
+    atoms.forEach((a, i) => {
+      const k = key(Math.floor(a.x / cell), Math.floor(a.y / cell), Math.floor(a.z / cell));
+      (grid.get(k) || grid.set(k, []).get(k)).push(i);
+    });
+    atoms.forEach((a, i) => {
+      const cx = Math.floor(a.x / cell), cy = Math.floor(a.y / cell), cz = Math.floor(a.z / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        for (const j of grid.get(key(cx + dx, cy + dy, cz + dz)) || []) {
+          if (j <= i) continue;
+          const b = atoms[j], hyd = a.el === 'H' || b.el === 'H';
+          if (hyd && a.el === b.el) continue;
+          const max = hyd ? 1.3 : (a.el === 'S' || b.el === 'S') ? 2.2 : 1.9;
+          const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+          if (d > 0.4 && d < max) bonds.push({ a: i, b: j, order: 1 });
+        }
+      }
+    });
+    return bonds;
+  }
+  function prShowStructure() {
+    if (!prLast) return;
+    const withH = checked($('pr-show')).dataset.h === '1';
+    const atoms = [];
+    for (const l of prLast.pdb.split('\n')) {
+      if (!l.startsWith('ATOM') && !l.startsWith('HETATM')) continue;
+      const res = l.slice(17, 20).trim();
+      if (res === 'HOH' || res === 'WAT') continue;
+      let el = l.slice(76, 78).trim();
+      el = el.length === 2 ? el[0] + el[1].toLowerCase() : el;
+      if (el === 'H' && !withH) continue;
+      atoms.push({ el, x: +l.slice(30, 38), y: +l.slice(38, 46), z: +l.slice(46, 54) });
+    }
+    if (!prViewer) prViewer = new MoleculeViewer($('pr-viewer'));
+    prViewer.loadAtoms({ atoms, bonds: proteinBonds(atoms) });
+  }
+  segmented($('pr-show'), prShowStructure);
+  function drawTitration() {
+    if (!prLast) return;
+    const pH = +$('pr-ph').value;
+    // Charge at the chosen pH, interpolated on the 0.25-step titration curve.
+    const t = prLast.titration, k = Math.min(t.length - 2, Math.max(0, Math.floor(pH / 0.25)));
+    const q = isFinite(pH) ? [pH, t[k][1] + (t[k + 1][1] - t[k][1]) * (pH - t[k][0]) / (t[k + 1][0] - t[k][0])] : null;
+    Charts.lineChart($('pr-titration'), [{ name: 'net charge', points: prLast.titration }], {
+      xLabel: 'pH', yLabel: 'net charge', xRange: [0, 14],
+      markers: [{ x: prLast.pI, y: 0, label: q && Math.abs(q[0] - prLast.pI) < 2.5 ? '' : `pI ${fixed(prLast.pI, 2)}` }].concat(q ? [{ x: q[0], y: q[1], label: `pH ${fixed(q[0], 2)}` }] : []),
+    });
+  }
+  function seqBlock(seq) {
+    // Groups of ten with the residue number of each group's first residue.
+    const rows = [];
+    for (let i = 0; i < seq.length; i += 50) {
+      const groups = [];
+      for (let k = i; k < Math.min(seq.length, i + 50); k += 10) groups.push(seq.slice(k, k + 10));
+      rows.push(h('div', { class: 'pr-seq-row' }, h('span', { class: 'pr-seq-n', text: String(i + 1) }), h('span', { text: groups.join(' ') })));
+    }
+    return h('div', { class: 'pr-seq mono' }, ...rows);
+  }
+  // PDB titles are upper case: sentence case, cut at a word near 70 characters.
+  function prTitle(t) {
+    let s = t.toLowerCase().replace(/^./, (c) => c.toUpperCase());
+    if (s.length > 72) s = s.slice(0, s.lastIndexOf(' ', 70)) + '…';
+    return s;
+  }
+  async function prLoadDefault() {
+    if (prText) return;
+    try {
+      const r = await fetch('data/1crn.pdb');
+      if (r.ok) { prText = await r.text(); prName = '1CRN'; $('pr-id').value = '1CRN'; }
+    } catch { /* offline without cache */ }
+  }
+  $('pr-file').addEventListener('change', async () => {
+    const f = $('pr-file').files[0];
+    if (!f) return;
+    prText = await f.text();
+    prName = f.name.replace(/\.(pdb|ent|txt)$/i, '');
+    $('pr-id').value = '';
+    $('pr-form').requestSubmit();
+  });
+  async function prFetch() {
+    const id = $('pr-id').value.trim().toUpperCase();
+    const out = $('pr-out');
+    if (!/^[0-9][A-Z0-9]{3}$/.test(id)) { out.replaceChildren(status('bad', 'A PDB ID has four characters, e.g. 1CRN')); return; }
+    busy(out, `Downloading ${id} from RCSB…`);
+    try {
+      const r = await fetch(`https://files.rcsb.org/download/${id}.pdb`);
+      if (!r.ok) throw new Error(r.status === 404 ? `${id} has no PDB-format file at RCSB (very large entries are mmCIF only)` : `RCSB answered ${r.status}`);
+      prText = await r.text();
+      prName = id;
+      $('pr-form').requestSubmit();
+    } catch (err) { fail(out, err); }
+  }
+  $('pr-fetch').addEventListener('click', prFetch);
+  $('pr-id').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); prFetch(); } });
+  $('pr-save').addEventListener('click', () => prLast && download(`${prName}_H.pdb`, prLast.pdb, 'chemical/x-pdb'));
+  $('pr-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('pr-out');
+    await prLoadDefault();
+    if (!prText) { out.replaceChildren(status('bad', 'Fetch a PDB ID or open a file first')); return; }
+    const pH = +$('pr-ph').value;
+    if (!(pH >= 0 && pH <= 14)) { out.replaceChildren(status('bad', 'pH must be between 0 and 14')); return; }
+    busy(out, 'Protonating…');
+    try {
+      const { result: r, ms } = await engine('protein', { pdb: prText, pH });
+      if (!r.ok) {
+        $('pr-results').hidden = true;
+        out.replaceChildren(status('bad', 'The structure could not be read'), ...diagnostics(r.diagnostics));
+        return;
+      }
+      prLast = r;
+      const nres = r.chains.reduce((s, c) => s + c.sequence.length, 0);
+      out.replaceChildren(
+        status('ok', prName + (r.title ? ' · ' + prTitle(r.title) : ''),
+          `${r.chains.length} chain${r.chains.length === 1 ? '' : 's'} · ${nres} residues · ${r.disulfides.length} disulfide${r.disulfides.length === 1 ? '' : 's'}`),
+        h('div', { class: 'metrics' },
+          metric(`Net charge at pH ${fixed(pH, 1)}`, (r.net_charge > 0 ? '+' : '') + r.net_charge),
+          metric('Isoelectric point', fixed(r.pI, 2)),
+          metric('Hydrogens added', r.hydrogens_added.toLocaleString('en-US'), r.hydrogens_removed ? `${r.hydrogens_removed} replaced` : ''),
+          metric('Compute time', String(Math.round(ms)), 'ms')),
+        ...diagnostics(r.diagnostics));
+      $('pr-chains').replaceChildren(...r.chains.map((c) => h('div', { class: 'pr-chain' },
+        h('div', { class: 'pr-chain-head' }, h('strong', { text: `Chain ${c.id || '–'}` }),
+          h('span', { class: 'meta', text: `${c.sequence.length} residues · pI ${fixed(c.pI, 2)} · ${fmt(c.molecular_weight / 1000, 5)} kDa` }),
+          h('button', { type: 'button', class: 'icon-btn', title: 'Copy sequence', 'aria-label': `Copy chain ${c.id} sequence`, onclick: () => copy(c.sequence) }, icon('copy'))),
+        seqBlock(c.sequence))),
+        ...[r.disulfides.length ? h('p', { class: 'meta', text: 'Disulfides: ' + r.disulfides.map(([a, n, b, m]) => `Cys ${a}${n}–Cys ${b}${m}`).join(', ') }) : null,
+        r.chain_breaks.length ? h('p', { class: 'meta', text: 'Chain breaks before: ' + r.chain_breaks.join(', ') }) : null].filter(Boolean));
+      const charged = (q) => h('td', { class: 'num ' + (q > 0 ? 'pr-pos' : q < 0 ? 'pr-neg' : ''), text: q > 0 ? `+${q}` : String(q) });
+      $('pr-residues').replaceChildren(h('table', {},
+        h('thead', {}, h('tr', {}, ...['Residue', 'Chain', 'State', 'Charge'].map((t, i) => h('th', { class: i === 3 ? 'num' : '', text: t })))),
+        h('tbody', {}, ...r.residues.map((x) => h('tr', {},
+          h('td', { text: `${x.name[0]}${x.name.slice(1).toLowerCase()} ${x.number}${x.icode}${x.n_terminal ? ' · N-term' : ''}${x.c_terminal ? ' · C-term' : ''}` }),
+          h('td', { text: x.chain || '–' }), h('td', { class: 'mono', text: x.state }), charged(x.charge))))));
+      $('pr-results').hidden = false;
+      prShowStructure();
+      drawTitration();
+    } catch (err) { fail(out, err); }
+  });
+  window.addEventListener('resize', () => { if (prLast && current() === 'protein') drawTitration(); });
 
   // ---- Aqueous chemistry ------------------------------------------------------------------------
   const AQ_EXAMPLES = [

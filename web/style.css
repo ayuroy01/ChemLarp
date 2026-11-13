@@ -609,3 +609,19 @@ body.dropping::after {
 .d3-ff-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 2px; }
 .q-pos { color: var(--accent); }
 .q-neg { color: var(--bad); }
+
+/* Protein */
+#pr-viewer { display: block; width: 100%; height: min(55vh, 480px); touch-action: none; cursor: grab; }
+.row-input { display: flex; gap: 8px; }
+.row-input input { flex: 1; min-width: 0; text-transform: uppercase; }
+.hint { display: block; margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+#pr-file { margin-top: 6px; font-size: 13px; max-width: 100%; }
+.pr-chain + .pr-chain { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.pr-chain-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.pr-chain-head .icon-btn { margin-left: auto; }
+#pr-results > *, #pr-chains { min-width: 0; }
+.pr-seq { font-size: 12.5px; line-height: 1.7; overflow-x: auto; max-width: 100%; }
+.pr-seq-row { white-space: pre; }
+.pr-seq-n { display: inline-block; min-width: 3.2em; color: var(--ink-3); text-align: right; margin-right: 10px; }
+.pr-pos { color: var(--accent); }
+.pr-neg { color: var(--bad); }

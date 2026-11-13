@@ -5,7 +5,7 @@ const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'viewer.js', 'editor.js', 'chart.js', 'engine-worker.js',
   'chemlarp.js', 'chemlarp.wasm', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png',
-  'data/roadmap.json', 'data/mechanisms/h2o2.ocm', 'data/mechanisms/h2o2.yaml',
+  'data/roadmap.json', 'data/1crn.pdb', 'data/mechanisms/h2o2.ocm', 'data/mechanisms/h2o2.yaml',
 ];
 
 self.addEventListener('install', (event) => {
