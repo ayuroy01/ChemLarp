@@ -1068,10 +1068,10 @@
   window.addEventListener('resize', () => { if (lastVle && current() === 'phases') drawVle(); });
 
   // ---- Roadmap ---------------------------------------------------------------------------------
-  let roadmap = null;
+  // The roadmap changes with every deploy: fetch it fresh (no HTTP cache) whenever it is shown, and when
+  // the app comes back into view, so a long-open tab or an installed app never shows an old figure.
   async function fetchRoadmap() {
-    if (!roadmap) roadmap = await (await fetch('data/roadmap.json')).json();
-    return roadmap;
+    return (await fetch('data/roadmap.json', { cache: 'no-store' })).json();
   }
   function roadmapStats(road) {
     const w = road.weights;
@@ -1114,7 +1114,18 @@
       );
     } catch (err) { fail(out, err); }
   }
-  fetchRoadmap().then((road) => { const s = roadmapStats(road); $('roadmap-pct').textContent = ((100 * s.done) / s.total).toFixed(0) + '%'; }).catch(() => {});
+  function refreshRoadmapPct() {
+    fetchRoadmap().then((road) => {
+      const s = roadmapStats(road);
+      $('roadmap-pct').textContent = ((100 * s.done) / s.total).toFixed(1) + '%';
+    }).catch(() => {});
+  }
+  refreshRoadmapPct();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    refreshRoadmapPct();
+    if (current() === 'roadmap') loadRoadmap();
+  });
 
   // ---- wiring -------------------------------------------------------------------------------
   $('compound-form').addEventListener('submit', (e) => { e.preventDefault(); openCompound($('compound').value); });
@@ -1178,7 +1189,21 @@
     $('install-btn').hidden = true;
   });
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
-  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !local) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:' && !local) {
+    // A new deploy installs a new worker, which takes control at once (skipWaiting + claim); reload then,
+    // so the page runs the new build instead of waiting for the next visit. Check for one whenever the
+    // app comes back into view.
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
   console.info('ChemLarp web build', BUILD);
 
   renderRecents();

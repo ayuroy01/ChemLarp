@@ -31,7 +31,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.endsWith('roadmap.json')) {
-    event.respondWith(fetch(event.request).then((r) => {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }).then((r) => {
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(event.request, copy));
       return r;
