@@ -21,7 +21,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | R/S, E/Z | IUPAC 2013 recommendations P-92 (CIP rules); Hanson et al., *JCIM* 58 (2018) 1755 (CIP algorithm validation) |
 | 2D depiction | Helson, *Rev. Comput. Chem.* 13 (1999) 313; Clark, Labute & Santavy, *JCIM* 46 (2006) 1107; IUPAC graphical representation of stereochemical configuration, Brecher et al., *Pure Appl. Chem.* 78 (2006) 1897; ACS 1996 drawing settings |
 | 2D→3D embedding | Crippen & Havel, *Distance Geometry and Molecular Conformation* (1988); Riniker & Landrum ETKDG, *JCIM* 55 (2015) 2562 |
-| Force fields | MMFF94: Halgren, *J. Comput. Chem.* 17 (1996), 5 parts; UFF: Rappé et al., *JACS* 114 (1992) 10024; OPLS-AA: Jorgensen et al., *JACS* 118 (1996) 11225 |
+| Force fields | MMFF94: Halgren, *J. Comput. Chem.* 17 (1996) 490, 520, 553, 587, 616 and MMFF94s 20 (1999) 720, 730; parameter tables (Copyright Merck & Co., 1994–1996, published as the papers' supplementary material) converted by `scripts/gen_mmff_data.py` from the verbatim copies in RDKit's `Params.cpp` (BSD; only the data are used, the typing and energy code is written from the papers and checked against the official validation suite); UFF: Rappé et al., *JACS* 114 (1992) 10024; OPLS-AA: Jorgensen et al., *JACS* 118 (1996) 11225 |
 | MD integrators | Verlet (1967); Swope et al. velocity Verlet, *JCP* 76 (1982) 637; Bussi, Donadio & Parrinello, *JCP* 126 (2007) 014101 (stochastic velocity rescaling); Leimkuhler & Matthews, *Appl. Math. Res. Express* 2013, 34 (BAOAB Langevin); Marsaglia & Tsang, *ACM TOMS* 26 (2000) 363 (gamma deviates) |
 | Docking scoring | AutoDock Vina, Trott & Olson, *J. Comput. Chem.* 31 (2010) 455 (open, Apache-2) |
 | FEP / MBAR | Zwanzig (1954); Shirts & Chodera, *JCP* 129 (2008) 124105 |
@@ -140,7 +140,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Cross-format check: one mechanism as .ocm / CHEMKIN / YAML gives identical rates | **done** (`scripts/gen_h2o2_mechanism.py`, test `three_formats_give_identical_rates`) |
 | SRI fall-off, Chebyshev, FORD/RORD, NASA9 thermo, ionic species | planned (`UnsupportedReactionType` today) |
 | Sparse LU for large mechanisms (>~300 species) | planned; dense LU is O(S³) per step |
-| MMFF94 / OPLS force fields; partial charges & electrostatics | planned (UFF done) |
+| MMFF94 and MMFF94s (`include/chemlarp/mmff.hpp`): the 99 MMFF atom types from structure (hypervalent S=O / P=O or dative S+–O− drawings, charges the drawing leaves implicit, MMFF's own aromaticity for 5- and 6-rings including fused, cationic and anionic rings), formal charges shared over resonance groups, bond-charge-increment partial charges, all seven energy terms with Halgren's step-down parameter search and the empirical rules for missing bond, angle, stretch-bend and torsion parameters, analytic gradient (forward-mode automatic differentiation), minimization, MMFF dynamics; `chemlarp mmff` (SMILES, or `--file` for the terms of every record of an SDF), `cl_mmff_json`, Python `mmff()`, force-field choice in `chemlarp md`, `cl_md_json` and `molecular_dynamics()`; web 3D Model view (UFF / MMFF94 / MMFF94s, energy terms, types and charges) and Molecular Dynamics view | **done** (`src/mmff.cpp`); validation in "MMFF94: validation" below. Not covered: OPLS-AA, MMFF's distance-dependent dielectric option, periodic or solvated systems, non-bonded cutoffs (all pairs are summed) |
 | Molecular dynamics (`include/chemlarp/md.hpp`): velocity Verlet (NVE), Bussi stochastic velocity rescaling with its conserved effective energy, and BAOAB Langevin dynamics; Maxwell–Boltzmann start with the centre-of-mass motion and overall rotation removed; platform-independent random numbers; harmonic normal modes (finite-difference Hessian, translations and rotations projected out, linear molecules detected from the moments of inertia); vibrational spectrum from the velocity autocorrelation; UFF molecules from SMILES; periodic Lennard-Jones fluid with block-averaged energy and pressure; `chemlarp md`, `chemlarp lj`, `cl_md_json`, `cl_lj_json`, Python `molecular_dynamics()` and `lennard_jones()`, web Molecular Dynamics panel with an animated trajectory, energy, temperature and spectrum charts and XYZ export | **done** (`src/md.cpp`); validation in "Molecular dynamics: validation" below. Not covered: periodic boxes for molecules, solvent, constraints (SHAKE/RATTLE), barostats (NPT), electrostatics (UFF has none here), neighbour lists for large systems, multiple time steps |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
@@ -343,4 +343,23 @@ Against measurements: pKw at 25 °C 13.9948 (IUPAC 13.995); gypsum solubility 15
 | Velocity Verlet energy fluctuation, ethanol at 300 K, dt = 0.4, 0.2, 0.1 fs | O(dt²) | ratios 3.92 and 4.00 |
 
 Tests (tests/test_md.cpp) also check time reversibility (forward 2000 steps, reverse the velocities, back to the start within 1e-8 Å), reproducibility for a seed, and equipartition for water with both thermostats. The UFF frequencies themselves are those of the force field, which is not fitted to vibrational spectra (water: 1757, 3706, 3760 cm⁻¹ against 1595, 3657, 3756 measured).
+
+## MMFF94: validation
+
+`scripts/validate_mmff.py` runs two independent comparisons.
+
+**Official MMFF94 validation suite** (Halgren / Merck, 761 molecules, www.ccl.net/cca/data/MMFF94/; not redistributed because the structures derive from the Cambridge Structural Database): the hypervalent and dative mol2 files with their formal-charge lists, evaluated at the 6-decimal coordinates of `MMFF94.mmd`, against Merck's OPTIMOL output (`MMFF94_opti.log`).
+
+| Quantity | Result (both representations) |
+|---|---|
+| Molecules read | 759 of 761 (COVXIU and DOTVEN give a three-valent N− in both files, which the structure reader rejects) |
+| Atom types | 17,231 of 17,231 atoms identical |
+| Partial charges (3 printed decimals) | identical except FEZPOP, whose formal-charge file gives +1 instead of −1 to two oxygens of an anion |
+| Total energy | 752 of 759 within 1e-4 kcal/mol; ERULE_01, 04, 06 within 4e-4; ERULE_03 0.005 (empirical Si–P bond length 0.0013 Å shorter); FEZPOP off because of its charges |
+| Each term (bond, angle, stretch-bend, out-of-plane, torsion, van der Waals, electrostatic) | largest difference 0.0044 kcal/mol (ERULE_03 bond); out-of-plane, van der Waals and electrostatics below 5e-5 |
+| Torsion parameters, interaction by interaction | 41,127 of 41,133 from the tables as OPTIMOL assigns them; the other six use the empirical rule |
+
+Rules settled against the suite rather than the papers alone: the torsion step-down tries the exact types, then one outer atom at equivalence level 1 with the other a wildcard, then both wildcards (no level-2 step); the bond-type torsion classes take precedence over the five-ring class, and class 2 needs a single central bond; an N bonded to N=C (hydrazone), N–NO2 or N–N=O stays an amine, while N–N=N is type 10; charges of nitro, N-oxide, azide, isonitrile and phosphoryl groups are counted by the group's net charge; angle constants use 143.9325·(π/180)² exactly (the rounded 0.043844 leaves 1e-4–7e-4 kcal/mol errors).
+
+**RDKit's MMFF94** (independent implementation, BSD) on 80 molecules entered as SMILES (drugs, ions, zwitterions, heteroaromatics, sulfonamides, phosphates, nitro and N-oxide groups), at the same coordinates: atom types identical in all 80, partial charges within 1e-4 in 79, total energies within 1e-4 kcal/mol. The exception, tetramethylphosphonium, is a difference in RDKit: it gives the ion no formal charge (net charge 0), while ChemLarp keeps +1. `data/mmff_reference.sdf` stores twelve of these molecules with RDKit's MMFF94 and MMFF94s types, charges and energies for tests/test_mmff.cpp, which also checks the gradient against finite differences, minimization and energy conservation in MMFF dynamics.
 

@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -99,7 +99,8 @@ _cl_vle = _sig("cl_vle_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_ch
 _cl_flowsheet = _sig("cl_flowsheet_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_aqueous = _sig("cl_aqueous_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_md = _sig("cl_md_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_double,
-              ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+              ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_char_p)
+_cl_mmff = _sig("cl_mmff_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -347,12 +348,22 @@ def solution(text: str) -> dict:
 
 def molecular_dynamics(smiles: str, temperature_K: float = 300.0, steps: int = 2000, dt_fs: float = 0.5,
                        thermostat: str = "bussi", tau_fs: float = 100.0, sample_every: int = 10, seed: int = 1,
-                       normal_modes: bool = False) -> dict:
-    """UFF molecular dynamics of one molecule (embedded in 3D with explicit hydrogens and minimized).
+                       normal_modes: bool = False, force_field: str = "uff") -> dict:
+    """Molecular dynamics of one molecule (embedded in 3D with explicit hydrogens and minimized) with
+    force_field "uff", "mmff94" or "mmff94s".
     thermostat: "bussi", "langevin" or "none" (NVE). Returns energies per stored frame, positions (Å),
     harmonic frequencies (cm-1) when normal_modes is set, a velocity spectrum and a multi-frame XYZ."""
     r = _take_json(_cl_md(smiles.encode(), temperature_K, steps, dt_fs, thermostat.encode(), tau_fs, sample_every,
-                          seed, 1 if normal_modes else 0))
+                          seed, 1 if normal_modes else 0, force_field.encode()))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def mmff(smiles: str, variant: str = "MMFF94", minimize: bool = True) -> dict:
+    """MMFF94 (or "MMFF94s") atom types, partial charges and energy terms (kcal/mol) for a SMILES embedded
+    in 3D with explicit hydrogens, minimized with MMFF unless minimize is False; includes the SDF."""
+    r = _take_json(_cl_mmff(smiles.encode(), variant.encode(), 1 if minimize else 0))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

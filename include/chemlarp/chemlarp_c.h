@@ -140,10 +140,17 @@ CHEMLARP_API char* cl_aqueous_json(const char* solution_text);
  * compute_modes != 0 adds the harmonic normal-mode frequencies. Returns {"ok","elements","bonds",
  * "minimized_energy","dof","mean_temperature_K","mean_potential","drift_kcal_mol_ps","fluctuation",
  * "frames":[{t,K,U,E,conserved,T}],"positions":[[3N per stored frame]],"position_stride","modes":[cm-1],
- * "spectrum":{"max_cm1","intensity"},"xyz","diagnostics"}; units Å, fs, kcal/mol, K. */
+ * "spectrum":{"max_cm1","intensity"},"xyz","diagnostics"}; units Å, fs, kcal/mol, K. force_field: "uff"
+ * (default), "mmff94" or "mmff94s". */
 CHEMLARP_API char* cl_md_json(const char* smiles, double temperature_K, unsigned steps, double dt_fs,
                               const char* thermostat, double tau_fs, unsigned sample_every, unsigned seed,
-                              int compute_modes);
+                              int compute_modes, const char* force_field);
+
+/* MMFF94 / MMFF94s for a SMILES (embedded in 3D with explicit hydrogens; minimized when minimize != 0).
+ * variant: "MMFF94" (default) or "MMFF94s". Returns {"ok","variant","elements","bonds","types","symbols",
+ * "charges","formal_charges","energy":{total,bond,angle,stretch_bend,out_of_plane,torsion,vdw,electrostatic},
+ * "minimized","converged","iterations","empirical_parameters","sdf","xyz","diagnostics"}. */
+CHEMLARP_API char* cl_mmff_json(const char* smiles, const char* variant, int minimize);
 
 /* Lennard-Jones fluid in reduced units (4 cells^3 particles, truncated and shifted at `cutoff`), Bussi
  * thermostat unless thermostat is "none" or "langevin". Returns {"ok","particles","box","energy_per_particle",

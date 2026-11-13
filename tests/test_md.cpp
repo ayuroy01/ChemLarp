@@ -170,10 +170,10 @@ TEST(md_input_errors) {
   LjOptions lj;
   lj.cells = 1;  // box too small for the cutoff
   CHECK(!lennard_jones_fluid(lj, d).has_value());
-  char* bad = cl_md_json("C1CC", 300, 10, 0.5, "bussi", 100, 1, 1, 0);
+  char* bad = cl_md_json("C1CC", 300, 10, 0.5, "bussi", 100, 1, 1, 0, "uff");
   CHECK(std::string(bad).find("\"ok\":false") != std::string::npos);
   cl_free_string(bad);
-  char* good = cl_md_json("CO", 300, 200, 0.5, "langevin", 100, 10, 1, 1);
+  char* good = cl_md_json("CO", 300, 200, 0.5, "langevin", 100, 10, 1, 1, "mmff94");
   const std::string s(good);
   cl_free_string(good);
   CHECK(s.rfind("{\"ok\":true", 0) == 0);

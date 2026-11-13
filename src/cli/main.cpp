@@ -13,6 +13,7 @@
 //   chemlarp solution <file|-> [--json]                             (aqueous speciation, pH, solubility)
 //   chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--modes] [--xyz file]
 //   chemlarp lj [--cells n] [--density r] [-T t] [--steps N] [--thermostat ...]      (Lennard-Jones fluid)
+//   chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   (MMFF94 types, charges, energy)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -33,6 +34,7 @@
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -55,6 +57,7 @@
 #include "chemlarp/fingerprint.hpp"
 #include "chemlarp/kinetics.hpp"
 #include "chemlarp/md.hpp"
+#include "chemlarp/mmff.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/qc.hpp"
@@ -81,7 +84,10 @@ int usage() {
       "  chemlarp flowsheet <file|-> [--json]  steady-state flowsheet (format: include/chemlarp/flowsheet.hpp)\n"
       "  chemlarp solution <file|-> [--json]   aqueous pH, speciation, solubility (format: include/chemlarp/aqueous.hpp)\n"
       "  chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--tau fs]\n"
-      "              [--every N] [--seed N] [--modes] [--xyz file] [--json]   UFF molecular dynamics\n"
+      "              [--every N] [--seed N] [--ff uff|mmff94|mmff94s] [--modes] [--xyz file] [--json]\n"
+      "                                                         molecular dynamics\n"
+      "  chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   MMFF94 types, charges, energy\n"
+      "  chemlarp mmff --file <file.sdf> [--coords file] [--mmff94s]   MMFF94 terms of each record (JSON)\n"
       "  chemlarp lj [--cells n] [--density r] [-T t] [--cutoff rc] [--dt t] [--equil N] [--steps N]\n"
       "              [--thermostat bussi|langevin|none] [--seed N]            Lennard-Jones fluid (reduced units)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
@@ -603,7 +609,7 @@ int cmd_solution(const std::vector<std::string>& args) {
 
 int cmd_md(const std::vector<std::string>& args) {
   MdOptions o;
-  std::string smiles, xyz_path, th = "bussi";
+  std::string smiles, xyz_path, th = "bussi", ffname = "uff";
   bool modes = false, json = false;
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string& a = args[i];
@@ -616,6 +622,7 @@ int cmd_md(const std::vector<std::string>& args) {
     else if (a == "--every") { if (!next(v) || v < 1) return usage(); o.sample_every = std::size_t(v); }
     else if (a == "--seed") { if (!next(v) || v < 0) return usage(); o.seed = std::uint64_t(v); }
     else if (a == "--thermostat" && i + 1 < args.size()) th = args[++i];
+    else if (a == "--ff" && i + 1 < args.size()) ffname = args[++i];
     else if (a == "--modes") modes = true;
     else if (a == "--json") json = true;
     else if (a == "--xyz" && i + 1 < args.size()) xyz_path = args[++i];
@@ -624,19 +631,21 @@ int cmd_md(const std::vector<std::string>& args) {
   }
   if (smiles.empty() || (th != "bussi" && th != "langevin" && th != "none" && th != "nve")) return usage();
   o.thermostat = th == "langevin" ? Thermostat::Langevin : th == "bussi" ? Thermostat::Bussi : Thermostat::None;
+  if (ffname != "uff" && ffname != "mmff94" && ffname != "mmff94s") return usage();
+  const ForceFieldChoice ffc = ffname == "mmff94" ? ForceFieldChoice::Mmff94 : ffname == "mmff94s" ? ForceFieldChoice::Mmff94s : ForceFieldChoice::Uff;
   if (json) {
-    const std::string out = molecule_md_json(smiles, o, modes);
+    const std::string out = molecule_md_json(smiles, o, modes, ffc);
     std::printf("%s\n", out.c_str());
     return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
   }
   Diagnostics d;
   o.keep_positions = !xyz_path.empty();
-  auto r = molecule_md(smiles, o, modes, d);
+  auto r = molecule_md(smiles, o, modes, d, ffc);
   print_diagnostics(d, {});
   if (!r) return 1;
   const auto& m = r->md;
-  std::printf("%zu atoms, %zu kinetic degrees of freedom, UFF minimum %.4f kcal/mol\n", r->masses.size(), m.degrees_of_freedom,
-              r->minimized_energy);
+  std::printf("%zu atoms, %zu kinetic degrees of freedom, %s minimum %.4f kcal/mol\n", r->masses.size(), m.degrees_of_freedom,
+              ffc == ForceFieldChoice::Uff ? "UFF" : ffc == ForceFieldChoice::Mmff94 ? "MMFF94" : "MMFF94s", r->minimized_energy);
   std::printf("%zu steps of %.3g fs (%s): mean T %.2f K, mean potential %.4f kcal/mol\n", o.steps, o.dt_fs, th.c_str(),
               m.mean_temperature_K, m.mean_potential);
   std::printf("conserved energy: drift %.3g kcal/mol/ps, fluctuation %.3g kcal/mol\n", m.drift_kcal_mol_ps, m.fluctuation);
@@ -663,6 +672,125 @@ int cmd_md(const std::vector<std::string>& args) {
       }
     }
     std::printf("\ntrajectory written to %s (%zu frames)\n", xyz_path.c_str(), m.frames.size());
+  }
+  return 0;
+}
+
+// MMFF energies of every record of a structure file at its own coordinates (hydrogens explicit), as JSON
+// lines; `coords` optionally replaces each named record's coordinates (name x0 y0 z0 x1 ... per line).
+int mmff_file(const std::string& path, const std::string& coords, bool s94) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    std::fprintf(stderr, "error: cannot read %s\n", path.c_str());
+    return 1;
+  }
+  const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  ChemicalSystemState st;
+  Diagnostics d;
+  ReadOptions ro;
+  ro.keep_hydrogens = true;
+  const auto recs = read_molecules(st, text, d, ro);
+  std::vector<std::pair<std::string, std::vector<double>>> precise;
+  if (!coords.empty()) {
+    std::ifstream c(coords);
+    for (std::string line; std::getline(c, line);) {
+      std::istringstream ls(line);
+      std::string name;
+      ls >> name;
+      std::vector<double> xs;
+      for (double v; ls >> v;) xs.push_back(v);
+      precise.push_back({name, xs});
+    }
+  }
+  std::printf("[");
+  bool first = true;
+  for (const auto& r : recs) {
+    std::printf("%s\n{\"name\":%s", first ? "" : ",", json_escape(r.title).c_str());
+    first = false;
+    if (r.species < 0) { std::printf(",\"error\":\"unreadable\"}"); continue; }
+    Diagnostics q;
+    auto ff = MmffForceField::build(st, std::uint32_t(r.species), q, s94 ? MmffVariant::Mmff94s : MmffVariant::Mmff94);
+    if (!ff) { std::printf(",\"error\":%s}", json_escape(q.items().empty() ? "" : q.items()[0].message).c_str()); continue; }
+    const auto& spc = st.species[std::uint32_t(r.species)];
+    std::vector<double> x;
+    for (std::uint32_t i = 0; i < spc.atom_count; ++i) {
+      x.push_back(st.atoms.x[spc.atom_begin + i]);
+      x.push_back(st.atoms.y[spc.atom_begin + i]);
+      x.push_back(st.atoms.z[spc.atom_begin + i]);
+    }
+    for (const auto& [name, xs] : precise)
+      if (name == r.title && xs.size() == x.size()) x = xs;
+    const auto e = ff->breakdown(x);
+    std::printf(",\"types\":[");
+    for (std::size_t i = 0; i < ff->types().size(); ++i) std::printf("%s%d", i ? "," : "", ff->types()[i]);
+    std::printf("],\"charges\":[");
+    for (std::size_t i = 0; i < ff->charges().size(); ++i) std::printf("%s%.6f", i ? "," : "", ff->charges()[i]);
+    std::printf("],\"energy\":{\"total\":%.8f,\"bond\":%.8f,\"angle\":%.8f,\"stretch_bend\":%.8f,\"out_of_plane\":%.8f,"
+                "\"torsion\":%.8f,\"vdw\":%.8f,\"electrostatic\":%.8f}}",
+                e.total(), e.bond, e.angle, e.stretch_bend, e.out_of_plane, e.torsion, e.vdw, e.electrostatic);
+  }
+  std::printf("\n]\n");
+  return 0;
+}
+
+int cmd_mmff(const std::vector<std::string>& args) {
+  std::string smiles, sdf_path, file, coords;
+  bool s94 = false, minimize = true, json = false;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    if (a == "--file" && i + 1 < args.size()) file = args[++i];
+    else if (a == "--coords" && i + 1 < args.size()) coords = args[++i];
+    else if (a == "--mmff94s") s94 = true;
+    else if (a == "--no-min") minimize = false;
+    else if (a == "--json") json = true;
+    else if (a == "--sdf" && i + 1 < args.size()) sdf_path = args[++i];
+    else if (smiles.empty()) smiles = a;
+    else return usage();
+  }
+  if (!file.empty()) return mmff_file(file, coords, s94);
+  if (smiles.empty()) return usage();
+  const MmffVariant var = s94 ? MmffVariant::Mmff94s : MmffVariant::Mmff94;
+  if (json) {
+    const std::string out = mmff_json(smiles, var, minimize);
+    std::printf("%s\n", out.c_str());
+    return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+  }
+  Diagnostics d;
+  ChemicalSystemState st;
+  const std::int32_t sp = embed_smiles(st, smiles, d);
+  if (sp < 0) {
+    print_diagnostics(d, smiles);
+    return 1;
+  }
+  const auto s = std::uint32_t(sp);
+  MmffMinimizeResult mr;
+  if (minimize) mr = mmff_minimize(st, s, d, var, LbfgsOptions{5000, 10, 1e-4, 1e-15, 0.3});
+  auto ff = MmffForceField::build(st, s, d, var);
+  print_diagnostics(d, {});
+  if (!ff) return 1;
+  const auto& spc = st.species[s];
+  std::vector<double> x;
+  for (std::uint32_t i = 0; i < spc.atom_count; ++i) {
+    x.push_back(st.atoms.x[spc.atom_begin + i]);
+    x.push_back(st.atoms.y[spc.atom_begin + i]);
+    x.push_back(st.atoms.z[spc.atom_begin + i]);
+  }
+  const auto e = ff->breakdown(x);
+  std::printf("%s energy %.4f kcal/mol%s\n", s94 ? "MMFF94s" : "MMFF94", e.total(),
+              minimize ? (mr.converged ? " (minimized)" : " (minimization stopped)") : " (embedded structure)");
+  std::printf("  bond %.4f  angle %.4f  stretch-bend %.4f  out-of-plane %.4f\n  torsion %.4f  van der Waals %.4f  electrostatic %.4f\n",
+              e.bond, e.angle, e.stretch_bend, e.out_of_plane, e.torsion, e.vdw, e.electrostatic);
+  std::printf("\n  %5s %-3s %5s %-6s %9s\n", "atom", "el", "type", "symbol", "charge");
+  for (std::uint32_t i = 0; i < spc.atom_count; ++i) {
+    const auto* el = find_element_by_z(st.atoms.element[spc.atom_begin + i]);
+    std::printf("  %5u %-3s %5d %-6s %9.4f\n", i + 1, el ? std::string(el->symbol).c_str() : "X", ff->types()[i],
+                ff->symbols()[i].c_str(), ff->charges()[i]);
+  }
+  if (ff->empirical_parameters())
+    std::printf("\n%zu parameters from MMFF's empirical rules\n", ff->empirical_parameters());
+  if (!sdf_path.empty()) {
+    std::ofstream out(sdf_path, std::ios::binary);
+    out << write_sdf(st, s, smiles);
   }
   return 0;
 }
@@ -1139,6 +1267,7 @@ int main(int argc, char** argv) {
   if (cmd == "solution" && !args.empty()) return cmd_solution(args);
   if (cmd == "md" && !args.empty()) return cmd_md(args);
   if (cmd == "lj") return cmd_lj(args);
+  if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

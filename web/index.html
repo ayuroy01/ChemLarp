@@ -130,7 +130,7 @@
       <section class="view" id="model3d" hidden>
         <header class="view-head">
           <h1>3D Model</h1>
-          <p>Distance-geometry embedding refined with the Universal Force Field. Drag to rotate, scroll or pinch to zoom.</p>
+          <p>Distance-geometry embedding refined with the Universal Force Field or MMFF94, with MMFF partial charges. Drag to rotate, scroll or pinch to zoom.</p>
         </header>
         <div class="viewport glass-dark">
           <canvas id="viewer" aria-label="3D model of the open compound"></canvas>
@@ -144,6 +144,14 @@
             <button type="button" class="icon-btn" id="d3-sdf" title="Export SDF" aria-label="Export SDF" disabled><svg><use href="#i-download"/></svg></button>
           </div>
         </div>
+        <div class="d3-ff-row">
+          <span class="samples-label">Force field</span>
+          <div class="segmented small" role="radiogroup" aria-label="Force field" id="d3-ff">
+            <button type="button" role="radio" aria-checked="true" data-ff="uff">UFF</button>
+            <button type="button" role="radio" aria-checked="false" data-ff="MMFF94">MMFF94</button>
+            <button type="button" role="radio" aria-checked="false" data-ff="MMFF94s">MMFF94s</button>
+          </div>
+        </div>
         <div class="stack" id="d3-out"></div>
       </section>
 
@@ -151,7 +159,7 @@
       <section class="view" id="dynamics" hidden>
         <header class="view-head">
           <h1>Molecular Dynamics</h1>
-          <p>Classical dynamics of the open compound with the Universal Force Field, at constant energy or temperature, with its harmonic vibrational frequencies.</p>
+          <p>Classical dynamics of the open compound with MMFF94 or the Universal Force Field, at constant energy or temperature, with its harmonic vibrational frequencies.</p>
         </header>
         <div class="split">
           <form class="panel glass-card" id="md-form">
@@ -162,6 +170,14 @@
             <div class="field-row">
               <div class="field narrow"><label for="md-dt">Time step</label><div class="unit-input"><input id="md-dt" type="number" value="0.5" min="0.05" max="2" step="any"><span>fs</span></div></div>
               <div class="field narrow"><label for="md-tau">Coupling time</label><div class="unit-input"><input id="md-tau" type="number" value="100" min="1" step="any"><span>fs</span></div></div>
+            </div>
+            <div class="field">
+              <label for="md-ff">Force field</label>
+              <select id="md-ff">
+                <option value="mmff94">MMFF94 (organic molecules, with charges)</option>
+                <option value="uff">UFF (any element it covers)</option>
+                <option value="mmff94s">MMFF94s (planar-amine variant)</option>
+              </select>
             </div>
             <div class="field">
               <label for="md-thermo">Ensemble</label>

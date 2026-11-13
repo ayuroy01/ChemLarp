@@ -117,7 +117,7 @@
         {
           "name": "MMFF94, partial charges, electrostatics",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Molecular dynamics",

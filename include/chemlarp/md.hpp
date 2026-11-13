@@ -102,15 +102,18 @@ struct MoleculeMdResult {
   std::optional<NormalModes> modes;
 };
 
-// Embeds the SMILES in 3D (explicit hydrogens), minimizes with UFF, optionally computes the normal modes,
-// and runs dynamics.
+enum class ForceFieldChoice { Uff, Mmff94, Mmff94s };
+
+// Embeds the SMILES in 3D (explicit hydrogens), minimizes with the force field (UFF, or MMFF94 / MMFF94s
+// starting from the UFF structure), optionally computes the normal modes, and runs dynamics.
 std::optional<MoleculeMdResult> molecule_md(std::string_view smiles, const MdOptions& options, bool compute_modes,
-                                            Diagnostics& diag);
+                                            Diagnostics& diag, ForceFieldChoice force_field = ForceFieldChoice::Uff);
 
 // JSON for the C API: {"ok","elements","bonds":[[a,b,order]],"minimized_energy","dof","mean_temperature_K",
 // "drift_kcal_mol_ps","fluctuation","frames":[{t,K,U,E,conserved,T}],"positions":[[...3N] per frame],
 // "modes":[cm-1],"spectrum":{"max_cm1","intensity":[...]},"xyz","diagnostics"}.
-std::string molecule_md_json(std::string_view smiles, const MdOptions& options, bool compute_modes);
+std::string molecule_md_json(std::string_view smiles, const MdOptions& options, bool compute_modes,
+                             ForceFieldChoice force_field = ForceFieldChoice::Uff);
 
 // ---- Lennard-Jones fluid ----
 

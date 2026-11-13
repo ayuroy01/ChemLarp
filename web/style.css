@@ -604,3 +604,8 @@ body.dropping::after {
 .md-imag { color: var(--bad); }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
 .check input[type="checkbox"] { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--accent); }
+
+/* 3D model: force field and charges */
+.d3-ff-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 2px; }
+.q-pos { color: var(--accent); }
+.q-neg { color: var(--bad); }

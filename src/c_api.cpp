@@ -28,6 +28,7 @@
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
 #include "chemlarp/md.hpp"
+#include "chemlarp/mmff.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/qc.hpp"
 #include "chemlarp/json.hpp"
@@ -801,8 +802,15 @@ char* cl_aqueous_json(const char* solution_text) {
   return guarded([&] { return aqueous_json(solution_text); });
 }
 
+ForceFieldChoice ff_choice(const char* f) {
+  const std::string s = f ? f : "uff";
+  if (s == "mmff94" || s == "MMFF94") return ForceFieldChoice::Mmff94;
+  if (s == "mmff94s" || s == "MMFF94s") return ForceFieldChoice::Mmff94s;
+  return ForceFieldChoice::Uff;
+}
+
 char* cl_md_json(const char* smiles, double temperature_K, unsigned steps, double dt_fs, const char* thermostat,
-                 double tau_fs, unsigned sample_every, unsigned seed, int compute_modes) {
+                 double tau_fs, unsigned sample_every, unsigned seed, int compute_modes, const char* force_field) {
   if (!smiles) return nullptr;
   MdOptions o;
   o.temperature_K = temperature_K;
@@ -814,7 +822,15 @@ char* cl_md_json(const char* smiles, double temperature_K, unsigned steps, doubl
   if (sample_every > 0) o.sample_every = sample_every;
   o.seed = seed;
   if (steps > 2000000) return dup("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":\"at most 2,000,000 steps\"}]}");
-  return guarded([&] { return molecule_md_json(smiles, o, compute_modes != 0); });
+  return guarded([&] { return molecule_md_json(smiles, o, compute_modes != 0, ff_choice(force_field)); });
+}
+
+char* cl_mmff_json(const char* smiles, const char* variant, int minimize) {
+  if (!smiles) return nullptr;
+  const std::string v = variant ? variant : "MMFF94";
+  return guarded([&] {
+    return mmff_json(smiles, v == "MMFF94s" || v == "mmff94s" ? MmffVariant::Mmff94s : MmffVariant::Mmff94, minimize != 0);
+  });
 }
 
 char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt, unsigned equilibration,

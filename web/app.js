@@ -793,15 +793,52 @@
     if (!viewer) viewer = new MoleculeViewer($('viewer'));
     requestAnimationFrame(() => viewer.draw());
     if (!compound) { $('d3-out').replaceChildren(h('p', { class: 'muted', text: 'Open a compound to build its 3D model.' })); return; }
-    if (model3d.for === compound.canonical) return;
-    const target = compound.canonical;
+    const ffSel = checked($('d3-ff')).dataset.ff;
+    if (model3d.for === compound.canonical + '|' + ffSel) return;
+    const target = compound.canonical + '|' + ffSel;
     model3d = { for: target, sdf: null, xyz: null };
     $('viewer-empty').hidden = false;
     $('d3-sdf').disabled = true;
     busy($('d3-out'), 'Embedding and minimising…');
+    if (ffSel !== 'uff') {
+      try {
+        const { result: r, ms } = await engine('mmff', { smiles: compound.input, variant: ffSel, minimize: true });
+        if (!compound || compound.canonical + '|' + checked($('d3-ff')).dataset.ff !== target) return;
+        $('viewer-empty').hidden = true;
+        if (!r.ok) { $('d3-out').replaceChildren(status('bad', `No ${ffSel} model for this compound`), ...diagnostics(r.diagnostics)); return; }
+        model3d = { for: target, sdf: r.sdf, xyz: r.xyz };
+        viewer.labels = checked($('model3d').querySelector('.segmented')).dataset.style === 'labels';
+        viewer.load(r.sdf);
+        $('d3-sdf').disabled = false;
+        const E = r.energy;
+        const terms = [['Bond stretching', E.bond], ['Angle bending', E.angle], ['Stretch–bend', E.stretch_bend],
+          ['Out-of-plane', E.out_of_plane], ['Torsion', E.torsion], ['van der Waals', E.vdw], ['Electrostatic', E.electrostatic]];
+        $('d3-out').replaceChildren(
+          status(r.converged ? 'ok' : 'warn', `${r.variant} minimum`, `${r.iterations} iterations${r.empirical_parameters ? ` · ${r.empirical_parameters} empirical-rule parameters` : ''}`),
+          h('div', { class: 'metrics' },
+            metric(`${r.variant} energy`, fmt(E.total, 6), 'kcal/mol'),
+            metric('Net charge', fmt(r.charges.reduce((a, b) => a + b, 0), 3), 'e'),
+            metric('Compute time', String(Math.round(ms)), 'ms')),
+          h('div', { class: 'glass-card card' },
+            h('div', { class: 'card-head' }, h('h2', { text: 'Energy terms' }), h('span', { class: 'meta', text: 'kcal/mol' })),
+            h('div', { class: 'table-wrap' }, h('table', {}, h('tbody', {}, terms.map(([k, v]) => h('tr', {}, h('td', { text: k }), h('td', { class: 'num', text: fixed(v, 4) }))))))),
+          h('div', { class: 'glass-card card' },
+            h('div', { class: 'card-head' }, h('h2', { text: 'Atom types and partial charges' }), h('span', { class: 'meta', text: 'MMFF bond charge increments' })),
+            h('div', { class: 'table-wrap' }, h('table', {},
+              h('thead', {}, h('tr', {}, h('th', { text: 'Atom' }), h('th', { text: 'Element' }), h('th', { class: 'num', text: 'Type' }), h('th', { text: 'Symbol' }), h('th', { class: 'num', text: 'Charge' }))),
+              h('tbody', {}, r.elements.map((el, i) => h('tr', {}, h('td', { text: String(i + 1) }), h('td', { text: el }),
+                h('td', { class: 'num', text: String(r.types[i]) }), h('td', { class: 'mono', text: r.symbols[i] }),
+                h('td', { class: 'num ' + (r.charges[i] > 0.05 ? 'q-pos' : r.charges[i] < -0.05 ? 'q-neg' : ''), text: fixed(r.charges[i], 4) }))))))),
+          h('div', { class: 'samples' }, h('span', { class: 'samples-label', text: 'Export' }),
+            h('button', { class: 'chip', type: 'button', onclick: () => download(fileBase() + '.sdf', r.sdf, 'chemical/x-mdl-sdfile'), text: 'SDF (MDL molfile)' }),
+            h('button', { class: 'chip', type: 'button', onclick: () => download(fileBase() + '.xyz', r.xyz, 'chemical/x-xyz'), text: 'XYZ' })),
+          ...diagnostics(r.diagnostics));
+      } catch (err) { fail($('d3-out'), err); }
+      return;
+    }
     try {
       const { result: r, ms } = await engine('embed', { smiles: compound.input, seed: 42, candidates: 5, minimize: true });
-      if (!compound || compound.canonical !== target) return;
+      if (!compound || compound.canonical + '|uff' !== target) return;
       $('viewer-empty').hidden = true;
       if (!r.ok) { $('d3-out').replaceChildren(status('bad', 'No 3D model for this compound'), ...diagnostics(r.diagnostics)); return; }
       model3d = { for: target, sdf: r.sdf, xyz: r.xyz };
@@ -827,6 +864,7 @@
   }
   const fileBase = () => (compound ? compound.formula : 'structure');
   segmented($('model3d').querySelector('.segmented'), (b) => { if (viewer) { viewer.labels = b.dataset.style === 'labels'; viewer.draw(); } });
+  segmented($('d3-ff'), () => build3d());
   $('d3-reset').addEventListener('click', () => { if (viewer && model3d.sdf) viewer.load(model3d.sdf); });
   $('d3-sdf').addEventListener('click', () => model3d.sdf && download(fileBase() + '.sdf', model3d.sdf, 'chemical/x-mdl-sdfile'));
 
@@ -1125,13 +1163,14 @@
     try {
       const { result: r, ms } = await engine('md', {
         smiles: compound.input, temperature: +$('md-t').value, steps, dt, thermostat, tau: +$('md-tau').value, every, modes: $('md-modes').checked,
+        forceField: $('md-ff').value,
       });
       if (!r.ok) { $('md-results').hidden = true; mdRun = null; out.replaceChildren(status('bad', 'The dynamics could not run'), ...diagnostics(r.diagnostics)); return; }
       mdRun = { ...r, thermostat };
       const nve = thermostat === 'none';
       out.replaceChildren(
         status('ok', `${(steps * dt / 1000).toLocaleString('en-US', { maximumFractionDigits: 3 })} ps of dynamics`,
-          `${r.elements.length} atoms · ${r.dof} kinetic degrees of freedom · ${nve ? 'NVE' : thermostat === 'bussi' ? 'Bussi NVT' : 'Langevin NVT'}`),
+          `${r.elements.length} atoms · ${r.dof} kinetic degrees of freedom · ${nve ? 'NVE' : thermostat === 'bussi' ? 'Bussi NVT' : 'Langevin NVT'} · ${$('md-ff').selectedOptions[0].text.split(' ')[0]}`),
         h('div', { class: 'metrics' },
           metric('Mean temperature', fixed(r.mean_temperature_K, 1), 'K'),
           metric('Mean potential', fmt(r.mean_potential - r.minimized_energy, 4), 'kcal/mol above min.'),

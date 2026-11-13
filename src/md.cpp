@@ -9,6 +9,7 @@
 #include "chemlarp/conformer.hpp"
 #include "chemlarp/elements.hpp"
 #include "chemlarp/json.hpp"
+#include "chemlarp/mmff.hpp"
 #include "chemlarp/system_state.hpp"
 #include "chemlarp/uff.hpp"
 
@@ -453,14 +454,23 @@ std::vector<double> velocity_spectrum(const MdResult& r, const std::vector<doubl
 }
 
 std::optional<MoleculeMdResult> molecule_md(std::string_view smiles, const MdOptions& options, bool compute_modes,
-                                            Diagnostics& diag) {
+                                            Diagnostics& diag, ForceFieldChoice force_field) {
   ChemicalSystemState st;
   EmbedResult er;
   const std::int32_t sp = embed_smiles(st, smiles, diag, &er);
   if (sp < 0) return std::nullopt;
   const auto s = static_cast<std::uint32_t>(sp);
-  auto ff = UffForceField::build(st, s, diag);
-  if (!ff) return std::nullopt;
+  std::optional<UffForceField> uff;
+  std::optional<MmffForceField> mmff;
+  if (force_field == ForceFieldChoice::Uff) {
+    uff = UffForceField::build(st, s, diag);
+    if (!uff) return std::nullopt;
+  } else {
+    const MmffVariant var = force_field == ForceFieldChoice::Mmff94s ? MmffVariant::Mmff94s : MmffVariant::Mmff94;
+    mmff_minimize(st, s, diag, var, LbfgsOptions{5000, 10, 1e-4, 1e-15, 0.3});
+    mmff = MmffForceField::build(st, s, diag, var);
+    if (!mmff) return std::nullopt;
+  }
   MoleculeMdResult res;
   const auto& spc = st.species[s];
   const std::uint32_t b0 = spc.atom_begin;
@@ -479,9 +489,16 @@ std::optional<MoleculeMdResult> molecule_md(std::string_view smiles, const MdOpt
     diag.error(DiagCode::InvalidInput, "molecular dynamics of a single molecule is limited to 400 atoms");
     return std::nullopt;
   }
-  const UffForceField& f = *ff;
-  PotentialFunction pot = [&f](const std::vector<double>& xx, std::vector<double>& g) { return f.energy_gradient(xx, g); };
-  res.minimized_energy = f.energy(x);
+  PotentialFunction pot;
+  if (uff) {
+    const UffForceField& f = *uff;
+    pot = [&f](const std::vector<double>& xx, std::vector<double>& g) { return f.energy_gradient(xx, g); };
+  } else {
+    const MmffForceField& f = *mmff;
+    pot = [&f](const std::vector<double>& xx, std::vector<double>& g) { return f.energy_gradient(xx, g); };
+  }
+  std::vector<double> g0;
+  res.minimized_energy = pot(x, g0);
   if (compute_modes && res.masses.size() <= 150) res.modes = normal_modes(res.masses, x, pot, diag);
   auto md = run_md(res.masses, x, pot, options, diag);
   if (!md) return std::nullopt;
@@ -489,12 +506,13 @@ std::optional<MoleculeMdResult> molecule_md(std::string_view smiles, const MdOpt
   return res;
 }
 
-std::string molecule_md_json(std::string_view smiles, const MdOptions& options, bool compute_modes) {
+std::string molecule_md_json(std::string_view smiles, const MdOptions& options, bool compute_modes,
+                             ForceFieldChoice force_field) {
   Diagnostics d;
   MdOptions o = options;
   o.keep_positions = true;
   o.keep_velocities = true;
-  auto r = molecule_md(smiles, o, compute_modes, d);
+  auto r = molecule_md(smiles, o, compute_modes, d, force_field);
   std::string out = std::string("{\"ok\":") + (r && !d.has_errors() ? "true" : "false");
   if (r) {
     out += ",\"elements\":[";
