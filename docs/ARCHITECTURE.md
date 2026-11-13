@@ -28,7 +28,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | Thermo data | GRI-Mech 3.0; NASA Glenn (McBride, Zehe & Gordon, NASA/TP-2002-211556); Burcat database |
 | Gibbs minimisation | White, Johnson & Dantzig, *JCP* 28 (1958) 751; Reynolds STANJAN (1986); Smith & Missen, *Chemical Reaction Equilibrium Analysis* (1982) |
 | Kinetics | modified Arrhenius / mass action; CHEMKIN-II format (Kee et al., Sandia SAND89-8009) |
-| Activity models / EoS | NRTL: Renon & Prausnitz (1968); UNIFAC: Fredenslund et al. (1975), group tables published by DDBST; Peng–Robinson (1976) |
+| Activity models / EoS | NRTL: Renon & Prausnitz, *AIChE J.* 14 (1968) 135; UNIFAC: Fredenslund, Jones & Prausnitz, *AIChE J.* 21 (1975) 1086, subgroup and interaction tables published by DDBST (Hansen et al., *Ind. Eng. Chem. Res.* 30 (1991) 2352, and revisions); Antoine coefficients: Poling, Prausnitz & O'Connell, *The Properties of Gases and Liquids*, 5th ed. (2001); Peng–Robinson (1976) |
 | Flash / distillation | Rachford & Rice (1952); Michelsen, *Fluid Phase Equil.* 9 (1982) (stability); Naphtali–Sandholm (1971) |
 | Flowsheet convergence | Westerberg et al., *Process Flowsheeting* (1979); Biegler, Grossmann & Westerberg (1997) |
 
@@ -125,7 +125,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | SMARTS substructure search (full Daylight atom/bond logic, recursive $(), ring/valence primitives, optional chirality) | **done**; unique match counts identical to RDKit on 187,338 of 187,375 pattern-molecule pairs (99.98%: 125 patterns incl. RDKit's fragment set × 1,499 PubChem compounds); the rest are aromaticity-model differences in 5 molecules. 1,500 fuzzed patterns: no crash or hang under UBSan |
 | Relevant cycles (unique ring set) | **done**; used by SMARTS R/r so ring counts do not depend on atom order (bicyclo[2.2.2]octane: 3 rings) |
 | Morgan / ECFP fingerprints, Tanimoto, Dice | **done**; total environment counts identical to RDKit's Morgan for 1,499/1,499 compounds at radius 1-3 and distinct counts for 99.7% (rest: aromaticity); own 32-bit hash, so bit positions differ from RDKit |
-| Multiphase / condensed-phase equilibrium, activity models | planned |
+| Multiphase / condensed-phase equilibrium, activity models | **in progress**: cubic-EoS vapour-liquid flash and NRTL / UNIFAC activity-coefficient VLE done (below); liquid-liquid and solid-liquid equilibrium planned |
 | Mechanism format `.ocm` (SMILES-bound species, CHEMKIN-style reactions, units, third-body efficiencies) | **done**, with error vector (5xx) |
 | Mass-action rates, modified Arrhenius, third bodies, detailed-balance reverse rates, analytic Jacobian | **done**; relaxes exactly to the Gibbs equilibrium (tested) |
 | Batch reactors: isothermal/adiabatic × constant V/P, ignition delay | **done** |
@@ -141,8 +141,53 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Docking scoring, FEP/MBAR | planned |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds |
 | Michelsen stability test + Rachford–Rice two-phase flash; pure-component vapour pressure | **done** |
-| NRTL / UNIFAC activity models; column & flowsheet solvers | planned |
+| NRTL and original UNIFAC activity coefficients (any number of components), UNIFAC subgroups from structure, Antoine vapour pressures (323 compounds), bubble and dew T and P by modified Raoult's law; `chemlarp vle`, `cl_vle_text_json`, Python `vle()` | **done** (`src/activity.cpp`); validation in "Activity models: validation" below. Not covered: NRTL parameter database (parameters are supplied by the caller), modified UNIFAC (Dortmund), vapour non-ideality, liquid-liquid splits (dew points that need one fail with VleNotConverged), web UI |
+| Column & flowsheet solvers | planned |
 | Installable web app (WebAssembly, PWA, GitHub Pages) | **done**: https://ayuroy01.github.io/ChemLarp/ |
 | Worker pool | planned (design above) |
 | Node.js addon | planned (C ABI is ready for it) |
 | IUPAC naming | **done** for structure to name (`src/iupac.cpp`; scope, validation and limits in the "IUPAC names" row above). Done criteria, all met on 2026-11-13: no name that OPSIN parses to a different structure on any of the four validation sets (14,996 PubChem compounds); at least 93% of each set named; every structure outside the scope gets a NamingUnsupported diagnostic instead of a guessed name, including a principal group that could only be cited as a prefix; preferred-name rules for seniority, numbering, ring assemblies and multiplicative esters, with the remaining non-preferred forms listed above. Not part of this module: name-to-structure parsing, and coordination and organometallic nomenclature |
+
+## Activity models: validation
+
+All checks below use data not produced by ChemLarp. Tests: `tests/test_activity.cpp`.
+
+**Equations against an independent implementation.** ln γ from `nrtl_ln_gamma` and `unifac_ln_gamma` were compared with thermo 0.6.1 (C. Bell, MIT licence) on 300 random 2-4 component NRTL systems (250-450 K, including a, b, e, f and α terms and infinitely dilute components) and 400 random 2-4 component UNIFAC systems built from subgroups with published interaction parameters. Largest difference: 5.0e-14 in ln γ. thermo writes α = c + d T, ChemLarp α = c + d (T − 273.15 K) (the Aspen convention); the comparison shifts c accordingly. Five of these cases are in the tests.
+
+**Limits (tests).** γ = 1 for a pure component and for a mixture of identical components; NRTL with τ = 0 gives γ = 1 and Raoult's law for bubble and dew pressures (to 1e-12); NRTL infinite dilution matches ln γ∞ = τ21 + τ12 exp(−α τ12); UNIFAC satisfies Gibbs–Duhem (Σ x_i d ln γ_i = 0 to 1e-7 by central differences); the dew point of a bubble-point vapour returns the bubble temperature and liquid (1e-6). Invalid input (wrong length, negative or zero mole fractions, non-positive T or P, unknown subgroup, missing NRTL α) gives InvalidMixtureInput; a pair of main groups without a published a_mn (water + iodomethane) gives NoInteractionParameter and is never taken as zero; a compound without Antoine data gives NoVaporPressureData; use outside an Antoine range sets `extrapolated` and warns.
+
+**Group assignment against DDBST.** DDBST's published original-UNIFAC assignments for 28,846 compounds (InChIKeys, as distributed with thermo/chemicals; SMILES from chemicals' PubChem table) were split at random into a development half (14,418, used while writing the SMARTS rules) and a held-out half (14,405, evaluated once, on 2026-11-13, after the rules were fixed).
+
+| Set | Assigned | Identical to DDBST | Different | Refused |
+|---|---|---|---|---|
+| development | 12,814 (88.9%) | 12,778 (99.7% of assigned) | 36 | 1,604 |
+| held-out | 12,749 (88.5%) | 12,718 (99.8% of assigned) | 31 | 1,656 |
+
+The differences are mostly cases where DDBST's own choice is not determined by the group definitions: CH2 next to both an aromatic ring and an ether O or N (ACCH2 vs CH2O / CH2NH), non-benzenoid aromatics (azulene, cyclophanes) that DDBST splits into olefinic and aromatic groups, and two radicals. Refusals are structures with atoms or groups outside the supported subgroups (silicon, amides, carbonates, most heteroaromatics other than pyridine and thiophene); they get NoUnifacGroups, never a partial assignment.
+
+**Vapour pressures.** The Antoine fits reproduce CRC normal boiling points of the 12 compounds used below within 0.42 K (acetone, −0.42 K; all others within 0.25 K); 11 are in the tests with a 0.5 K tolerance.
+
+**Azeotropes at 101.325 kPa against experiment.** Reference: CRC Handbook of Chemistry and Physics (44th ed.) and Lange's Handbook of Chemistry (10th ed.), as compiled in the Wikipedia article "Azeotrope tables" (ethanol + cyclohexane from the Edinburgh Azeotrope Databank; methanol + hexane from CRC 101st ed.); composition converted from weight % to mole fraction. Homogeneous azeotropes only. The azeotrope is located where y − x changes sign along the UNIFAC bubble-point curve. x_B is the mole fraction of the second component.
+
+| System (A + B) | T exp / K | T UNIFAC / K | ΔT / K | x_B exp | x_B UNIFAC | Δx_B |
+|---|---|---|---|---|---|---|
+| water + ethanol | 351.25 | 351.16 | −0.09 | 0.892 | 0.897 | +0.005 |
+| ethanol + cyclohexane | 338.05 | 337.84 | −0.21 | 0.555 | 0.561 | +0.006 |
+| ethanol + hexane | 331.85 | 331.69 | −0.16 | 0.668 | 0.663 | −0.005 |
+| ethanol + toluene | 349.85 | 349.94 | +0.09 | 0.190 | 0.191 | 0.000 |
+| ethanol + chloroform | 332.55 | 332.69 | +0.14 | 0.837 | 0.858 | +0.022 |
+| methanol + benzene | 331.45 | 331.02 | −0.43 | 0.386 | 0.406 | +0.021 |
+| methanol + toluene | 336.95 | 337.00 | +0.05 | 0.135 | 0.111 | −0.024 |
+| methanol + acetone | 328.85 | 328.38 | −0.47 | 0.800 | 0.781 | −0.019 |
+| methanol + chloroform | 326.65 | 326.80 | +0.15 | 0.651 | 0.657 | +0.006 |
+| methanol + tetrachloromethane | 328.85 | 329.01 | +0.16 | 0.445 | 0.454 | +0.009 |
+| acetone + chloroform (maximum-boiling) | 337.85 | 337.58 | −0.27 | 0.661 | 0.628 | −0.033 |
+| acetone + hexane | 322.95 | 322.89 | −0.06 | 0.319 | 0.369 | +0.050 |
+| acetone + cyclohexane | 326.15 | 326.74 | +0.59 | 0.254 | 0.244 | −0.010 |
+| benzene + cyclohexane | 350.95 | 350.47 | −0.48 | 0.432 | 0.446 | +0.015 |
+| water + 1-propanol | 360.85 | 361.42 | +0.57 | 0.432 | 0.422 | −0.009 |
+| water + 2-propanol | 353.55 | 353.37 | −0.18 | 0.681 | 0.690 | +0.009 |
+| methanol + hexane | 333.15 | 322.42 | −10.73 | 0.484 | 0.492 | +0.008 |
+
+Sixteen of the 17 systems agree within 0.6 K and 0.05 in mole fraction, including the maximum-boiling acetone + chloroform azeotrope, and methanol + water correctly shows none. This is UNIFAC's predictive accuracy for these well-studied systems, not a numerical tolerance, and it will be worse for systems far from UNIFAC's fitting data. Methanol + hexane is unresolved: the tabulated 60 °C lies above the methanol + heptane azeotrope in the same table (59.1 °C), against the usual trend in a homologous series, and UNIFAC gives 49.3 °C. The source value has not been checked against a second compilation, so the system is reported here and left out of the tests. Five systems (water + ethanol, methanol + benzene, acetone + chloroform, benzene + cyclohexane, water + 2-propanol) are in the tests with tolerances of 0.6 K and 0.05.
+

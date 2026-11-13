@@ -107,6 +107,12 @@ CHEMLARP_API char* cl_kinetics_text_json(const char* mechanism_text, const char*
 CHEMLARP_API char* cl_flash_text_json(const char* component_lines, double temperature_K, double pressure_Pa, const char* eos);
 CHEMLARP_API char* cl_saturation_pressure_json(const char* smiles, double temperature_K, const char* eos);
 
+/* Vapour-liquid equilibrium with UNIFAC activity coefficients and Antoine vapour pressures (modified Raoult).
+ * `mode` is "bubble-T" or "dew-T" (value = pressure in Pa) or "bubble-P" or "dew-P" (value = temperature in K);
+ * `component_lines` has one "SMILES mole_fraction" per line (liquid x for bubble, vapour y for dew). Returns
+ * {"ok","T_K","P_Pa","extrapolated","iterations","components":[{smiles,name,x,y,gamma}],"diagnostics"}. */
+CHEMLARP_API char* cl_vle_text_json(const char* component_lines, const char* mode, double value);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

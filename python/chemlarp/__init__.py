@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -94,6 +94,7 @@ _cl_qc = _sig("cl_qc_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, c
 _cl_read = _sig("cl_read_molecules_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int)
 _cl_depict = _sig("cl_depict_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_flash = _sig("cl_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double, ctypes.c_char_p)
+_cl_vle = _sig("cl_vle_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
 _cl_reaction = _sig("cl_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _cl_equil = _sig("cl_equilibrate_json", ctypes.c_void_p, _c_char_pp, ctypes.POINTER(ctypes.c_double),
@@ -291,6 +292,17 @@ def vapor_pressure(smiles: str, temperature_K: float, eos: str = "pr") -> float:
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r["pressure_Pa"]
+
+
+def vle(composition: dict[str, float], mode: str, value: float) -> dict:
+    """UNIFAC + Antoine vapour-liquid equilibrium (modified Raoult). `composition` maps SMILES -> mole
+    fraction (liquid for bubble points, vapour for dew points); mode "bubble-T"/"dew-T" takes a pressure
+    in Pa, "bubble-P"/"dew-P" a temperature in K."""
+    lines = "\n".join(f"{s} {v}" for s, v in composition.items())
+    r = _take_json(_cl_vle(lines.encode(), mode.encode(), value))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
 
 
 def _text_or_file(value: str | None) -> bytes | None:

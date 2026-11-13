@@ -74,9 +74,9 @@
       "replaces": "Aspen Plus / HYSYS",
       "modules": [
         {
-          "name": "Equations of state (done) and activity models (NRTL, UNIFAC)",
+          "name": "Equations of state and activity models (NRTL, UNIFAC)",
           "size": "M",
-          "status": "in_progress"
+          "status": "done"
         },
         {
           "name": "Vapor-liquid flash",

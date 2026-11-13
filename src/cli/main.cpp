@@ -7,6 +7,7 @@
 //   chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]
 //   chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> ...      (vapour-liquid equilibrium)
 //   chemlarp psat <SMILES> -T K [--srk]                              (vapour pressure)
+//   chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> ...   (UNIFAC + Antoine VLE)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -31,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "chemlarp/activity.hpp"
 #include "chemlarp/canonical.hpp"
 #include "chemlarp/cip.hpp"
 #include "chemlarp/conformer.hpp"
@@ -63,6 +65,8 @@ int usage() {
       "  chemlarp embed <SMILES> [--seed N] [--candidates N] [--no-uff] [--sdf file] [--xyz file]\n"
       "  chemlarp flash -T K -P bar [--srk] <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "  chemlarp psat <SMILES> -T K [--srk]\n"
+      "  chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
+      "                                     UNIFAC activity coefficients, Antoine vapour pressures\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -360,6 +364,43 @@ int cmd_flash(const std::vector<std::string>& args) {
   for (std::size_t i = 0; i < smiles.size(); ++i)
     std::printf("  %-18s %-16s %10.5f %10.5f %10.5f %10.4g\n", smiles[i].c_str(), mix->components[i].name.c_str(), z[i] / zs, f.x[i], f.y[i], f.K[i]);
   std::printf("\n  Z liquid %.5f   Z vapour %.5f\n", f.liquid.Z, f.vapor.Z);
+  return 0;
+}
+
+int cmd_vle(const std::vector<std::string>& args) {
+  double T = 0, P_bar = 0;
+  int kind = 0;  // 1 bubble, 2 dew
+  std::vector<std::string> smiles;
+  std::vector<double> z;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    if (args[i] == "-T" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), T)) return usage(); }
+    else if (args[i] == "-P" && i + 1 < args.size()) { if (!parse_double(args[++i].c_str(), P_bar)) return usage(); }
+    else if (args[i] == "--bubble") kind = 1;
+    else if (args[i] == "--dew") kind = 2;
+    else if (i + 1 < args.size()) {
+      double v;
+      if (!parse_double(args[i + 1].c_str(), v)) return usage();
+      smiles.push_back(args[i]);
+      z.push_back(v);
+      ++i;
+    } else return usage();
+  }
+  if (smiles.empty() || kind == 0 || (T > 0) == (P_bar > 0)) return usage();
+  Diagnostics d;
+  auto sys = unifac_system_from_smiles(smiles, d);
+  std::optional<VleResult> r;
+  if (sys) {
+    if (kind == 1) r = T > 0 ? bubble_pressure(*sys, T, z, d) : bubble_temperature(*sys, P_bar * 1e5, z, d);
+    else r = T > 0 ? dew_pressure(*sys, T, z, d) : dew_temperature(*sys, P_bar * 1e5, z, d);
+  }
+  print_diagnostics(d, {});
+  if (!r) return 1;
+  std::printf("UNIFAC %s point: %.3f K, %.6g bar%s\n", kind == 1 ? "bubble" : "dew", r->T_K, r->P_Pa / 1e5,
+              r->extrapolated ? " (vapour pressure extrapolated)" : "");
+  std::printf("\n  %-18s %-22s %10s %10s %10s\n", "component", "", "liquid x", "vapour y", "gamma");
+  for (std::size_t i = 0; i < smiles.size(); ++i)
+    std::printf("  %-18s %-22s %10.5f %10.5f %10.4f\n", smiles[i].c_str(), sys->antoine[i].name.c_str(), r->x[i], r->y[i],
+                r->gamma[i]);
   return 0;
 }
 
@@ -800,6 +841,7 @@ int main(int argc, char** argv) {
   if (cmd == "embed" && !args.empty()) return cmd_embed(args);
   if (cmd == "flash" && !args.empty()) return cmd_flash(args);
   if (cmd == "psat" && !args.empty()) return cmd_psat(args);
+  if (cmd == "vle" && !args.empty()) return cmd_vle(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

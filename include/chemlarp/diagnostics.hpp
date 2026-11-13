@@ -81,6 +81,11 @@ enum class DiagCode : std::uint16_t {
   NoCriticalData = 700,    // component has no critical constants (Tc, Pc, omega)
   SupercriticalTemperature,  // saturation pressure asked above the critical temperature
   FlashNotConverged,       // warning: successive substitution did not converge
+  InvalidMixtureInput,     // mole fractions, temperature or model parameters out of range
+  NoInteractionParameter,  // activity model: no published parameter for a pair of groups or components
+  NoUnifacGroups,          // a compound cannot be split into supported UNIFAC subgroups
+  NoVaporPressureData,     // component has no vapour-pressure correlation
+  VleNotConverged,         // bubble/dew point iteration did not converge
 
   // 8xx — identifiers (InChI)
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does

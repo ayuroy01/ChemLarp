@@ -61,6 +61,11 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::NoCriticalData: return "NoCriticalData";
     case DiagCode::SupercriticalTemperature: return "SupercriticalTemperature";
     case DiagCode::FlashNotConverged: return "FlashNotConverged";
+    case DiagCode::InvalidMixtureInput: return "InvalidMixtureInput";
+    case DiagCode::NoInteractionParameter: return "NoInteractionParameter";
+    case DiagCode::NoUnifacGroups: return "NoUnifacGroups";
+    case DiagCode::NoVaporPressureData: return "NoVaporPressureData";
+    case DiagCode::VleNotConverged: return "VleNotConverged";
     case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
     case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
     case DiagCode::InchiUnsupported: return "InchiUnsupported";

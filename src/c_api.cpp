@@ -18,6 +18,7 @@
 #include "chemlarp/conformer.hpp"
 #include "chemlarp/depict.hpp"
 #include "chemlarp/diagnostics.hpp"
+#include "chemlarp/activity.hpp"
 #include "chemlarp/eos.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
@@ -698,6 +699,40 @@ char* cl_saturation_pressure_json(const char* smiles, double temperature_K, cons
     std::string out = std::string("{\"ok\":") + (p ? "true" : "false");
     if (mix) out += ",\"name\":" + json_escape(mix->components[0].name);
     if (p) out += ",\"pressure_Pa\":" + jnum(*p);
+    return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* cl_vle_text_json(const char* component_lines, const char* mode, double value) {
+  std::vector<std::string> smiles;
+  std::vector<double> z;
+  std::string bad;
+  if (!parse_pairs(component_lines, smiles, z, bad)) return bad_input(bad);
+  const std::string m = mode ? mode : "";
+  if (m != "bubble-T" && m != "bubble-P" && m != "dew-T" && m != "dew-P")
+    return dup("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":"
+               "\"mode must be bubble-T, bubble-P, dew-T or dew-P\"}]}");
+  return guarded([&] {
+    Diagnostics d;
+    auto sys = unifac_system_from_smiles(smiles, d);
+    std::optional<VleResult> r;
+    if (sys) {
+      if (m == "bubble-T") r = bubble_temperature(*sys, value, z, d);
+      else if (m == "bubble-P") r = bubble_pressure(*sys, value, z, d);
+      else if (m == "dew-T") r = dew_temperature(*sys, value, z, d);
+      else r = dew_pressure(*sys, value, z, d);
+    }
+    std::string out = std::string("{\"ok\":") + (r && !d.has_errors() ? "true" : "false");
+    if (r) {
+      out += ",\"T_K\":" + jnum(r->T_K) + ",\"P_Pa\":" + jnum(r->P_Pa) + ",\"extrapolated\":" +
+             (r->extrapolated ? "true" : "false") + ",\"iterations\":" + std::to_string(r->iterations) +
+             ",\"components\":[";
+      for (std::size_t i = 0; i < smiles.size(); ++i)
+        out += (i ? "," : "") + std::string("{\"smiles\":") + json_escape(smiles[i]) + ",\"name\":" +
+               json_escape(sys->antoine[i].name) + ",\"x\":" + jnum(r->x[i]) + ",\"y\":" + jnum(r->y[i]) +
+               ",\"gamma\":" + jnum(r->gamma[i]) + "}";
+      out += "]";
+    }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
   });
 }
