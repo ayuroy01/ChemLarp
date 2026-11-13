@@ -72,16 +72,16 @@ const std::map<std::string, PureComponent>& table() {
       auto it = m.find(canonical(r.smiles));
       if (it == m.end()) continue;
       PureComponent& c = it->second;
-      TransportCorrelation* t = r.property == 'L' ? &c.liquid_viscosity
+      TransportCorrelation* corr = r.property == 'L' ? &c.liquid_viscosity
                                 : r.property == 'G' ? &c.gas_viscosity
                                 : r.property == 'l' ? &c.liquid_conductivity
                                 : r.property == 'g' ? &c.gas_conductivity
                                 : r.property == 's' ? &c.surface_tension : nullptr;
-      if (!t || t->present()) continue;
-      t->equation = r.equation;
-      for (int i = 0; i < 7; ++i) t->c[i] = r.c[i];
-      t->Tmin_K = r.Tmin;
-      t->Tmax_K = r.Tmax;
+      if (!corr || corr->present()) continue;
+      corr->equation = r.equation;
+      for (int i = 0; i < 7; ++i) corr->c[i] = r.c[i];
+      corr->Tmin_K = r.Tmin;
+      corr->Tmax_K = r.Tmax;
     }
     return m;
   }();

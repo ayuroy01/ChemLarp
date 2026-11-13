@@ -39,9 +39,10 @@ build/obj/%.o: src/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h 
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-build/obj/tests/%.o: tests/%.cpp $(wildcard include/chemlarp/*.hpp tests/*.hpp)
+# The tests link the static library, so the C API is declared without dllimport (as in CMake).
+build/obj/tests/%.o: tests/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h tests/*.hpp)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) -DCHEMLARP_STATIC $(CXXFLAGS) -c $< -o $@
 
 build/obj/cli/main.o: src/cli/main.cpp $(wildcard include/chemlarp/*.hpp)
 	@mkdir -p $(dir $@)
