@@ -297,6 +297,12 @@ TEST(iupac_names_round_trip_through_opsin) {
       {"C1=CC(=CC=C1C(=O)O)S(=O)(=O)N(Cl)Cl", "4-(dichlorosulfamoyl)benzoic acid"},
       {"CNNS(=O)(=O)C1=CC=CC=C1", "N'-methylbenzenesulfonohydrazide"},
       {"CC(=O)NC(CSN=O)C(=O)O", "2-acetamido-3-(nitrososulfanyl)propanoic acid"},
+      // amides on ring nitrogen, N-hydroxy and N-alkoxy ring nitrogen
+      {"O=C(NN1CCCCC1)c1ccccc1", "N-(piperidin-1-yl)benzamide"},
+      {"C1=CC=C2C(=C1)N=CN2NC(=O)C3=CC4=C(C=CC=C4S3)F", "N-(1H-benzimidazol-1-yl)-4-fluoro-1-benzothiophene-2-carboxamide"},
+      {"ON1CCCCC1", "1-hydroxypiperidine"},
+      {"C1=CC(=S)N(C=C1)O", "1-hydroxy-1,2-dihydropyridine-2-thione"},
+      {"CC1=NC2=CC=CC=C2C(=O)N1OCC(=O)OC", "methyl 2-[(2-methyl-4-oxo-3,4-dihydroquinazolin-3-yl)oxy]acetate"},
   };
   for (const auto& [smiles, expected] : cases) CHECK_EQ(name_of(smiles), std::string(expected));
 }

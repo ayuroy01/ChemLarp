@@ -1110,6 +1110,20 @@ bool Namer::perceive() {
       if (ok) nO_[O] = 1;
     }
   }
+  for (int N = 0; N < n(); ++N) {  // ring nitrogen with an exocyclic OH or OR: 1-hydroxypiperidine, 3-methoxyquinazolin-4-one
+    const NAtom& A = at_[N];
+    if (A.z != 7 || !A.ring || A.q != 0 || deg(N) != 3) continue;
+    for (std::size_t k = 0; k < A.nb.size(); ++k) {
+      const int O = A.nb[k];
+      if (ringbond_[N][k] || at_[O].z != 8 || at_[O].ring || at_[O].q != 0 || A.bo[k] != 1) continue;
+      bool ok = is_OH(O);
+      if (deg(O) == 2) {
+        const int y = at_[O].nb[0] == N ? at_[O].nb[1] : at_[O].nb[0];
+        ok = at_[y].z == 6 && dO(y) < 0 && dS(y) < 0;
+      }
+      if (ok) nO_[O] = 1;
+    }
+  }
   // imines C=N-X marked before the carbons are read, so that the atom X on the far side knows it
   // borders an imine: ring carbons with an exocyclic =N-X (2-(phenylimino)-1,3-thiazolidin-4-one),
   // and acyclic carbons with only carbon or hydrogen neighbours (amidines are read with the carbon)
@@ -1684,6 +1698,7 @@ bool Namer::perceive() {
                 for (int y : at_[x].nb) {
                   if (y == a || hydroxamO_[y] || hydrN2_[y] || imineN_[y] || pseudo_[y] == Nitroso) continue;
                   if (at_[y].z == 16 && acyl_[y] == Cls::Sulfonamide) continue;  // N-sulfonyl amide
+                  if (at_[y].z == 7 && at_[y].ring && at_[y].q == 0 && deg(y) == 3) continue;  // N-(piperidin-1-yl)benzamide
                   if (at_[y].z != 6) return fail("N-heteroatom amide at " + sym(x));
                   if (dO(y) >= 0) {  // diacylamine: one acyl is the amide, the other an N-acyl prefix
                     int het = 0;
@@ -1760,7 +1775,8 @@ bool Namer::perceive() {
                                                     acyl_[b] == Cls::SulfamateEster);
           const bool n_amino = (at_[b].z == 7 || acyl_[b] == Cls::RingP) && at_[b].ring && A.bo[k] == 1 && !A.ring;  // N-amino heterocycle
           const bool halo_N = amideN_[a] && (at_[b].z == 17 || at_[b].z == 35) && deg(b) == 1;
-          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso && !halo_N) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
+          const bool ring_amide_N = A.ring && at_[b].z == 7 && !at_[b].ring && amideN_[b] && A.bo[k] == 1;  // ring N of N-(piperidin-1-yl)amides
+          if (at_[b].z != 6 && !ringbond_[a][k] && !sulfonyl_N && !nO_[b] && !n_amino && !imineN_[b] && pseudo_[b] != Nitroso && !halo_N && !ring_amide_N) return fail("N-heteroatom bond at " + sym(a) + " (hydrazines, hydroxylamines, ...)");
         }
         if (!A.ring) amineN_[a] = 1;
         break;
