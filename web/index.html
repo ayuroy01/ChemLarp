@@ -44,6 +44,7 @@
     <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/></symbol>
     <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></symbol>
     <symbol id="i-flowsheet" viewBox="0 0 24 24"><rect x="2.5" y="9" width="6" height="6" rx="1.5"/><rect x="15.5" y="4" width="6" height="6" rx="1.5"/><rect x="15.5" y="14" width="6" height="6" rx="1.5"/><path d="M8.5 12h3.5V7h3.5M12 12v5h3.5"/></symbol>
+    <symbol id="i-aqueous" viewBox="0 0 24 24"><path d="M12 3.5c3.2 4.3 6 7.6 6 10.9a6 6 0 0 1-12 0c0-3.3 2.8-6.6 6-10.9Z"/><path d="M9 15.2a3 3 0 0 0 3 2.8"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3Z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
     <symbol id="i-install" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M12 8v7m-3-3 3 3 3-3"/></symbol>
@@ -69,6 +70,7 @@
         <a href="#reaction" data-tool="reaction" data-key="3"><svg><use href="#i-reaction"/></svg><span>Reaction</span><kbd>⌘3</kbd></a>
         <a href="#equilibrium" data-tool="equilibrium" data-key="4"><svg><use href="#i-equilibrium"/></svg><span>Equilibrium</span><kbd>⌘4</kbd></a>
         <a href="#phases" data-tool="phases" data-key="5"><svg><use href="#i-phases"/></svg><span>Phase Behaviour</span><kbd>⌘5</kbd></a>
+        <a href="#aqueous" data-tool="aqueous"><svg><use href="#i-aqueous"/></svg><span>Aqueous Chemistry</span></a>
         <div class="list-heading">Quantum</div>
         <a href="#quantum" data-tool="quantum" data-key="9"><svg><use href="#i-quantum"/></svg><span>Quantum Chemistry</span><kbd>⌘9</kbd></a>
         <div class="list-heading">Kinetics</div>
@@ -274,6 +276,64 @@ CCCCC 0.2</textarea>
           <div class="glass-card chart-card">
             <div class="card-head"><h2 id="ph-chart-title">Phase diagram</h2><span class="meta" id="ph-chart-meta"></span></div>
             <canvas class="chart" id="ph-chart" data-height="320"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- Aqueous chemistry -->
+      <section class="view" id="aqueous" hidden>
+        <header class="view-head">
+          <h1>Aqueous Chemistry</h1>
+          <p>pH, speciation, saturation indices and mineral and gas equilibria in water, 0–100 °C, with the USGS PHREEQC database (phreeqc.dat).</p>
+        </header>
+        <div class="split">
+          <form class="panel glass-card" id="aq-form">
+            <div class="field">
+              <label for="aq-example">Example</label>
+              <select id="aq-example"></select>
+            </div>
+            <div class="field">
+              <label for="aq-text">Solution</label>
+              <textarea id="aq-text" class="mono fs-text" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            </div>
+            <details class="fs-help">
+              <summary>Syntax</summary>
+              <pre class="mono">temperature 25          °C, 0–100
+units mmol/kgw          or mol/kgw
+pH 7 charge             charge balance (default)
+pH 8.2                  fixed pH
+Ca 1.2                  component totals:
+C(4) 2                    Na K Ca Mg Fe(2) Fe(3) Al
+N(-3) 0.5                 Cl C(4) S(6) S(-2) N(5) P F …
+add NaHCO3 2            a salt, acid or base by formula
+equilibrium Calcite 0   phase, target SI [, moles]
+equilibrium CO2(g) -3.5 gas: log10 partial pressure (atm)</pre>
+            </details>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Solve</button></div>
+          </form>
+          <div class="stack" id="aq-out"></div>
+        </div>
+        <div class="stack" id="aq-results" hidden>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Species</h2>
+              <div class="segmented small" role="radiogroup" aria-label="Species shown" id="aq-all">
+                <button type="button" role="radio" aria-checked="true" data-all="0">Main</button>
+                <button type="button" role="radio" aria-checked="false" data-all="1">All</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="aq-species"></div>
+          </div>
+          <div class="glass-card card" id="aq-phases-card" hidden>
+            <div class="card-head"><h2>Equilibrium phases</h2><span class="meta">mol per kg water; negative: precipitated</span></div>
+            <div class="table-wrap" id="aq-phases"></div>
+          </div>
+          <div class="glass-card card">
+            <div class="card-head"><h2>Saturation indices</h2><span class="meta">SI = log IAP − log K; above 0 supersaturated</span></div>
+            <div class="table-wrap" id="aq-si"></div>
+          </div>
+          <div class="glass-card chart-card">
+            <div class="card-head"><h2>Distribution with pH</h2><select id="aq-dist-comp" aria-label="Component"></select></div>
+            <canvas class="chart" id="aq-dist" data-height="280"></canvas>
           </div>
         </div>
       </section>
@@ -533,6 +593,7 @@ Q in W, kW, MW; flows in mol/s.</pre>
       <a href="#reaction" data-tool="reaction"><svg><use href="#i-reaction"/></svg><span>Reaction</span></a>
       <a href="#equilibrium" data-tool="equilibrium" aria-label="Equilibrium"><svg><use href="#i-equilibrium"/></svg><span>Equil.</span></a>
       <a href="#phases" data-tool="phases"><svg><use href="#i-phases"/></svg><span>Phases</span></a>
+      <a href="#aqueous" data-tool="aqueous"><svg><use href="#i-aqueous"/></svg><span>Aqueous</span></a>
       <a href="#quantum" data-tool="quantum"><svg><use href="#i-quantum"/></svg><span>Quantum</span></a>
       <a href="#kinetics" data-tool="kinetics"><svg><use href="#i-kinetics"/></svg><span>Kinetics</span></a>
       <a href="#flowsheet" data-tool="flowsheet"><svg><use href="#i-flowsheet"/></svg><span>Flowsheet</span></a>

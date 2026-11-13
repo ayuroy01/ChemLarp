@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
 
 
 class ChemLarpError(RuntimeError):
@@ -97,6 +97,7 @@ _cl_flash = _sig("cl_flash_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.
 _cl_props = _sig("cl_pure_component_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_double)
 _cl_vle = _sig("cl_vle_text_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double)
 _cl_flowsheet = _sig("cl_flowsheet_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_aqueous = _sig("cl_aqueous_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
 _cl_reaction = _sig("cl_check_reaction_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
 _cl_equil = _sig("cl_equilibrate_json", ctypes.c_void_p, _c_char_pp, ctypes.POINTER(ctypes.c_double),
@@ -325,6 +326,17 @@ def flowsheet(text: str, *, allow_unconverged: bool = False) -> dict:
     allow_unconverged is set (the last iterate is then returned with "converged": False)."""
     r = _take_json(_cl_flowsheet(_text_or_file(text)))
     if not r["ok"] and not (allow_unconverged and "streams" in r):
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def solution(text: str) -> dict:
+    """Aqueous speciation, pH and solubility with PHREEQC's phreeqc.dat data. `text` is the solution
+    description (or a path to a file) in the format documented in include/chemlarp/aqueous.hpp, e.g.
+    "temperature 25\nadd NaHCO3 2\nequilibrium Calcite 0\nequilibrium CO2(g) -3.5". Returns pH, ionic
+    strength, species, saturation indices and phase amounts; raises ChemLarpError on errors."""
+    r = _take_json(_cl_aqueous(_text_or_file(text)))
+    if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r
 

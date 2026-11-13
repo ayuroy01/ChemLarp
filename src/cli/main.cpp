@@ -10,6 +10,7 @@
 //   chemlarp props <SMILES> [-T K] [-P bar]                         (pure-component properties)
 //   chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> ...   (UNIFAC + Antoine VLE)
 //   chemlarp flowsheet <file|-> [--json]                            (steady-state flowsheet with recycles)
+//   chemlarp solution <file|-> [--json]                             (aqueous speciation, pH, solubility)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -36,6 +37,7 @@
 #include <vector>
 
 #include "chemlarp/activity.hpp"
+#include "chemlarp/aqueous.hpp"
 #include "chemlarp/canonical.hpp"
 #include "chemlarp/cip.hpp"
 #include "chemlarp/conformer.hpp"
@@ -74,6 +76,7 @@ int usage() {
       "  chemlarp vle --bubble|--dew (-T K | -P bar) <SMILES> <fraction> [<SMILES> <fraction> ...]\n"
       "                                     UNIFAC activity coefficients, Antoine vapour pressures\n"
       "  chemlarp flowsheet <file|-> [--json]  steady-state flowsheet (format: include/chemlarp/flowsheet.hpp)\n"
+      "  chemlarp solution <file|-> [--json]   aqueous pH, speciation, solubility (format: include/chemlarp/aqueous.hpp)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -540,6 +543,57 @@ int cmd_flowsheet(const std::vector<std::string>& args) {
   return r->converged ? 0 : 1;
 }
 
+int cmd_solution(const std::vector<std::string>& args) {
+  std::string path;
+  bool json = false;
+  for (const auto& a : args) {
+    if (a == "--json") json = true;
+    else if (path.empty()) path = a;
+    else return usage();
+  }
+  if (path.empty()) return usage();
+  std::string text;
+  if (path == "-") {
+    text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+  } else {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      std::fprintf(stderr, "error: cannot read %s\n", path.c_str());
+      return 1;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  if (json) {
+    const std::string out = aqueous_json(text);
+    std::printf("%s\n", out.c_str());
+    return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+  }
+  Diagnostics d;
+  auto in = parse_aqueous(text, d);
+  std::optional<AqueousResult> r;
+  if (in) r = aqueous_equilibrium(*in, d);
+  print_diagnostics(d, {});
+  if (!r) return 1;
+  std::printf("pH %.4f   ionic strength %.6g mol/kg   T %.2f K   water activity %.6f\n", r->pH, r->ionic_strength, r->T_K,
+              r->water_activity);
+  std::printf("alkalinity %.6g eq/kg   charge balance %.3g eq/kg   (%d iterations)\n", r->alkalinity_eq,
+              r->charge_balance_eq, r->iterations);
+  std::printf("\n  %-12s %14s\n", "component", "total (mol/kg)");
+  for (const auto& [c, v] : r->totals) std::printf("  %-12s %14.6g\n", c.c_str(), v);
+  std::printf("\n  %-14s %13s %13s %9s\n", "species", "molality", "activity", "log gamma");
+  for (const auto& s : r->species)
+    if (s.molality > 1e-15) std::printf("  %-14s %13.5g %13.5g %9.4f\n", s.name.c_str(), s.molality, s.activity, s.log_gamma);
+  if (!r->phases.empty()) {
+    std::printf("\n  %-16s %8s %16s %16s\n", "phase", "target", "dissolved (mol)", "remaining (mol)");
+    for (const auto& p : r->phases)
+      std::printf("  %-16s %8.3f %16.6g %16.6g\n", p.phase.c_str(), p.target_si, p.dissolved_mol, p.remaining_mol);
+  }
+  std::printf("\n  %-16s %-18s %8s %9s %9s\n", "phase", "formula", "SI", "log IAP", "log K");
+  for (const auto& s : r->saturation)
+    std::printf("  %-16s %-18s %8.3f %9.3f %9.3f\n", s.phase.c_str(), s.formula.c_str(), s.si, s.log_iap, s.log_k);
+  return 0;
+}
+
 int cmd_inchi(const std::vector<std::string>& args) {
   std::string smiles;
   bool key_only = false;
@@ -980,6 +1034,7 @@ int main(int argc, char** argv) {
   if (cmd == "vle" && !args.empty()) return cmd_vle(args);
   if (cmd == "props" && !args.empty()) return cmd_props(args);
   if (cmd == "flowsheet" && !args.empty()) return cmd_flowsheet(args);
+  if (cmd == "solution" && !args.empty()) return cmd_solution(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

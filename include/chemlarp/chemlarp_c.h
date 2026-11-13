@@ -128,6 +128,13 @@ CHEMLARP_API char* cl_vle_text_json(const char* component_lines, const char* mod
  * "balance","diagnostics"}; see flowsheet.hpp for the fields. */
 CHEMLARP_API char* cl_flowsheet_json(const char* flowsheet_text);
 
+/* Aqueous solution chemistry (pH, speciation, saturation indices, equilibrium with minerals and gases) with
+ * data from PHREEQC's phreeqc.dat. `solution_text` uses the format documented in chemlarp/aqueous.hpp
+ * (temperature, units, pH, component totals, add <formula>, equilibrium <phase>). Returns
+ * {"ok","T_K","pH","ionic_strength","water_activity","A_dh","B_dh","charge_balance_eq","alkalinity_eq",
+ * "iterations","totals","species","saturation","phases","diagnostics"}. */
+CHEMLARP_API char* cl_aqueous_json(const char* solution_text);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

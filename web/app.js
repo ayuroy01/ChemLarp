@@ -767,8 +767,8 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
-  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
+  const views = ['structure', 'model3d', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
+  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
   function show() {
@@ -1069,6 +1069,142 @@
   });
   window.addEventListener('resize', () => { if (lastKin && current() === 'kinetics') drawKinetics(); });
   window.addEventListener('resize', () => { if (lastVle && current() === 'phases') drawVle(); });
+
+  // ---- Aqueous chemistry ------------------------------------------------------------------------
+  const AQ_EXAMPLES = [
+    { name: 'Hard water · CaCl₂ + NaHCO₃', text: `# 1 mmol/kg CaCl2 and 2 mmol/kg NaHCO3 at 25 °C
+add CaCl2 1
+add NaHCO3 2
+` },
+    { name: 'Calcite with atmospheric CO₂', text: `# Limestone water open to air (10^-3.5 atm CO2)
+temperature 25
+equilibrium Calcite 0
+equilibrium CO2(g) -3.5
+` },
+    { name: 'Rain water', text: `# Pure water in equilibrium with atmospheric CO2
+equilibrium CO2(g) -3.5
+` },
+    { name: 'Gypsum solubility', text: `equilibrium Gypsum 0
+` },
+    { name: 'Phosphate buffer', text: `add NaH2PO4 10
+add Na2HPO4 10
+` },
+    { name: 'Ammonia solution', text: `# 10 mmol/kg NH3: the charge balance sets the pH
+N(-3) 10
+` },
+    { name: 'Seawater', text: `units mmol/kgw
+pH 8.22 charge
+Ca 10.6
+Mg 54.7
+Na 485.8
+K 10.6
+Cl 565.8
+S(6) 29.3
+C(4) 2.4
+` },
+    { name: 'Iron(III) hydrolysis', text: `add FeCl3 0.1
+` },
+  ];
+  $('aq-example').replaceChildren(...AQ_EXAMPLES.map((x, i) => h('option', { value: String(i), text: x.name })));
+  const aqSaved = store.get('aqueous', null);
+  $('aq-text').value = aqSaved ?? AQ_EXAMPLES[0].text;
+  if (aqSaved != null) $('aq-example').append(h('option', { value: 'saved', text: 'Your last solution' })), ($('aq-example').value = 'saved');
+  $('aq-example').addEventListener('change', () => {
+    const x = AQ_EXAMPLES[+$('aq-example').value];
+    if (x) { $('aq-text').value = x.text; $('aq-form').requestSubmit(); }
+  });
+  $('aq-text').addEventListener('input', () => store.set('aqueous', $('aq-text').value));
+  let lastAq = null, aqDist = null;
+  function aqSpeciesTable() {
+    const all = checked($('aq-all')).dataset.all === '1';
+    const rows = lastAq.species.filter((s) => all || s.molality >= 1e-9);
+    $('aq-species').replaceChildren(h('table', {},
+      h('thead', {}, h('tr', {}, h('th', { text: 'Species' }), h('th', { class: 'num', text: 'Molality' }),
+        h('th', { class: 'num', text: 'Activity' }), h('th', { class: 'num', text: 'log γ' }), h('th', { class: 'num', text: 'log a' }))),
+      h('tbody', {}, rows.map((s) => h('tr', {}, h('td', { class: 'mono', text: s.name }), h('td', { class: 'num', text: fmt(s.molality, 4) }),
+        h('td', { class: 'num', text: fmt(s.activity, 4) }), h('td', { class: 'num', text: fixed(s.log_gamma, 4) }),
+        h('td', { class: 'num', text: s.activity > 0 ? fixed(Math.log10(s.activity), 3) : '—' }))))));
+  }
+  segmented($('aq-all'), () => lastAq && aqSpeciesTable());
+  // Species distribution against pH for one component: the solved composition (component totals after any
+  // phase reactions) at fixed pH from 0 to 14.
+  async function aqDistribution() {
+    const comp = $('aq-dist-comp').value;
+    if (!comp || !lastAq) return;
+    const base = `temperature ${(lastAq.T_K - 273.15).toFixed(4)}\nunits mol/kgw\n` +
+      lastAq.totals.map((t) => `${t.component} ${t.molality.toPrecision(12)}`).join('\n');
+    const pts = [];
+    for (let p = 0; p <= 14.0001; p += 0.25) {
+      const { result: r } = await engine('solution', { text: `${base}\npH ${p.toFixed(2)}\n` });
+      if (r.ok) pts.push([p, r]);
+    }
+    const series = new Map();
+    for (const [p, r] of pts) {
+      const tot = (r.totals.find((t) => t.component === comp) || {}).molality;
+      if (!(tot > 0)) continue;
+      for (const s of r.species) {
+        const c = s.components[comp];
+        if (!c) continue;
+        if (!series.has(s.name)) series.set(s.name, []);
+        series.get(s.name).push([p, (c * s.molality) / tot]);
+      }
+    }
+    aqDist = [...series.entries()].filter(([, v]) => Math.max(...v.map((q) => q[1])) > 0.01).map(([name, points]) => ({ name, points }));
+    drawAqDist();
+  }
+  function drawAqDist() {
+    if (!aqDist) return;
+    const markers = lastAq && lastAq.pH >= 0 && lastAq.pH <= 14 ? [{ x: lastAq.pH, y: 0, label: `pH ${fixed(lastAq.pH, 2)}` }] : [];
+    Charts.lineChart($('aq-dist'), aqDist, { xLabel: 'pH', yLabel: 'fraction of ' + $('aq-dist-comp').value, xRange: [0, 14], markers });
+  }
+  $('aq-dist-comp').addEventListener('change', () => aqDistribution().catch(() => {}));
+  $('aq-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('aq-out');
+    busy(out, 'Solving the speciation…');
+    try {
+      const text = $('aq-text').value;
+      const { result: r, ms } = await engine('solution', { text });
+      if (!r.ok) {
+        $('aq-results').hidden = true;
+        lastAq = null;
+        out.replaceChildren(status('bad', 'The solution could not be solved'), ...diagnostics(r.diagnostics));
+        return;
+      }
+      lastAq = r;
+      const sat = r.saturation.filter((s) => s.si > 0).map((s) => s.phase);
+      out.replaceChildren(
+        status(r.ionic_strength > 0.7 ? 'warn' : 'ok', `pH ${fixed(r.pH, 3)}`,
+          `${fixed(r.T_K - 273.15, 1)} °C · ${sat.length ? 'supersaturated: ' + sat.slice(0, 4).join(', ') + (sat.length > 4 ? '…' : '') : 'no supersaturated phase'}`),
+        h('div', { class: 'metrics' },
+          metric('pH', fixed(r.pH, 3)),
+          metric('Ionic strength', fmt(r.ionic_strength, 4), 'mol/kg'),
+          metric('Alkalinity', fmt(r.alkalinity_eq * 1e3, 4), 'meq/kg'),
+          metric('Compute time', String(Math.round(ms)), 'ms')),
+        ...diagnostics(r.diagnostics));
+      $('aq-results').hidden = false;
+      aqSpeciesTable();
+      $('aq-phases-card').hidden = !r.phases.length;
+      $('aq-phases').replaceChildren(h('table', {},
+        h('thead', {}, h('tr', {}, h('th', { text: 'Phase' }), h('th', { class: 'num', text: 'Target SI' }),
+          h('th', { class: 'num', text: 'Dissolved' }), h('th', { class: 'num', text: 'Remaining' }))),
+        h('tbody', {}, r.phases.map((p) => h('tr', {}, h('td', { text: p.phase }), h('td', { class: 'num', text: fixed(p.target_si, 2) }),
+          h('td', { class: 'num', text: fmt(p.dissolved_mol, 4) }), h('td', { class: 'num', text: fmt(p.remaining_mol, 4) }))))));
+      const si = [...r.saturation].sort((a, b) => b.si - a.si);
+      $('aq-si').replaceChildren(h('table', {},
+        h('thead', {}, h('tr', {}, h('th', { text: 'Phase' }), h('th', { text: 'Formula' }), h('th', { class: 'num', text: 'SI' }),
+          h('th', { class: 'num', text: 'log IAP' }), h('th', { class: 'num', text: 'log K' }))),
+        h('tbody', {}, si.map((s) => h('tr', {}, h('td', { text: s.phase }), h('td', { class: 'mono', text: s.formula }),
+          h('td', { class: 'num ' + (s.si > 0.005 ? 'aq-over' : s.si < -0.005 ? 'aq-under' : ''), text: fixed(s.si, 3) }),
+          h('td', { class: 'num', text: fixed(s.log_iap, 3) }), h('td', { class: 'num', text: fixed(s.log_k, 3) }))))));
+      const comps = r.totals.map((t) => t.component);
+      const prev = $('aq-dist-comp').value;
+      $('aq-dist-comp').replaceChildren(...comps.map((c) => h('option', { value: c, text: c })));
+      const pick = comps.includes(prev) ? prev : comps.find((c) => /^(C\(4\)|P|N\(-3\)|S\(-2\)|Fe\(3\)|Al)$/.test(c)) || comps[0];
+      if (pick) { $('aq-dist-comp').value = pick; aqDistribution().catch(() => {}); }
+    } catch (err) { fail(out, err); }
+  });
+  window.addEventListener('resize', () => { if (aqDist && current() === 'aqueous') drawAqDist(); });
 
   // ---- Flowsheet ------------------------------------------------------------------------------
   const FS_EXAMPLES = [

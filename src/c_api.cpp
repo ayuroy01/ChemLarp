@@ -20,6 +20,7 @@
 #include "chemlarp/depict.hpp"
 #include "chemlarp/diagnostics.hpp"
 #include "chemlarp/activity.hpp"
+#include "chemlarp/aqueous.hpp"
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
 #include "chemlarp/properties.hpp"
@@ -792,6 +793,11 @@ char* cl_pure_component_json(const char* smiles, double temperature_K, double pr
 char* cl_flowsheet_json(const char* flowsheet_text) {
   if (!flowsheet_text) return nullptr;
   return guarded([&] { return flowsheet_json(flowsheet_text); });
+}
+
+char* cl_aqueous_json(const char* solution_text) {
+  if (!solution_text) return nullptr;
+  return guarded([&] { return aqueous_json(solution_text); });
 }
 
 void cl_free_string(char* s) { std::free(s); }
