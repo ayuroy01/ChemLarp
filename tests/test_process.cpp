@@ -124,3 +124,19 @@ TEST(process_input_errors) {
   CHECK(!splitter(c, tp(c, 300.0, 1e5, {1.0}), {0.5, 0.6}, e));
   CHECK_EQ(e.count(DiagCode::InvalidMixtureInput), std::size_t{5});
 }
+
+TEST(ph_flash_from_the_exact_temperature) {
+  // Regression: a PH flash started at its own solution (as a mixer fed with the phases of one flash) left a
+  // collapsed bracket and divided 0 by 0 on platforms where the residual rounded to exactly zero.
+  const ProcessComponents c = comps({"CCO", "O"}, LiquidModel::Unifac);
+  for (double T : {300.0, 355.0, 380.0}) {  // liquid, two-phase, vapour
+    const Stream s = tp(c, T, 101325.0, {0.3, 0.7});
+    for (double guess : {T, T - 50.0, T + 50.0, 0.0}) {
+      Diagnostics d;
+      auto r = stream_ph(c, 101325.0, s.H_W, s.n, d, guess);
+      CHECK(r.has_value());
+      CHECK_NEAR(r->T_K, T, 1e-6);
+      CHECK_NEAR(r->vapor_fraction, s.vapor_fraction, 1e-8);
+    }
+  }
+}

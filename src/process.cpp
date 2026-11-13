@@ -269,29 +269,46 @@ std::optional<Stream> stream_ph(const ProcessComponents& c, double P, double H_W
     if (!s) return std::nullopt;
     return s->H_W - H_W;
   };
+  const double scale = 1e-9 * (std::fabs(H_W) + 1e3 * F);
   double lo = T_guess > 0.0 ? T_guess : 300.0, hi = lo;
   auto glo = g(lo);
   if (!glo) { merge(quiet, diag); return std::nullopt; }
   double flo = *glo, fhi = flo;
-  for (int k = 0; k < 200 && flo * fhi > 0.0; ++k) {
-    if (flo > 0.0) { hi = lo; fhi = flo; lo = std::max(20.0, lo * 0.9 - 1.0); auto v = g(lo); if (!v) break; flo = *v; }
-    else { lo = hi; flo = fhi; hi = hi * 1.1 + 1.0; auto v = g(hi); if (!v) break; fhi = *v; }
-    if (lo <= 20.0 && flo > 0.0) break;
+  // The guess may already be the answer (a mixer fed with the phases of one flash); otherwise widen the
+  // bracket until the residual changes sign. A collapsed bracket would make false position divide 0 by 0.
+  double T = lo;
+  bool done = std::fabs(flo) <= scale;
+  for (int k = 0; k < 200 && !done && flo * fhi > 0.0; ++k) {
+    std::optional<double> v;
+    if (flo > 0.0) {
+      hi = lo; fhi = flo;
+      if (lo <= 20.0) break;
+      lo = std::max(20.0, lo * 0.9 - 1.0);
+      v = g(lo);
+      if (!v) break;
+      flo = *v;
+      if (std::fabs(flo) <= scale) { T = lo; done = true; }
+    } else {
+      lo = hi; flo = fhi;
+      hi = hi * 1.1 + 1.0;
+      v = g(hi);
+      if (!v) break;
+      fhi = *v;
+      if (std::fabs(fhi) <= scale) { T = hi; done = true; }
+    }
   }
-  if (flo * fhi > 0.0) {
+  if (!done && !(flo < 0.0 && fhi > 0.0)) {
     merge(quiet, diag);
     diag.error(DiagCode::VleNotConverged, "no temperature found for the requested enthalpy at " + num(P) + " Pa");
     return std::nullopt;
   }
-  const double scale = 1e-9 * (std::fabs(H_W) + 1e3 * F);
-  int side = 0;
-  double T = lo;
-  for (int k = 0; k < 300; ++k) {
+  // Illinois false position on the bracket lo < hi with g(lo) < 0 < g(hi).
+  for (int k = 0, side = 0; k < 300 && !done; ++k) {
     T = (lo * fhi - hi * flo) / (fhi - flo);
     auto v = g(T);
     if (!v) { merge(quiet, diag); return std::nullopt; }
     if (std::fabs(*v) <= scale || hi - lo < 1e-10 * T) break;
-    if (*v * fhi > 0.0) { hi = T; fhi = *v; if (side == -1) flo /= 2; side = -1; }
+    if (*v > 0.0) { hi = T; fhi = *v; if (side == -1) flo /= 2; side = -1; }
     else { lo = T; flo = *v; if (side == 1) fhi /= 2; side = 1; }
   }
   Diagnostics fin;
