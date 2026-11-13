@@ -88,6 +88,8 @@ enum class DiagCode : std::uint16_t {
   VleNotConverged,         // bubble/dew point iteration did not converge
   NoPropertyData,          // the pure-component table lacks the property (or the compound)
   PropertyExtrapolated,    // warning: a correlation was used outside its stated range
+  TemperatureCross,        // heat exchanger: the hot stream would be colder than the cold stream
+  UnbalancedReaction,      // reactor stoichiometry does not conserve elements or charge
 
   // 8xx — identifiers (InChI)
   InchiMetalDisconnected = 800,  // warning: bonds to metals were cut, as standard InChI does

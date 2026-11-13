@@ -140,3 +140,96 @@ TEST(ph_flash_from_the_exact_temperature) {
     }
   }
 }
+
+TEST(pump_and_compressor) {
+  const ProcessComponents w = comps({"O"});
+  Diagnostics d;
+  // Water 300 K, 1 → 100 bar: isentropic work 178.58 J/mol and, at 75% efficiency, 300.996 K (IAPWS-95).
+  auto p = pump(w, tp(w, 300.0, 1e5, {1.0}), 100e5, 1.0, d);
+  CHECK(p.has_value());
+  CHECK_NEAR(p->work_W, 178.58, 0.01 * 178.58);
+  auto p75 = pump(w, tp(w, 300.0, 1e5, {1.0}), 100e5, 0.75, d);
+  CHECK_NEAR(p75->work_W, p75->isentropic_work_W / 0.75, 1e-9);
+  CHECK_NEAR(p75->out.T_K, 300.996, 0.25);  // the model omits the 0.2 K isentropic temperature rise
+  // Argon (Cp = 5R/2): T2 = T1 (P2/P1)^(2/5) exactly for an ideal gas.
+  const ProcessComponents ar = comps({"[Ar]"});
+  auto a = compressor(ar, tp(ar, 300.0, 1e5, {1.0}), 5e5, 1.0, d);
+  CHECK(a.has_value());
+  CHECK_NEAR(a->out.T_K, 300.0 * std::pow(5.0, 0.4), 0.05);
+  // Steam 450 K, 0.1 → 0.5 bar: IAPWS-95 isentropic work 7313.3 J/mol, outlet 654.40 K; 80%: 703.42 K.
+  auto s = compressor(w, tp(w, 450.0, 0.1e5, {1.0}), 0.5e5, 1.0, d);
+  CHECK(s.has_value());
+  CHECK_NEAR(s->work_W, 7313.3, 0.005 * 7313.3);
+  CHECK_NEAR(s->out.T_K, 654.40, 1.5);
+  auto s80 = compressor(w, tp(w, 450.0, 0.1e5, {1.0}), 0.5e5, 0.8, d);
+  CHECK_NEAR(s80->out.T_K, 703.42, 1.5);
+  // Expansion back: work is negative and the efficiency reduces what is recovered.
+  auto x = compressor(w, s->out, 0.1e5, 1.0, d);
+  CHECK(x.has_value());
+  CHECK_NEAR(x->work_W, -s->work_W, 1e-6 * s->work_W);
+  CHECK(!d.has_errors());
+  Diagnostics e;
+  CHECK(!pump(w, tp(w, 400.0, 1e5, {1.0}), 2e5, 1.0, e));        // vapour feed
+  CHECK(!compressor(w, tp(w, 300.0, 1e5, {1.0}), 2e5, 1.0, e));  // liquid feed
+  CHECK_EQ(e.count(DiagCode::InvalidMixtureInput), std::size_t{2});
+}
+
+TEST(heat_exchanger_profiles) {
+  const ProcessComponents w = comps({"O"});
+  const Stream hot = tp(w, 360.0, 101325.0, {1.0}), cold = tp(w, 290.0, 101325.0, {1.0});
+  Diagnostics d;
+  // Balanced liquid water: IAPWS-95 gives Q = 3018.9 J/mol and a cold outlet of 330.079 K; the approach is
+  // nearly constant, so UA ≈ Q / 30 K.
+  auto hx = heat_exchanger(w, hot, w, cold, ExchangerSpec::HotOutletTemperature, 320.0, d);
+  CHECK(hx.has_value());
+  CHECK_NEAR(hx->duty_W, 3018.9, 0.003 * 3018.9);
+  CHECK_NEAR(hx->cold_out.T_K, 330.079, 0.1);
+  CHECK_NEAR(hx->UA_WK, hx->duty_W / 30.0, 0.01 * hx->duty_W / 30.0);
+  CHECK_NEAR(hot.H_W + cold.H_W, hx->hot_out.H_W + hx->cold_out.H_W, 1e-6 * std::fabs(hot.H_W));
+  // The same exchanger by duty and by cold outlet temperature.
+  auto byq = heat_exchanger(w, hot, w, cold, ExchangerSpec::Duty, hx->duty_W, d);
+  CHECK_NEAR(byq->hot_out.T_K, 320.0, 1e-6);
+  auto byc = heat_exchanger(w, hot, w, cold, ExchangerSpec::ColdOutletTemperature, hx->cold_out.T_K, d);
+  CHECK_NEAR(byc->hot_out.T_K, 320.0, 1e-6);
+  // Condensing steam against water: the pinch is inside the exchanger, at the dew point.
+  const Stream steam = tp(w, 400.0, 101325.0, {1.0});
+  auto cond = heat_exchanger(w, steam, w, tp(w, 290.0, 101325.0, {10.0}), ExchangerSpec::HotOutletTemperature, 360.0, d);
+  CHECK(cond.has_value());
+  CHECK(cond->min_approach_K > 0.0 && cond->min_approach_K < 400.0 - cond->cold_out.T_K);
+  CHECK(!d.has_errors());
+  // Asking for a cold outlet above the hot inlet is a temperature cross.
+  Diagnostics e;
+  CHECK(!heat_exchanger(w, hot, w, cold, ExchangerSpec::ColdOutletTemperature, 365.0, e));
+  CHECK(e.contains(DiagCode::TemperatureCross));
+}
+
+TEST(conversion_reactor_heats_of_reaction) {
+  // CH4 + 2 O2 -> CO2 + 2 H2O at 298.15 K (CO2 has no vapour-pressure equation: non-condensable).
+  const ProcessComponents g = comps({"C", "O=O", "O=C=O", "O"});
+  Diagnostics d;
+  // All gas (low pressure): Σ ν ΔfH° = −802.5 kJ/mol from the CRC values (CODATA −802.3).
+  auto lo = conversion_reactor(g, tp(g, 298.15, 1000.0, {1, 2, 0, 0}), {-1, -2, 1, 2}, 0, 1.0, 298.15, 0.0, d);
+  CHECK(lo.has_value());
+  CHECK_EQ(lo->out.vapor_fraction, 1.0);
+  CHECK_NEAR(lo->duty_W, -802.3e3, 0.001 * 802.3e3);
+  CHECK_NEAR(lo->duty_W, lo->heat_of_reaction_Jmol, 1e-6);
+  // At 10 bar the water condenses (but for 0.32% in the CO2): higher heating value 890.56 kJ/mol (NIST),
+  // corrected for that vapour.
+  auto hi = conversion_reactor(g, tp(g, 298.15, 10e5, {1, 2, 0, 0}), {-1, -2, 1, 2}, 0, 1.0, 298.15, 0.0, d);
+  CHECK(hi.has_value());
+  CHECK_NEAR(hi->out.x[2], 0.0, 1e-15);  // CO2 stays in the vapour
+  const double vapour_water = hi->out.vapor_fraction * hi->out.total() * hi->out.y[3];
+  CHECK_NEAR(hi->duty_W - vapour_water * 43990.0, -890.56e3, 0.001 * 890.56e3);
+  // Adiabatic: the duty is zero and the outlet hot.
+  auto ad = conversion_reactor(g, tp(g, 298.15, 1e5, {1, 10, 0, 0}), {-1, -2, 1, 2}, 0, 1.0, 0.0, 0.0, d);
+  CHECK(ad.has_value());
+  CHECK_NEAR(ad->duty_W, 0.0, 1e-6);
+  CHECK(ad->out.T_K > 1500.0);
+  CHECK(!d.has_errors());
+  Diagnostics e;
+  CHECK(!conversion_reactor(g, tp(g, 298.15, 1e5, {1, 2, 0, 0}), {-1, -1, 1, 2}, 0, 1.0, 298.15, 0.0, e));
+  CHECK(e.contains(DiagCode::UnbalancedReaction));
+  Diagnostics f;  // not enough oxygen for full conversion
+  CHECK(!conversion_reactor(g, tp(g, 298.15, 1e5, {1, 1, 0, 0}), {-1, -2, 1, 2}, 0, 1.0, 298.15, 0.0, f));
+  CHECK(f.contains(DiagCode::InvalidMixtureInput));
+}

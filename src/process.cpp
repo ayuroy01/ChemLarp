@@ -1,5 +1,9 @@
 #include "chemlarp/process.hpp"
 
+#include "chemlarp/formula.hpp"
+#include "chemlarp/smiles.hpp"
+#include "chemlarp/system_state.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -49,21 +53,41 @@ std::optional<double> h_liquid(const PureComponent& p, double T, Diagnostics& d)
     }
   }
   auto hv = h_vapor(p, T, d);
-  auto lv = enthalpy_of_vaporization(p, T, d);
-  if (!hv || !lv) return std::nullopt;
-  d.warn(DiagCode::PropertyExtrapolated, "liquid enthalpy of " + p.name + " from Watson's ΔHvap (no liquid Cp data)");
-  return *hv - *lv;
+  if (!hv) return std::nullopt;
+  Diagnostics q;
+  if (auto lv = enthalpy_of_vaporization(p, T, q)) {
+    d.warn(DiagCode::PropertyExtrapolated, "liquid enthalpy of " + p.name + " from Watson's ΔHvap (no liquid Cp data)");
+    return *hv - *lv;
+  }
+  // No enthalpy of vaporization (a gas such as CO2 without a normal boiling point): only traces dissolve
+  // under the modified-Raoult model, and they are given their vapour enthalpy.
+  d.warn(DiagCode::PropertyExtrapolated, "no enthalpy of vaporization for " + p.name +
+                                             "; in the liquid it is given its vapour enthalpy");
+  return hv;
 }
 
-// Enthalpy flow of a phase with component flows nf at T.
-std::optional<double> phase_enthalpy(const ProcessComponents& c, double T, const std::vector<double>& nf, bool vapor,
-                                     Diagnostics& d) {
+// Pressure term of the liquid enthalpy, v_L (P − P_sat): small, and left out (silently) where the liquid
+// volume or the vapour pressure is not defined (above Tc).
+double liquid_pressure_term(const ProcessComponents& c, std::size_t i, double T, double P) {
+  const PureComponent& p = c.pure[i];
+  if (!(std::isfinite(p.Tc_K) && T < p.Tc_K)) return 0.0;
+  Diagnostics q;
+  auto v = saturated_liquid_volume(p, T, q);
+  if (!v) return 0.0;
+  for (std::size_t k = 0; k < c.condensable.size(); ++k)
+    if (c.condensable[k] == i) return *v * (P - c.vle.antoine[k].pressure(T));
+  return 0.0;
+}
+
+// Enthalpy flow of a phase with component flows nf at T and P.
+std::optional<double> phase_enthalpy(const ProcessComponents& c, double T, double P, const std::vector<double>& nf,
+                                     bool vapor, Diagnostics& d) {
   double H = 0.0;
   for (std::size_t i = 0; i < c.size(); ++i) {
     if (nf[i] == 0.0) continue;
     auto h = vapor ? h_vapor(c.pure[i], T, d) : h_liquid(c.pure[i], T, d);
     if (!h) return std::nullopt;
-    H += nf[i] * *h;
+    H += nf[i] * (*h + (vapor ? 0.0 : liquid_pressure_term(c, i, T, P)));
   }
   return H;
 }
@@ -114,39 +138,81 @@ double rachford_rice(const std::vector<double>& z, const std::vector<double>& K)
 
 // TP phase split without the enthalpy; fills vapor_fraction, x, y.
 bool split_tp(const ProcessComponents& c, double T, double P, const std::vector<double>& z, Stream& s, Diagnostics& d) {
-  const std::size_t n = c.size();
+  const std::size_t n = c.size(), m = c.condensable.size();
   s.x = z;
   s.y = z;
-  auto bub = bubble_pressure(c.vle, T, z, d);
-  if (!bub) return false;
-  if (P >= bub->P_Pa) { s.vapor_fraction = 0.0; return true; }
-  auto dew = dew_pressure(c.vle, T, z, d);
-  if (!dew) return false;
-  if (P <= dew->P_Pa) { s.vapor_fraction = 1.0; return true; }
-  std::vector<double> psat(n), K(n), x = z;
-  for (std::size_t i = 0; i < n; ++i) psat[i] = c.vle.antoine[i].pressure(T);
+  double znc = 1.0;
+  std::vector<double> zc(m);
+  for (std::size_t k = 0; k < m; ++k) {
+    zc[k] = z[c.condensable[k]];
+    znc -= zc[k];
+  }
+  znc = std::max(znc, 0.0);
+  const bool gas = znc > 1e-14;
+  if (m == 0 || znc >= 1.0 - 1e-14) { s.vapor_fraction = 1.0; return true; }  // nothing can condense
+  if (!gas) {
+    // Only condensable components: one liquid below the bubble pressure, one vapour above the dew pressure.
+    auto bub = bubble_pressure(c.vle, T, zc, d);
+    if (!bub) return false;
+    if (P >= bub->P_Pa) { s.vapor_fraction = 0.0; return true; }
+    auto dew = dew_pressure(c.vle, T, zc, d);
+    if (!dew) return false;
+    if (P <= dew->P_Pa) { s.vapor_fraction = 1.0; return true; }
+  }
+  // Rachford–Rice over the condensable components (K from γ(x) P_sat / P), plus non-condensables with K = ∞:
+  // f(β) = Σ_c z (K − 1)/(1 + β (K − 1)) + z_nc / β, decreasing in β.
+  std::vector<double> psat(m), K(m), x(m);
+  for (std::size_t k = 0; k < m; ++k) {
+    psat[k] = c.vle.antoine[k].pressure(T);
+    x[k] = zc[k] / (1.0 - znc);
+  }
   for (int it = 0; it < 1000; ++it) {
     auto lg = activity_ln_gamma(c.vle, T, x, d);
     if (!lg) return false;
-    for (std::size_t i = 0; i < n; ++i) K[i] = std::exp((*lg)[i]) * psat[i] / P;
-    const double b = rachford_rice(z, K);
-    std::vector<double> xn(n), yn(n);
-    double sx = 0.0, sy = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-      xn[i] = z[i] / (1.0 + b * (K[i] - 1.0));
-      yn[i] = K[i] * xn[i];
-      sx += xn[i];
-      sy += yn[i];
+    for (std::size_t k = 0; k < m; ++k) K[k] = std::exp((*lg)[k]) * psat[k] / P;
+    double b;
+    if (!gas) {
+      b = rachford_rice(zc, K);
+    } else {
+      auto f = [&](double bb) {
+        double v = znc / bb;
+        for (std::size_t k = 0; k < m; ++k) v += zc[k] * (K[k] - 1.0) / (1.0 + bb * (K[k] - 1.0));
+        return v;
+      };
+      if (f(1.0) >= 0.0) {
+        b = 1.0;
+      } else {
+        double lo = 0.0, hi = 1.0;
+        for (int k = 0; k < 200 && hi - lo > 1e-15; ++k) {
+          const double mid = 0.5 * (lo + hi);
+          (f(mid) > 0.0 ? lo : hi) = mid;
+        }
+        b = 0.5 * (lo + hi);
+      }
+    }
+    std::vector<double> xn(m), yc(m);
+    double sx = 0.0;
+    for (std::size_t k = 0; k < m; ++k) {
+      xn[k] = zc[k] / (1.0 + b * (K[k] - 1.0));
+      yc[k] = K[k] * xn[k];
+      sx += xn[k];
     }
     double change = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-      xn[i] /= sx;
-      yn[i] /= sy;
-      change = std::max(change, std::fabs(xn[i] - x[i]));
+    for (std::size_t k = 0; k < m; ++k) {
+      xn[k] /= sx;
+      change = std::max(change, std::fabs(xn[k] - x[k]));
     }
     x = xn;
-    s.x = xn;
-    s.y = yn;
+    // Full-length compositions: no non-condensable in the liquid; vapour from the material balance.
+    std::fill(s.x.begin(), s.x.end(), 0.0);
+    for (std::size_t k = 0; k < m; ++k) s.x[c.condensable[k]] = xn[k];
+    double sy = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+      s.y[i] = b > 0.0 ? (z[i] - (1.0 - b) * s.x[i]) / b : 0.0;
+      s.y[i] = std::max(s.y[i], 0.0);
+      sy += s.y[i];
+    }
+    for (double& v : s.y) v /= sy;
     s.vapor_fraction = b;
     if (change < 1e-12) return true;
   }
@@ -169,8 +235,8 @@ std::optional<Stream> tp(const ProcessComponents& c, double T, double P, const s
     nv[i] = s.vapor_fraction * F * s.y[i];
     nl[i] = (1.0 - s.vapor_fraction) * F * s.x[i];
   }
-  auto hl = phase_enthalpy(c, T, nl, false, d);
-  auto hv = phase_enthalpy(c, T, nv, true, d);
+  auto hl = phase_enthalpy(c, T, P, nl, false, d);
+  auto hv = phase_enthalpy(c, T, P, nv, true, d);
   if (!hl || !hv) return std::nullopt;
   s.H_W = *hl + *hv;
   return s;
@@ -187,7 +253,7 @@ std::vector<Stream> phases_of(const Stream& s, const ProcessComponents& c, Diagn
   v.x = v.y;
   l.vapor_fraction = 0.0;
   l.y = l.x;
-  v.H_W = phase_enthalpy(c, s.T_K, v.n, true, d).value_or(0.0);
+  v.H_W = phase_enthalpy(c, s.T_K, s.P_Pa, v.n, true, d).value_or(0.0);
   l.H_W = s.H_W - v.H_W;  // exact split of the flash enthalpy
   return {v, l};
 }
@@ -219,29 +285,30 @@ std::optional<ProcessComponents> process_components(const std::vector<std::strin
         ok = false;
         break;
       }
-    if (!std::isfinite(p->Hvap_Tb_Jmol) || !std::isfinite(p->Tb_K)) {
-      diag.error(DiagCode::NoPropertyData, "no enthalpy of vaporization at the normal boiling point for " + p->name);
-      ok = false;
-    }
     c.pure.push_back(*p);
   }
   if (!ok) return std::nullopt;
+  // Components without a vapour-pressure equation are non-condensable: they stay in the vapour.
+  std::vector<std::string> cond;
+  for (std::size_t i = 0; i < smiles.size(); ++i) {
+    if (antoine_coefficients(smiles[i])) {
+      c.condensable.push_back(i);
+      cond.push_back(smiles[i]);
+    } else {
+      diag.warn(DiagCode::NoVaporPressureData,
+                "no vapour-pressure equation for " + c.pure[i].name + "; it is treated as non-condensable");
+    }
+  }
+  if (cond.empty()) return c;
   if (model == LiquidModel::Unifac) {
-    auto v = unifac_system_from_smiles(smiles, diag);
+    auto v = unifac_system_from_smiles(cond, diag);
     if (!v) return std::nullopt;
     c.vle = *v;
   } else {
     c.vle.model = ActivityModel::Nrtl;  // NRTL with τ = 0: γ = 1
-    c.vle.nrtl.n = smiles.size();
-    c.vle.nrtl.alpha_c.assign(smiles.size() * smiles.size(), 0.3);
-    for (const auto& s : smiles) {
-      auto a = antoine_coefficients(s);
-      if (!a) {
-        diag.error(DiagCode::NoVaporPressureData, "no Antoine vapour-pressure coefficients for " + s);
-        return std::nullopt;
-      }
-      c.vle.antoine.push_back(*a);
-    }
+    c.vle.nrtl.n = cond.size();
+    c.vle.nrtl.alpha_c.assign(cond.size() * cond.size(), 0.3);
+    for (const auto& s : cond) c.vle.antoine.push_back(*antoine_coefficients(s));
   }
   return c;
 }
@@ -318,7 +385,7 @@ std::optional<Stream> stream_ph(const ProcessComponents& c, double P, double H_W
     // H jumps at T: a pure component or an azeotrope boils at one temperature. Split by the lever rule.
     std::vector<double> z(n.size());
     for (std::size_t i = 0; i < n.size(); ++i) z[i] = n[i] / F;
-    auto hl = phase_enthalpy(c, T, n, false, fin), hv = phase_enthalpy(c, T, n, true, fin);
+    auto hl = phase_enthalpy(c, T, P, n, false, fin), hv = phase_enthalpy(c, T, P, n, true, fin);
     if (!hl || !hv || *hv <= *hl) { merge(fin, diag); diag.error(DiagCode::VleNotConverged, "PH flash did not converge"); return std::nullopt; }
     s->vapor_fraction = std::clamp((H_W - *hl) / (*hv - *hl), 0.0, 1.0);
     s->x = z;
@@ -408,6 +475,202 @@ std::optional<FlashDrumResult> flash_drum_adiabatic(const ProcessComponents& c, 
   if (!s) return std::nullopt;
   auto ph = phases_of(*s, c, diag);
   return FlashDrumResult{ph[0], ph[1], 0.0};
+}
+
+namespace {
+
+// ∫ Cp_ig/T dT antiderivative (J/(mol K)) of the Poling polynomial.
+double cp_over_t(const PureComponent& p, double T) {
+  const double* a = p.cp_a;
+  return 8.314462618 * (a[0] * std::log(T) + T * (a[1] + T * (a[2] / 2 + T * (a[3] / 3 + T * a[4] / 4))));
+}
+
+std::optional<double> ph_temperature(const ProcessComponents& c, double P, double H, const std::vector<double>& n,
+                                     double guess, Diagnostics& d) {
+  auto s = stream_ph(c, P, H, n, d, guess);
+  if (!s) return std::nullopt;
+  return s->T_K;
+}
+
+}  // namespace
+
+std::optional<HeatExchangerResult> heat_exchanger(const ProcessComponents& hot, const Stream& hot_in,
+                                                  const ProcessComponents& cold, const Stream& cold_in,
+                                                  ExchangerSpec spec, double value, Diagnostics& diag) {
+  if (hot_in.T_K <= cold_in.T_K) {
+    diag.error(DiagCode::TemperatureCross, "the hot inlet (" + num(hot_in.T_K) + " K) is not hotter than the cold inlet (" +
+                                               num(cold_in.T_K) + " K)");
+    return std::nullopt;
+  }
+  double Q = 0.0;
+  if (spec == ExchangerSpec::HotOutletTemperature) {
+    auto o = stream_tp(hot, value, hot_in.P_Pa, hot_in.n, diag);
+    if (!o) return std::nullopt;
+    Q = hot_in.H_W - o->H_W;
+  } else if (spec == ExchangerSpec::ColdOutletTemperature) {
+    auto o = stream_tp(cold, value, cold_in.P_Pa, cold_in.n, diag);
+    if (!o) return std::nullopt;
+    Q = o->H_W - cold_in.H_W;
+  } else {
+    Q = value;
+  }
+  if (!(std::isfinite(Q) && Q > 0.0)) {
+    diag.error(DiagCode::InvalidMixtureInput, "the specification gives no heat flow from the hot to the cold stream");
+    return std::nullopt;
+  }
+  HeatExchangerResult r;
+  r.duty_W = Q;
+  auto ho = stream_ph(hot, hot_in.P_Pa, hot_in.H_W - Q, hot_in.n, diag, hot_in.T_K);
+  auto co = stream_ph(cold, cold_in.P_Pa, cold_in.H_W + Q, cold_in.n, diag, cold_in.T_K);
+  if (!ho || !co) return std::nullopt;
+  r.hot_out = *ho;
+  r.cold_out = *co;
+  // Counter-current profile: position f = 0 is the hot inlet and the cold outlet.
+  constexpr int kZones = 20;
+  std::vector<double> dT(kZones + 1);
+  for (int k = 0; k <= kZones; ++k) {
+    const double f = static_cast<double>(k) / kZones;
+    Diagnostics q;
+    auto th = k == 0 ? std::optional<double>(hot_in.T_K) : k == kZones ? std::optional<double>(ho->T_K)
+                     : ph_temperature(hot, hot_in.P_Pa, hot_in.H_W - f * Q, hot_in.n, hot_in.T_K, q);
+    auto tc = k == 0 ? std::optional<double>(co->T_K) : k == kZones ? std::optional<double>(cold_in.T_K)
+                     : ph_temperature(cold, cold_in.P_Pa, cold_in.H_W + (1.0 - f) * Q, cold_in.n, cold_in.T_K, q);
+    if (!th || !tc) {
+      merge(q, diag);
+      return std::nullopt;
+    }
+    dT[k] = *th - *tc;
+  }
+  r.min_approach_K = *std::min_element(dT.begin(), dT.end());
+  if (r.min_approach_K <= 0.0) {
+    diag.error(DiagCode::TemperatureCross, "temperature cross inside the exchanger: the hot stream falls " +
+                                               num(-r.min_approach_K) + " K below the cold stream");
+    return std::nullopt;
+  }
+  for (int k = 0; k < kZones; ++k) {
+    const double a = dT[k], b = dT[k + 1];
+    const double lm = std::fabs(a - b) < 1e-9 * (a + b) ? 0.5 * (a + b) : (a - b) / std::log(a / b);
+    r.UA_WK += (Q / kZones) / lm;
+  }
+  return r;
+}
+
+std::optional<WorkResult> pump(const ProcessComponents& c, const Stream& in, double P_out, double efficiency, Diagnostics& diag) {
+  if (in.vapor_fraction > 0.0) {
+    diag.error(DiagCode::InvalidMixtureInput, "a pump needs a liquid feed (vapour fraction " + num(in.vapor_fraction) + ")");
+    return std::nullopt;
+  }
+  if (!(P_out >= in.P_Pa) || !(efficiency > 0.0 && efficiency <= 1.0)) {
+    diag.error(DiagCode::InvalidMixtureInput, "a pump needs an outlet pressure at or above the inlet and an efficiency in (0, 1]");
+    return std::nullopt;
+  }
+  double V = 0.0;
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    if (in.n[i] == 0.0) continue;
+    auto v = saturated_liquid_volume(c.pure[i], in.T_K, diag);
+    if (!v) return std::nullopt;
+    V += in.n[i] * *v;
+  }
+  WorkResult r;
+  r.isentropic_work_W = V * (P_out - in.P_Pa);
+  r.work_W = r.isentropic_work_W / efficiency;
+  auto o = stream_ph(c, P_out, in.H_W + r.work_W, in.n, diag, in.T_K);
+  if (!o) return std::nullopt;
+  r.out = *o;
+  return r;
+}
+
+std::optional<WorkResult> compressor(const ProcessComponents& c, const Stream& in, double P_out, double efficiency,
+                                     Diagnostics& diag) {
+  if (in.vapor_fraction < 1.0) {
+    diag.error(DiagCode::InvalidMixtureInput, "a compressor needs a vapour feed (vapour fraction " + num(in.vapor_fraction) + ")");
+    return std::nullopt;
+  }
+  if (!(P_out > 0.0) || !(efficiency > 0.0 && efficiency <= 1.0)) {
+    diag.error(DiagCode::InvalidMixtureInput, "a compressor needs a positive outlet pressure and an efficiency in (0, 1]");
+    return std::nullopt;
+  }
+  const double F = in.total(), T1 = in.T_K;
+  // Isentropic ideal-gas path: Σ n_i [∫Cp_i/T dT] = F R ln(P2/P1); the mixing entropy does not change.
+  const double target = F * 8.314462618 * std::log(P_out / in.P_Pa);
+  auto ds = [&](double T) {
+    double s = 0.0;
+    for (std::size_t i = 0; i < c.size(); ++i) s += in.n[i] * (cp_over_t(c.pure[i], T) - cp_over_t(c.pure[i], T1));
+    return s - target;
+  };
+  double lo = 10.0, hi = 6000.0;
+  if (ds(lo) > 0.0 || ds(hi) < 0.0) {
+    diag.error(DiagCode::VleNotConverged, "no isentropic outlet temperature between 10 and 6000 K");
+    return std::nullopt;
+  }
+  for (int k = 0; k < 200 && hi - lo > 1e-10 * hi; ++k) {
+    const double m = 0.5 * (lo + hi);
+    (ds(m) > 0.0 ? hi : lo) = m;
+  }
+  const double T2s = 0.5 * (lo + hi);
+  WorkResult r;
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    if (in.n[i] == 0.0) continue;
+    auto h1 = ideal_gas_enthalpy(c.pure[i], T1, diag), h2 = ideal_gas_enthalpy(c.pure[i], T2s, diag);
+    if (!h1 || !h2) return std::nullopt;
+    r.isentropic_work_W += in.n[i] * (*h2 - *h1);
+  }
+  r.work_W = P_out >= in.P_Pa ? r.isentropic_work_W / efficiency : r.isentropic_work_W * efficiency;
+  auto o = stream_ph(c, P_out, in.H_W + r.work_W, in.n, diag, T2s);
+  if (!o) return std::nullopt;
+  r.out = *o;
+  return r;
+}
+
+std::optional<ReactorResult> conversion_reactor(const ProcessComponents& c, const Stream& in, const std::vector<double>& nu,
+                                                std::size_t key, double conversion, double T_out, double P_out,
+                                                Diagnostics& diag) {
+  const std::size_t n = c.size();
+  if (nu.size() != n || key >= n || !(nu[key] < 0.0) || !(conversion >= 0.0 && conversion <= 1.0)) {
+    diag.error(DiagCode::InvalidMixtureInput,
+               "a conversion reactor needs one coefficient per component, a key reactant (negative coefficient) and a "
+               "conversion in [0, 1]");
+    return std::nullopt;
+  }
+  // Element balance from the structures.
+  Composition sum{};
+  for (std::size_t i = 0; i < n; ++i) {
+    if (nu[i] == 0.0) continue;
+    ChemicalSystemState st;
+    Diagnostics q;
+    const std::int32_t sp = parse_smiles(st, c.smiles[i], q);
+    if (sp < 0) { merge(q, diag); return std::nullopt; }
+    const Composition comp = compute_composition(st, static_cast<std::uint32_t>(sp));
+    for (std::size_t e = 0; e < sum.size(); ++e) sum[e] += static_cast<std::int32_t>(std::lround(nu[i] * 1000.0)) * comp[e];
+    if (!std::isfinite(c.pure[i].Hf_gas_Jmol)) {
+      diag.error(DiagCode::NoPropertyData, "no enthalpy of formation for " + c.pure[i].name + ", which takes part in the reaction");
+      return std::nullopt;
+    }
+  }
+  for (std::int32_t e : sum)
+    if (e != 0) {
+      diag.error(DiagCode::UnbalancedReaction, "the stoichiometry does not conserve the elements");
+      return std::nullopt;
+    }
+  ReactorResult r;
+  r.extent_mols = conversion * in.n[key] / -nu[key];
+  std::vector<double> out(n);
+  const double F = in.total();
+  for (std::size_t i = 0; i < n; ++i) {
+    out[i] = in.n[i] + nu[i] * r.extent_mols;
+    if (out[i] < -1e-12 * F) {
+      diag.error(DiagCode::InvalidMixtureInput, c.pure[i].name + " would be used up before the key component reaches the conversion");
+      return std::nullopt;
+    }
+    out[i] = std::max(out[i], 0.0);
+    r.heat_of_reaction_Jmol += nu[i] * (nu[i] == 0.0 ? 0.0 : c.pure[i].Hf_gas_Jmol);
+  }
+  const double P = P_out > 0.0 ? P_out : in.P_Pa;
+  auto o = T_out > 0.0 ? stream_tp(c, T_out, P, out, diag) : stream_ph(c, P, in.H_W, out, diag, in.T_K);
+  if (!o) return std::nullopt;
+  r.out = *o;
+  r.duty_W = o->H_W - in.H_W;
+  return r;
 }
 
 }  // namespace chemlarp

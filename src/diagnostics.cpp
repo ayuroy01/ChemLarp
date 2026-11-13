@@ -68,6 +68,8 @@ const char* to_string(DiagCode code) noexcept {
     case DiagCode::VleNotConverged: return "VleNotConverged";
     case DiagCode::NoPropertyData: return "NoPropertyData";
     case DiagCode::PropertyExtrapolated: return "PropertyExtrapolated";
+    case DiagCode::TemperatureCross: return "TemperatureCross";
+    case DiagCode::UnbalancedReaction: return "UnbalancedReaction";
     case DiagCode::InchiMetalDisconnected: return "InchiMetalDisconnected";
     case DiagCode::InchiSymmetryLimit: return "InchiSymmetryLimit";
     case DiagCode::InchiUnsupported: return "InchiUnsupported";
