@@ -881,10 +881,120 @@
 
   // ---- Phase behaviour ---------------------------------------------------------------------
   const regionText = { 'two-phase': 'Two phases: vapour + liquid', liquid: 'Single phase: liquid', vapor: 'Single phase: vapour', supercritical: 'Single phase: supercritical fluid' };
+  const phModel = () => checked($('ph-model')).dataset.model;
+  const phKind = () => checked($('ph-kind')).dataset.kind;
+  const phGiven = () => checked($('ph-given')).dataset.given;
+  // Each model keeps its own inputs, so switching back and forth loses nothing.
+  const phSaved = { unifac: { mix: 'CCO 0.3\nO 0.7', T: '350', P: '1.01325' } };
+  let phShown = 'eos', lastVle = null;
+  function phLayout() {
+    const m = phModel(), act = m === 'unifac', bubble = phKind() === 'bubble';
+    if (m !== phShown) {
+      phSaved[phShown] = { mix: $('ph-mix').value, T: $('ph-t').value, P: $('ph-p').value };
+      const v = phSaved[m];
+      if (v) { $('ph-mix').value = v.mix; $('ph-t').value = v.T; $('ph-p').value = v.P; }
+      phShown = m;
+      $('ph-out').replaceChildren();
+      $('ph-charts').hidden = true;
+      lastVle = null;
+    }
+    $('ph-act-fields').hidden = !act; $('ph-act-samples').hidden = !act;
+    $('ph-eos-field').hidden = act; $('ph-eos-samples').hidden = act;
+    // The variable being solved for is an output, not an input.
+    $('ph-t').closest('.field').hidden = act && phGiven() === 'P';
+    $('ph-p').closest('.field').hidden = act && phGiven() === 'T';
+    $('ph-submit').textContent = act ? (bubble ? 'Find bubble point' : 'Find dew point') : 'Flash';
+    $('ph-mix-label').replaceChildren(act ? (bubble ? 'Liquid composition' : 'Vapour composition') : 'Mixture',
+      ', one per line as ', h('code', { text: 'SMILES mole_fraction' }));
+  }
+  const phRerun = () => { phLayout(); $('ph-form').requestSubmit(); };
+  segmented($('ph-model'), phRerun);
+  segmented($('ph-kind'), phRerun);
+  segmented($('ph-given'), phRerun);
+  phLayout();
+
+  function drawVle() {
+    if (!lastVle) return;
+    const { bubble, dew, tie, az, given, a } = lastVle;
+    const markers = az ? [{ x: az.x, y: az.v, label: `azeotrope ${fixed(az.x, 3)}` }] : [];
+    Charts.lineChart($('ph-chart'), [
+      { name: given === 'P' ? 'Bubble T (liquid)' : 'Bubble P (liquid)', points: bubble },
+      { name: given === 'P' ? 'Dew T (vapour)' : 'Dew P (vapour)', points: dew },
+      { name: 'This tie line', points: tie, color: getComputedStyle(document.documentElement).getPropertyValue('--ink-3').trim() || '#888' },
+    ], { xLabel: `mole fraction ${a.name || a.smiles}`, yLabel: given === 'P' ? 'K' : 'bar', xRange: [0, 1], markers });
+  }
+
+  // Binary T-x-y (given P) or P-x-y (given T) diagram from bubble points across the composition range.
+  async function phaseDiagram(r, given, value) {
+    const [a, b] = r.components;
+    const mode = given === 'P' ? 'bubble-T' : 'bubble-P';
+    const val = (o) => (given === 'P' ? o.T_K : o.P_Pa / 1e5);
+    const xs = Array.from({ length: 51 }, (_, i) => i / 50);
+    const pts = (await Promise.all(xs.map((x) =>
+      engine('vle', { mixture: `${a.smiles} ${x}\n${b.smiles} ${1 - x}`, mode, value }).then((o) => o.result, () => null))))
+      .filter((o) => o && o.ok);
+    if (pts.length < 3) { $('ph-charts').hidden = true; return; }
+    const bubble = pts.map((o) => [o.components[0].x, val(o)]);
+    const dew = pts.map((o) => [o.components[0].y, val(o)]).sort((p, q) => p[0] - q[0]);
+    // An azeotrope is where y − x changes sign between two interior points.
+    let az = null;
+    const inner = pts.filter((o) => o.components[0].x > 0 && o.components[0].x < 1);
+    for (let i = 1; i < inner.length && !az; ++i) {
+      const p = inner[i - 1], q = inner[i];
+      const d1 = p.components[0].y - p.components[0].x, d2 = q.components[0].y - q.components[0].x;
+      if (d1 * d2 < 0) {
+        const t = d1 / (d1 - d2);
+        az = { x: p.components[0].x + t * (q.components[0].x - p.components[0].x), v: val(p) + t * (val(q) - val(p)) };
+      }
+    }
+    const v = val(r);
+    lastVle = { bubble, dew, tie: [[r.components[0].x, v], [r.components[0].y, v]], az, given, a };
+    $('ph-chart-title').textContent = given === 'P' ? `T–x–y at ${fmt(value / 1e5, 5)} bar` : `P–x–y at ${fmt(value, 5)} K`;
+    $('ph-chart-meta').textContent = az
+      ? `azeotrope: x = ${fixed(az.x, 3)} ${a.name || a.smiles}, ${given === 'P' ? fixed(az.v, 2) + ' K' : fmt(az.v, 4) + ' bar'}`
+      : 'no azeotrope';
+    $('ph-charts').hidden = false;
+    drawVle();
+  }
+
+  async function runVle(out) {
+    const kind = phKind(), given = phGiven();
+    const value = given === 'P' ? +$('ph-p').value * 1e5 : +$('ph-t').value;
+    busy(out, `Finding the ${kind} point…`);
+    const { result: r } = await engine('vle', { mixture: $('ph-mix').value, mode: `${kind}-${given === 'P' ? 'T' : 'P'}`, value });
+    if (!r.ok) {
+      $('ph-charts').hidden = true;
+      lastVle = null;
+      out.replaceChildren(status('bad', `Could not find the ${kind} point`), ...diagnostics(r.diagnostics));
+      return;
+    }
+    const found = given === 'P' ? `${fixed(r.T_K, 2)} K (${fixed(r.T_K - 273.15, 2)} °C)` : `${fmt(r.P_Pa / 1e5, 5)} bar`;
+    out.replaceChildren(
+      status(r.extrapolated ? 'warn' : 'ok', `${kind === 'bubble' ? 'Bubble' : 'Dew'} point: ${found}`,
+        `UNIFAC + Antoine, ideal vapour${r.extrapolated ? ' · vapour pressure extrapolated' : ''}`),
+      h('div', { class: 'metrics' },
+        metric('Temperature', fixed(r.T_K, 2), 'K'),
+        metric('Pressure', fmt(r.P_Pa / 1e5, 5), 'bar'),
+        metric('Iterations', String(r.iterations))),
+      h('div', { class: 'glass-card card' },
+        h('div', { class: 'card-head' }, h('h2', { text: 'Phase compositions' }), h('span', { class: 'meta', text: 'mole fractions' })),
+        h('div', { class: 'table-wrap' }, h('table', {},
+          h('thead', {}, h('tr', {}, h('th', { text: 'Component' }), h('th', { text: 'SMILES' }), h('th', { class: 'num', text: 'Liquid x' }),
+            h('th', { class: 'num', text: 'Vapour y' }), h('th', { class: 'num', text: 'γ' }), h('th', { class: 'num', text: 'K = y/x' }))),
+          h('tbody', {}, r.components.map((c) => h('tr', {}, h('td', { text: c.name }), h('td', { class: 'mono', text: c.smiles }),
+            h('td', { class: 'num', text: fixed(c.x, 4) }), h('td', { class: 'num', text: fixed(c.y, 4) }),
+            h('td', { class: 'num', text: fixed(c.gamma, 4) }), h('td', { class: 'num', text: c.x > 0 ? fmt(c.y / c.x, 4) : '—' }))))))),
+      ...diagnostics(r.diagnostics));
+    if (r.components.length === 2) await phaseDiagram(r, given, value);
+    else { $('ph-charts').hidden = true; lastVle = null; }
+  }
+
   segmented($('ph-eos'), () => $('ph-form').requestSubmit());
   $('ph-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const out = $('ph-out');
+    if (phModel() === 'unifac') { try { await runVle(out); } catch (err) { fail(out, err); } return; }
+    $('ph-charts').hidden = true;
     busy(out, 'Running stability test and flash…');
     try {
       const eos = checked($('ph-eos')).dataset.eos;
@@ -955,6 +1065,7 @@
     } catch (err) { fail(out, err); }
   });
   window.addEventListener('resize', () => { if (lastKin && current() === 'kinetics') drawKinetics(); });
+  window.addEventListener('resize', () => { if (lastVle && current() === 'phases') drawVle(); });
 
   // ---- Roadmap ---------------------------------------------------------------------------------
   let roadmap = null;

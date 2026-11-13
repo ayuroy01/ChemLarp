@@ -203,12 +203,35 @@ O 0
       <section class="view" id="phases" hidden>
         <header class="view-head">
           <h1>Phase Behaviour</h1>
-          <p>Vapour–liquid equilibrium from a cubic equation of state, with a stability test before the flash.</p>
+          <p>Vapour–liquid equilibrium from a cubic equation of state (stability test and flash), or bubble and dew points from UNIFAC activity coefficients.</p>
         </header>
         <div class="split">
           <form class="panel glass-card" id="ph-form">
             <div class="field">
-              <label for="ph-mix">Mixture, one per line as <code>SMILES mole_fraction</code></label>
+              <label>Model</label>
+              <div class="segmented" role="radiogroup" aria-label="Model" id="ph-model">
+                <button type="button" role="radio" aria-checked="true" data-model="eos">Equation of state</button>
+                <button type="button" role="radio" aria-checked="false" data-model="unifac">Activity (UNIFAC)</button>
+              </div>
+            </div>
+            <div class="field-row" id="ph-act-fields" hidden>
+              <div class="field">
+                <label>Calculation</label>
+                <div class="segmented" role="radiogroup" aria-label="Calculation" id="ph-kind">
+                  <button type="button" role="radio" aria-checked="true" data-kind="bubble">Bubble point</button>
+                  <button type="button" role="radio" aria-checked="false" data-kind="dew">Dew point</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Given</label>
+                <div class="segmented" role="radiogroup" aria-label="Given variable" id="ph-given">
+                  <button type="button" role="radio" aria-checked="true" data-given="P">Pressure</button>
+                  <button type="button" role="radio" aria-checked="false" data-given="T">Temperature</button>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="ph-mix" id="ph-mix-label">Mixture, one per line as <code>SMILES mole_fraction</code></label>
               <textarea id="ph-mix" class="mono" rows="5" spellcheck="false">C 0.5
 CCC 0.3
 CCCCC 0.2</textarea>
@@ -217,14 +240,21 @@ CCCCC 0.2</textarea>
               <div class="field narrow"><label for="ph-t">Temperature</label><div class="unit-input"><input id="ph-t" type="number" value="300" min="1" step="any"><span>K</span></div></div>
               <div class="field narrow"><label for="ph-p">Pressure</label><div class="unit-input"><input id="ph-p" type="number" value="30" min="0.0001" step="any"><span>bar</span></div></div>
             </div>
-            <div class="field">
+            <div class="field" id="ph-eos-field">
               <label>Equation of state</label>
               <div class="segmented" role="radiogroup" aria-label="Equation of state" id="ph-eos">
                 <button type="button" role="radio" aria-checked="true" data-eos="pr">Peng–Robinson</button>
                 <button type="button" role="radio" aria-checked="false" data-eos="srk">Soave–Redlich–Kwong</button>
               </div>
             </div>
-            <div class="samples compact">
+            <div class="samples compact" id="ph-act-samples" hidden>
+              <span class="samples-label">Examples</span>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="CCO 0.3&#10;O 0.7">Ethanol + water</button>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="CC(C)=O 0.5&#10;ClC(Cl)Cl 0.5">Acetone + chloroform</button>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="CO 0.4&#10;c1ccccc1 0.6">Methanol + benzene</button>
+              <button type="button" class="chip" data-fill="ph-mix" data-value="CC(C)=O 0.3&#10;CO 0.3&#10;O 0.4">Acetone + methanol + water</button>
+            </div>
+            <div class="samples compact" id="ph-eos-samples">
               <span class="samples-label">Examples</span>
               <button type="button" class="chip" data-fill="ph-mix" data-value="C 0.5&#10;CCC 0.3&#10;CCCCC 0.2">Gas condensate</button>
               <button type="button" class="chip" data-fill="ph-mix" data-value="CCO 0.4&#10;O 0.6">Ethanol + water</button>
@@ -232,10 +262,16 @@ CCCCC 0.2</textarea>
             </div>
             <div class="form-actions">
               <button type="button" class="btn" data-add-compound="ph-mix" data-amount="0.1">Add open compound</button>
-              <button type="submit" class="btn btn-primary">Flash</button>
+              <button type="submit" class="btn btn-primary" id="ph-submit">Flash</button>
             </div>
           </form>
           <div class="stack" id="ph-out"></div>
+        </div>
+        <div class="stack" id="ph-charts" hidden>
+          <div class="glass-card chart-card">
+            <div class="card-head"><h2 id="ph-chart-title">Phase diagram</h2><span class="meta" id="ph-chart-meta"></span></div>
+            <canvas class="chart" id="ph-chart" data-height="320"></canvas>
+          </div>
         </div>
       </section>
 

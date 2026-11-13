@@ -47,13 +47,20 @@
     const xs = series.flatMap((s) => s.points.map((p) => p[0]));
     const ys = series.flatMap((s) => s.points.map((p) => tf(p[1])));
     let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    if (opts.xRange) [x0, x1] = opts.xRange;
     if (opts.logY) { y0 = Math.max(Math.floor(y0), Math.ceil(y1) - 10); y1 = Math.ceil(y1); }
     else { const pad = (y1 - y0) * 0.06 || 1; y0 -= pad; y1 += pad; }
     const yt = opts.logY ? niceTicks(y0, y1, 5).filter((v) => Number.isInteger(v)) : niceTicks(y0, y1, 5);
     ctx.font = '12px system-ui, sans-serif';
     const yLab = (v) => (opts.logY ? '1e' + v : fmt(v));
     const left = 14 + Math.max(...yt.map((v) => ctx.measureText(yLab(v)).width)) + (opts.yLabel ? 16 : 0);
-    const legendRows = Math.ceil(series.length / Math.max(1, Math.floor((w - left) / 110)));
+    // Legend entries are sized by their text; count the rows they wrap into.
+    const legendW = series.map((s) => 16 + ctx.measureText(s.name).width + 18);
+    let legendRows = 1;
+    for (let i = 0, lx = left; i < series.length; ++i) {
+      if (lx + legendW[i] > w && lx > left) { legendRows++; lx = left; }
+      lx += legendW[i];
+    }
     const top = 10 + legendRows * 18, right = 14, bottom = 38;
     const X = (x) => left + ((x - x0) / (x1 - x0 || 1)) * (w - left - right);
     const Y = (y) => top + (1 - (tf(y) - y0) / (y1 - y0 || 1)) * (h - top - bottom);
@@ -84,16 +91,26 @@
       s.points.forEach(([x, y], k) => (k ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
       ctx.stroke();
     });
+    // Markers: [{x, y, label}] as dots with a label.
+    for (const m of opts.markers || []) {
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.arc(X(m.x), Y(m.y), 4, 0, 2 * Math.PI); ctx.fill();
+      if (m.label) {
+        const right = X(m.x) > (left + w) / 2;
+        ctx.textAlign = right ? 'right' : 'left'; ctx.textBaseline = 'bottom';
+        ctx.fillText(m.label, X(m.x) + (right ? -8 : 8), Y(m.y) - 6);
+      }
+    }
     // Legend.
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = fg;
     let lx = left, ly = 8;
     series.forEach((s, i) => {
-      if (lx + 100 > w) { lx = left; ly += 18; }
+      if (lx + legendW[i] > w && lx > left) { lx = left; ly += 18; }
       ctx.fillStyle = s.color || PALETTE[i % PALETTE.length];
       ctx.fillRect(lx, ly - 4, 12, 8);
       ctx.fillStyle = fg;
       ctx.fillText(s.name, lx + 16, ly);
-      lx += 110;
+      lx += legendW[i];
     });
   }
 

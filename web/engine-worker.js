@@ -25,6 +25,7 @@ const calls = {
     ['string', 'string', 'string', 'string', 'number', 'number', 'string', 'number', 'number', 'number'],
     [a.mechanism, a.thermo || '', a.smiles || '', a.model, a.temperature, a.pressure, a.feed, a.tEnd, a.samples, a.rtol || 0]),
   flash: (M, a) => callJson(M, 'cl_flash_text_json', ['string', 'number', 'number', 'string'], [a.mixture, a.temperature, a.pressure, a.eos]),
+  vle: (M, a) => callJson(M, 'cl_vle_text_json', ['string', 'string', 'number'], [a.mixture, a.mode, a.value]),
   psat: (M, a) => callJson(M, 'cl_saturation_pressure_json', ['string', 'number', 'string'], [a.smiles, a.temperature, a.eos]),
   inchi: (M, a) => callJson(M, 'cl_inchi_json', ['string'], [a.smiles]),
   iupac: (M, a) => callJson(M, 'cl_iupac_name_json', ['string'], [a.smiles]),
