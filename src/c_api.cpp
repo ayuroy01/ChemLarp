@@ -775,7 +775,8 @@ char* cl_pure_component_json(const char* smiles, double temperature_K, double pr
              ",\"viscosity_gas_Pas\":" + val(gas_viscosity(*c, temperature_K, q)) +
              ",\"conductivity_liquid_WmK\":" + val(liquid_thermal_conductivity(*c, temperature_K, q)) +
              ",\"conductivity_gas_WmK\":" + val(gas_thermal_conductivity(*c, temperature_K, q)) +
-             ",\"surface_tension_Nm\":" + val(surface_tension(*c, temperature_K, q)) + "}";
+             ",\"surface_tension_Nm\":" + val(surface_tension(*c, temperature_K, q)) +
+             ",\"cp_liquid_JmolK\":" + val(liquid_cp(*c, temperature_K, q)) + "}";
       std::vector<std::string> seen;
       for (const auto& it : q.items()) {
         if (std::find(seen.begin(), seen.end(), it.message) != seen.end()) continue;

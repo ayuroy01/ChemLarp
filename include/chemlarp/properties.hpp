@@ -15,6 +15,7 @@
 // Transport properties (scripts/gen_transport_data.py), each a published correlation with its fitted range:
 //   viscosity and thermal conductivity of the liquid and of the low-pressure vapour: Perry's Chemical
 //   Engineers' Handbook, 8th ed., Tables 2-312 to 2-315 (DIPPR equations 100, 101, 102);
+//   liquid heat capacity: Perry Table 2-153 (DIPPR equation 100);
 //   surface tension: Mulero & Cachadiña, J. Phys. Chem. Ref. Data 41 (2012) 043105, else Jasper,
 //   J. Phys. Chem. Ref. Data 1 (1972) 841.
 
@@ -52,6 +53,7 @@ struct PureComponent {
   double Z_RA = NaN;                             // Rackett parameter
   double Hf_gas_Jmol = NaN, Gf_gas_Jmol = NaN, S_gas_JmolK = NaN;  // ideal gas, 298.15 K, 1 bar
   TransportCorrelation liquid_viscosity, gas_viscosity, liquid_conductivity, gas_conductivity, surface_tension;
+  TransportCorrelation liquid_heat_capacity;
 };
 
 // Looked up by structure (any SMILES spelling); nullopt if the compound is not in the table.
@@ -73,5 +75,8 @@ std::optional<double> gas_viscosity(const PureComponent& c, double T, Diagnostic
 std::optional<double> liquid_thermal_conductivity(const PureComponent& c, double T, Diagnostics& diag);   // W/(m K)
 std::optional<double> gas_thermal_conductivity(const PureComponent& c, double T, Diagnostics& diag);      // W/(m K)
 std::optional<double> surface_tension(const PureComponent& c, double T, Diagnostics& diag);               // N/m
+std::optional<double> liquid_cp(const PureComponent& c, double T, Diagnostics& diag);                     // J/(mol K)
+// ∫ Cp,liquid dT from T0 to T1 (J/mol), exact for the DIPPR polynomial; warns outside the fitted range.
+std::optional<double> liquid_enthalpy_change(const PureComponent& c, double T0, double T1, Diagnostics& diag);
 
 }  // namespace chemlarp

@@ -114,7 +114,7 @@ CHEMLARP_API char* cl_saturation_pressure_json(const char* smiles, double temper
 /* Pure-component properties (constants from published compilations; see scripts/gen_property_data.py).
  * With temperature_K > 0 also "at":{T_K,P_Pa,cp_ideal_gas_JmolK,H_ideal_gas_Jmol (H(T) - H(298.15 K)),
  * S_ideal_gas_JmolK,Hvap_Jmol,V_liquid_m3mol,rho_liquid_kgm3,viscosity_liquid_Pas,viscosity_gas_Pas,
- * conductivity_liquid_WmK,conductivity_gas_WmK,surface_tension_Nm} (gas values at low pressure); pressure_Pa <= 0 means 1 bar. Missing values
+ * conductivity_liquid_WmK,conductivity_gas_WmK,surface_tension_Nm,cp_liquid_JmolK} (gas values at low pressure); pressure_Pa <= 0 means 1 bar. Missing values
  * are null; a correlation that cannot be evaluated adds a warning. */
 CHEMLARP_API char* cl_pure_component_json(const char* smiles, double temperature_K, double pressure_Pa);
 

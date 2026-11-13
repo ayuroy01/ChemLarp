@@ -76,7 +76,8 @@ const std::map<std::string, PureComponent>& table() {
                                 : r.property == 'G' ? &c.gas_viscosity
                                 : r.property == 'l' ? &c.liquid_conductivity
                                 : r.property == 'g' ? &c.gas_conductivity
-                                : r.property == 's' ? &c.surface_tension : nullptr;
+                                : r.property == 's' ? &c.surface_tension
+                                : r.property == 'C' ? &c.liquid_heat_capacity : nullptr;
       if (!corr || corr->present()) continue;
       corr->equation = r.equation;
       for (int i = 0; i < 7; ++i) corr->c[i] = r.c[i];
@@ -258,6 +259,18 @@ std::optional<double> gas_thermal_conductivity(const PureComponent& c, double T,
 }
 std::optional<double> surface_tension(const PureComponent& c, double T, Diagnostics& diag) {
   return transport(c, c.surface_tension, T, true, "surface tension", diag);
+}
+
+std::optional<double> liquid_cp(const PureComponent& c, double T, Diagnostics& diag) {
+  return transport(c, c.liquid_heat_capacity, T, true, "liquid heat capacity", diag);
+}
+
+std::optional<double> liquid_enthalpy_change(const PureComponent& c, double T0, double T1, Diagnostics& diag) {
+  // Both ends are checked (range, Tc) by evaluating Cp there.
+  if (!liquid_cp(c, T0, diag) || !liquid_cp(c, T1, diag)) return std::nullopt;
+  const double* k = c.liquid_heat_capacity.c;
+  auto F = [&](double t) { return t * (k[0] + t * (k[1] / 2 + t * (k[2] / 3 + t * (k[3] / 4 + t * k[4] / 5)))); };
+  return F(T1) - F(T0);
 }
 
 }  // namespace chemlarp

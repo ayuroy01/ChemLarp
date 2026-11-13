@@ -421,6 +421,7 @@ int cmd_props(const std::vector<std::string>& args) {
     line("liquid thermal conductivity", val(liquid_thermal_conductivity(*c, T, d), 1), "W/(m K)");
     line("vapour thermal cond. (low P)", val(gas_thermal_conductivity(*c, T, d), 1), "W/(m K)");
     line("surface tension", val(surface_tension(*c, T, d), 1e3), "mN/m");
+    line("liquid heat capacity", val(liquid_cp(*c, T, d), 1), "J/(mol K)");
     std::printf("\n");
     std::vector<std::string> seen;
     for (const auto& it : d.items()) {

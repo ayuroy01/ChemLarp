@@ -191,3 +191,20 @@ TEST(transport_limits_and_errors) {
   CHECK(!liquid_viscosity(pc("CCc1ccccc1O"), 320.0, f));
   CHECK_EQ(f.count(DiagCode::NoPropertyData), std::size_t{2});
 }
+
+TEST(liquid_heat_capacity) {
+  // Water against IAPWS-95 (75.315 J/mol/K at 300 K, 75.564 at 350 K), and the enthalpy integral.
+  const PureComponent w = pc("O");
+  Diagnostics d;
+  CHECK_NEAR(*liquid_cp(w, 300.0, d), 75.315, 0.004 * 75.315);
+  CHECK_NEAR(*liquid_cp(w, 350.0, d), 75.564, 0.004 * 75.564);
+  const double h = 1e-3;
+  CHECK_NEAR((*liquid_enthalpy_change(w, 300.0, 330.0 + h, d) - *liquid_enthalpy_change(w, 300.0, 330.0 - h, d)) / (2 * h),
+             *liquid_cp(w, 330.0, d), 1e-6);
+  CHECK_NEAR(*liquid_enthalpy_change(w, 330.0, 300.0, d), -*liquid_enthalpy_change(w, 300.0, 330.0, d), 1e-9);
+  CHECK(!d.has_errors());
+  // Rows that agree with neither Poling's nor CRC's Cp(298) are dropped (acetic anhydride).
+  Diagnostics e;
+  CHECK(!liquid_cp(pc("CC(=O)OC(C)=O"), 300.0, e));
+  CHECK(e.contains(DiagCode::NoPropertyData));
+}
