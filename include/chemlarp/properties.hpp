@@ -9,8 +9,9 @@
 // Correlations:
 //   ideal-gas Cp/R = a0 + a1 T + a2 T² + a3 T³ + a4 T⁴ (Poling et al.), H and S by exact integration;
 //   ΔHvap(T) = ΔHvap(Tb) [(1 − T/Tc)/(1 − Tb/Tc)]^0.38 (Watson, Ind. Eng. Chem. 35 (1943) 398);
-//   saturated liquid volume V = (R Tc/Pc) Z_RA^(1 + (1 − T/Tc)^(2/7)) (Rackett, J. Chem. Eng. Data 15 (1970)
-//   514, with Spencer & Danner's Z_RA; Zc when no Z_RA is tabulated, reported as a warning).
+//   saturated liquid volume from the VDI Heat Atlas (PPDS) density equation where tabulated, otherwise
+//   V = (R Tc/Pc) Z_RA^(1 + (1 − T/Tc)^(2/7)) (Rackett, J. Chem. Eng. Data 15 (1970) 514, with Spencer &
+//   Danner's Z_RA; Zc when no Z_RA is tabulated, reported as a warning).
 //
 // Transport properties (scripts/gen_transport_data.py), each a published correlation with its fitted range:
 //   viscosity and thermal conductivity of the liquid and of the low-pressure vapour: Perry's Chemical
@@ -54,6 +55,7 @@ struct PureComponent {
   double Hf_gas_Jmol = NaN, Gf_gas_Jmol = NaN, S_gas_JmolK = NaN;  // ideal gas, 298.15 K, 1 bar
   TransportCorrelation liquid_viscosity, gas_viscosity, liquid_conductivity, gas_conductivity, surface_tension;
   TransportCorrelation liquid_heat_capacity;
+  TransportCorrelation liquid_density;  // 'P': VDI PPDS saturated liquid density (c = ρc, a, b, c, d, Tc, M)
 };
 
 // Looked up by structure (any SMILES spelling); nullopt if the compound is not in the table.

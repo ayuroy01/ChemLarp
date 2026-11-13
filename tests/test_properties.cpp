@@ -101,12 +101,22 @@ TEST(enthalpy_of_vaporization_watson) {
   CHECK(f.contains(DiagCode::NoPropertyData));
 }
 
-TEST(saturated_liquid_volume_rackett) {
+TEST(saturated_liquid_volume) {
+  // VDI PPDS density where tabulated: benzene against Perry's DIPPR-105 (independent), water against IAPWS-95.
   Diagnostics d;
   auto v = saturated_liquid_volume(pc("c1ccccc1"), 300.0, d);
   CHECK(v.has_value());
-  CHECK(std::fabs(rel(*v, 8.97316e-5)) < 0.01);  // VDI PPDS
+  CHECK(std::fabs(rel(*v, 8.9667e-5)) < 0.005);
+  CHECK(std::fabs(rel(18.015268e-3 / *saturated_liquid_volume(pc("O"), 300.0, d), 996.513)) < 0.003);
+  CHECK(std::fabs(rel(18.015268e-3 / *saturated_liquid_volume(pc("O"), 450.0, d), 890.341)) < 0.003);
   CHECK(d.empty());
+  // Rackett with Spencer–Danner Z_RA where VDI has no equation (2,4-dimethylpentane): no warning; with Zc
+  // when no Z_RA is tabulated either (isopropylamine): a warning.
+  Diagnostics r;
+  CHECK(saturated_liquid_volume(pc("CC(C)CC(C)C"), 290.0, r).has_value());
+  CHECK(r.empty());
+  CHECK(saturated_liquid_volume(pc("CC(C)N"), 290.0, r).has_value());
+  CHECK(r.contains(DiagCode::PropertyExtrapolated));
   // Below the melting point: extrapolation is reported.
   Diagnostics e;
   CHECK(saturated_liquid_volume(pc("c1ccccc1"), 250.0, e).has_value());

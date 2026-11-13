@@ -77,7 +77,8 @@ const std::map<std::string, PureComponent>& table() {
                                 : r.property == 'l' ? &c.liquid_conductivity
                                 : r.property == 'g' ? &c.gas_conductivity
                                 : r.property == 's' ? &c.surface_tension
-                                : r.property == 'C' ? &c.liquid_heat_capacity : nullptr;
+                                : r.property == 'C' ? &c.liquid_heat_capacity
+                                : r.property == 'V' ? &c.liquid_density : nullptr;
       if (!corr || corr->present()) continue;
       corr->equation = r.equation;
       for (int i = 0; i < 7; ++i) corr->c[i] = r.c[i];
@@ -185,6 +186,13 @@ std::optional<double> enthalpy_of_vaporization(const PureComponent& c, double T,
 
 std::optional<double> saturated_liquid_volume(const PureComponent& c, double T, Diagnostics& diag) {
   if (!liquid_T(c, T, "saturated liquid volume", diag)) return std::nullopt;
+  if (c.liquid_density.present()) {
+    const double* k = c.liquid_density.c;
+    const double tau = std::max(0.0, 1.0 - T / k[5]);
+    const double t3 = std::cbrt(tau);
+    const double rho = k[0] + k[1] * std::pow(tau, 0.35) + k[2] * t3 * t3 + tau * (k[3] + k[4] * t3);  // kg/m³
+    if (rho > 0.0) return 1e-3 * k[6] / rho;
+  }
   if (!known(c.Pc_Pa)) {
     missing(c, "critical pressure", diag);
     return std::nullopt;
