@@ -174,6 +174,22 @@ CHEMLARP_API char* cl_protein_json_opts(const char* text, double pH, int flags);
 CHEMLARP_API char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt,
                               unsigned equilibration, unsigned production, const char* thermostat, unsigned seed);
 
+/* MBAR on a matrix of reduced potentials (units of kT). Text: the sample count of each of the K states on the
+ * first line, then K lines of N reduced potentials u_k(x_n), the samples grouped by the state they came from;
+ * '#' lines are skipped. Returns {"ok","converged","iterations","f":[K],"df":[[K]],"ddf":[[K]],"overlap":[[K]],
+ * "min_neighbour_overlap","diagnostics"}; df[i][j] = f_j - f_i. */
+CHEMLARP_API char* cl_mbar_json(const char* text);
+
+/* Excess chemical potential of a Lennard-Jones particle in the LJ fluid (reduced units) by alchemical coupling
+ * over lambda windows (MBAR, BAR, TI, EXP) and by Widom insertion (insertions > 0). Zero or negative arguments
+ * take the defaults. keep_matrix adds "u_kn" and "n_k". Returns {"ok","particles","box","temperature",
+ * "density","mu_ex":{"mbar"|"bar"|"ti"|"exp"|"widom":{"kT":{df,error},"epsilon":{df,error}}},
+ * "mbar_converged","min_neighbour_overlap","windows":[{lambda,samples,inefficiency,dudl,dudl_error}],
+ * "overlap","diagnostics"}. */
+CHEMLARP_API char* cl_lj_solvation_json(int cells, double density, double temperature, double cutoff, double dt,
+                                        unsigned equilibration, unsigned production, unsigned insertions, unsigned seed,
+                                        int keep_matrix);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

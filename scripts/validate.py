@@ -37,7 +37,7 @@ or write the paths explicitly in a JSON file (--config, or validation.json in th
 
     {"python": "/path/to/venv/bin/python", "pdb_dir": "...", "mmff94_dir": "...", "cdk_jar": "..."}
 
-The Python packages the suites need (phreeqpython, thermo, scipy, rdkit, biopython) usually live in a
+The Python packages the suites need (phreeqpython, thermo, scipy, rdkit, biopython, pymbar) usually live in a
 virtual environment outside the repository: --python points at that interpreter.
 """
 import argparse
@@ -193,6 +193,15 @@ def suites():
             reference="the two deposited formats of each entry",
             needs=dict(python=["Bio"], build=["chemlarp"], paths=["pdb_dir", "cif_dir"]),
             argv=lambda c: [c["python"], "scripts/validate_protein_build.py", "formats", c["pdb_dir"], c["cif_dir"]],
+        ),
+        dict(
+            id="fep",
+            title="Free energies: MBAR, BAR, TI, alchemical LJ particle",
+            kind="independent",
+            modules=["Free-energy perturbation (MBAR, BAR, TI; alchemical LJ)"],
+            reference="exact oscillator free energies; pymbar on the same matrices; Widom insertion in the pure fluid",
+            needs=dict(python=["numpy", "pymbar"], build=["chemlarp"]),
+            argv=lambda c: [c["python"], "scripts/validate_fep.py"],
         ),
         dict(
             id="axial",

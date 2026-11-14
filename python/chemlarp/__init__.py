@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
 
 
 class ChemLarpError(RuntimeError):
@@ -105,6 +105,9 @@ _cl_protein = _sig("cl_protein_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c
 _cl_set_threads = _sig("cl_set_threads", None, ctypes.c_int)
 _cl_threads = _sig("cl_threads", ctypes.c_int)
 _cl_protein_opts = _sig("cl_protein_json_opts", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
+_cl_mbar = _sig("cl_mbar_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_ljsolv = _sig("cl_lj_solvation_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
+                  ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -411,6 +414,35 @@ def lennard_jones(cells: int = 3, density: float = 0.8, temperature: float = 1.0
     """Lennard-Jones fluid by molecular dynamics in reduced units (4 cells^3 particles, potential truncated
     and shifted at the cutoff): mean potential energy per particle and pressure with block errors."""
     r = _take_json(_cl_lj(cells, density, temperature, cutoff, dt, equilibration, production, thermostat.encode(), seed))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def mbar(u_kn, N_k) -> dict:
+    """MBAR (Shirts & Chodera 2008) on reduced potentials: u_kn[k][n] is sample n evaluated in state k (kT
+    units), the samples grouped by the state they were drawn from, N_k[k] of state k. Returns the free
+    energies f (f[0] = 0), df[i][j] = f_j - f_i with standard errors ddf, and the overlap matrix."""
+    K = len(N_k)
+    if len(u_kn) != K:
+        raise ValueError("u_kn must have one row per state")
+    lines = [" ".join(str(int(n)) for n in N_k)]
+    for row in u_kn:
+        lines.append(" ".join(repr(float(x)) for x in row))
+    r = _take_json(_cl_mbar("\n".join(lines).encode()))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def lj_solvation(cells: int = 3, density: float = 0.8, temperature: float = 1.2, cutoff: float = 2.5,
+                 dt: float = 0.004, equilibration: int = 4000, production: int = 40000, insertions: int = 200,
+                 seed: int = 1, keep_matrix: bool = False) -> dict:
+    """Excess chemical potential of a Lennard-Jones particle in the LJ fluid (reduced units) by soft-core
+    alchemical coupling over lambda windows (MBAR, BAR, TI, exponential averaging) and by Widom insertion
+    in the pure fluid. keep_matrix returns the subsampled u_kn and N_k given to MBAR."""
+    r = _take_json(_cl_ljsolv(cells, density, temperature, cutoff, dt, equilibration, production, insertions, seed,
+                              1 if keep_matrix else 0))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

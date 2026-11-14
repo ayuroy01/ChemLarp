@@ -116,6 +116,23 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 | Aqueous: no redox (pe), no Pitzer (valid below I ≈ 0.5–1 mol/kg), water mass fixed, no pressure effects, kinetics, surface complexation, ion exchange, organic acids | phreeqc.dat / pitzer.dat (public domain, USGS). |
 | Distillation: only the current specifications; no purity/recovery/boilup/duty specs, side draws, pumparounds, stage efficiencies, two liquids, non-condensables, shortcut FUG design | `src/distillation*.cpp`. |
 
+## Free energies (`src/free_energy.cpp`, `include/chemlarp/free_energy.hpp`)
+
+Done 2026-11-14: EXP, BAR, MBAR (uncertainties, overlap), TI, statistical inefficiency; soft-core LJ particle
+in the LJ fluid with Widom insertion as a second route. MBAR matches pymbar 4.0.3 to 5e-10 kT.
+
+| Gap | Where | To resume |
+|---|---|---|
+| No molecules in explicit solvent, so no hydration or binding free energies | roadmap module "Hydration free energies in explicit water" | See the roadmap list below. |
+| BAR summed over neighbouring windows adds the pair errors as if independent; neighbouring pairs share a window's samples, so the error was 0.49 of the scatter between seeds | `lj_solvation` | Report MBAR's error for the BAR route too, or compute the covariance of adjacent pair estimates. |
+| TI error 0.65 of the scatter: the statistical inefficiency of the slowest windows (λ ≈ 0.25, g ≈ 20) is underestimated from 4,000 frames | `statistical_inefficiency` | Longer runs, or block averaging as a second estimate of g; pymbar's warning applies equally. |
+| Widom insertion error is about twice the scatter (too conservative) | `lj_solvation` | Compute the error from blocks of frames instead of the delta method on the per-frame means. |
+| TI uses the trapezoidal rule only | `thermodynamic_integration` | Add Simpson or cubic-spline integration for unevenly spaced λ. |
+| μ_ex of the truncated-and-shifted LJ fluid not compared with a literature equation of state | `scripts/validate_fep.py` | Implement the Thol et al. (Int. J. Thermophys. 36 (2015) 25) LJTS equation of state (coefficients from the paper) and compare a few state points. |
+| The LJ simulation is O(N²) without neighbour lists; one solute; no replica exchange between λ windows | `src/free_energy.cpp` | Cell lists for N > 500; Hamiltonian replica exchange for windows with poor overlap. |
+| Uncertainties of unsampled states are reported as NaN | `mbar` | Use the full N × N form of Θ restricted to the needed columns (pymbar does). |
+| No web UI | `web/` | A panel that runs `lj_solvation` and plots ∂u/∂λ and the overlap matrix. |
+
 ## Validation runner (`scripts/validate.py`, `scripts/validate_rdkit.py`)
 
 Done 2026-11-14: one runner for every validation suite, with a Markdown/JSON report that separates
@@ -131,14 +148,14 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | The runner does not run in CI: the reference data is not redistributable and the Python packages are not installed there | `.github/workflows/ci.yml` | A job could install thermo/rdkit/biopython and run the suites that need no downloads (md, rdkit-structure with a committed SMILES sample, mmff-rdkit). |
 | Tolerances live inside each script, so the report shows pass/fail but not how close each number was to its limit | the suite scripts | Have each script print a machine-readable line (name, value, tolerance) and collect those in the report. |
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
-| Docking and FEP/MBAR have no suites because the modules are not built | — | Add when those modules land (redocking RMSD on a public complex set; MBAR on analytic oscillators). |
+| Docking and hydration free energies have no suites because those modules are not built | — | Add when they land (redocking RMSD on a public complex set; FreeSolv hydration free energies). |
 
 ## Roadmap modules not started (data/roadmap.json)
 
 | Module | Size | Notes for starting |
 |---|---|---|
 | Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
-| Free-energy perturbation (FEP/MBAR) | M | Needs MD with solvent, periodic boxes and electrostatics (see MD gaps). Validate MBAR on analytic harmonic oscillators, then hydration free energies vs FreeSolv. |
+| Hydration free energies in explicit water (FreeSolv) | L | Split from the FEP module on 2026-11-14. Needs a water model (TIP3P), periodic molecular MD with neighbour lists, PME electrostatics, SETTLE/SHAKE constraints, a barostat, and decoupling of charges then van der Waals terms of the solute; the estimators (`free_energy.hpp`) are ready. Validate against FreeSolv (Mobley & Guthrie 2014, public, CC-BY) on 20–50 small neutral molecules. |
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
 | Native installers (.apk, .exe, .dmg) | S | CI packaging; signing needs the user's certificates. |
 | Packages (pip, Homebrew, winget, Node) | S | Publishing needs the user's accounts; prepare manifests only. |

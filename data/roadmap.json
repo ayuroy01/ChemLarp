@@ -140,8 +140,13 @@
           "status": "planned"
         },
         {
-          "name": "Free-energy perturbation (FEP/MBAR)",
+          "name": "Free-energy perturbation (MBAR, BAR, TI; alchemical LJ)",
           "size": "M",
+          "status": "done"
+        },
+        {
+          "name": "Hydration free energies in explicit water (FreeSolv)",
+          "size": "L",
           "status": "planned"
         },
         {

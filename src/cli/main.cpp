@@ -13,6 +13,8 @@
 //   chemlarp solution <file|-> [--json]                             (aqueous speciation, pH, solubility)
 //   chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--modes] [--xyz file]
 //   chemlarp lj [--cells n] [--density r] [-T t] [--steps N] [--thermostat ...]      (Lennard-Jones fluid)
+//   chemlarp ljsolv [...]                     (LJ particle chemical potential: MBAR, BAR, TI, Widom)
+//   chemlarp mbar <file|->                    (MBAR on a reduced-potential matrix)
 //   chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   (MMFF94 types, charges, energy)
 //   chemlarp protein <file.pdb|file.cif|-> [--pH x] [--out file] [--json] [--no-repair] [--no-loops]
 //                    [--termini] [--no-flips] [--reference-pka]   (repair, pKa, protonation, sequences, pI)
@@ -53,6 +55,7 @@
 #include "chemlarp/elements.hpp"
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
+#include "chemlarp/free_energy.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
@@ -97,6 +100,9 @@ int usage() {
       "                                         chains, pI, disulfides, protonation states, hydrogens\n"
       "  chemlarp lj [--cells n] [--density r] [-T t] [--cutoff rc] [--dt t] [--equil N] [--steps N]\n"
       "              [--thermostat bussi|langevin|none] [--seed N]            Lennard-Jones fluid (reduced units)\n"
+      "  chemlarp ljsolv [--cells n] [--density r] [-T t] [--equil N] [--steps N] [--insertions M] [--seed N]\n"
+      "                  [--matrix]      excess chemical potential of an LJ particle: MBAR, BAR, TI, Widom\n"
+      "  chemlarp mbar <file|->          MBAR on reduced potentials (first line: sample counts; then K rows u_kn)\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -934,6 +940,45 @@ int cmd_lj(const std::vector<std::string>& args) {
   return 0;
 }
 
+int cmd_ljsolv(const std::vector<std::string>& args) {
+  LjSolvationOptions o;
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    auto next = [&](double& v) { return i + 1 < args.size() && parse_double(args[++i].c_str(), v); };
+    double v = 0;
+    if (a == "--cells") { if (!next(v)) return usage(); o.cells = int(v); }
+    else if (a == "--density") { if (!next(o.density)) return usage(); }
+    else if (a == "-T") { if (!next(o.temperature)) return usage(); }
+    else if (a == "--equil") { if (!next(v) || v < 0) return usage(); o.equilibration = std::size_t(v); }
+    else if (a == "--steps") { if (!next(v) || v < 1) return usage(); o.production = std::size_t(v); }
+    else if (a == "--insertions") { if (!next(v) || v < 0) return usage(); o.insertions = std::size_t(v); }
+    else if (a == "--seed") { if (!next(v) || v < 0) return usage(); o.seed = std::uint64_t(v); }
+    else if (a == "--matrix") o.keep_matrix = true;
+    else return usage();
+  }
+  const std::string out = lj_solvation_json(o);
+  std::printf("%s\n", out.c_str());
+  return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+}
+
+int cmd_mbar(const std::vector<std::string>& args) {
+  if (args.size() != 1) return usage();
+  std::string text;
+  if (args[0] == "-") {
+    text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+  } else {
+    std::ifstream in(args[0], std::ios::binary);
+    if (!in) {
+      std::fprintf(stderr, "cannot read %s\n", args[0].c_str());
+      return 1;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
+  const std::string out = mbar_json(text);
+  std::printf("%s\n", out.c_str());
+  return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+}
+
 int cmd_inchi(const std::vector<std::string>& args) {
   std::string smiles;
   bool key_only = false;
@@ -1377,6 +1422,8 @@ int main(int argc, char** argv) {
   if (cmd == "solution" && !args.empty()) return cmd_solution(args);
   if (cmd == "md" && !args.empty()) return cmd_md(args);
   if (cmd == "lj") return cmd_lj(args);
+  if (cmd == "ljsolv") return cmd_ljsolv(args);
+  if (cmd == "mbar" && !args.empty()) return cmd_mbar(args);
   if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
   if (cmd == "protein" && !args.empty()) return cmd_protein(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);

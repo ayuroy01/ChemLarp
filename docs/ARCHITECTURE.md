@@ -157,7 +157,8 @@ Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 thread
 | Multithreading and sparse solvers (`parallel.hpp`, `sparse.hpp`): deterministic thread pool; quantum-chemistry integrals, J/K and DFT grid in parallel; sparse LU with minimum-degree ordering, used by the BDF integrator for large sparse systems | **done** (`src/parallel.cpp`, `src/sparse.cpp`, `src/qc.cpp`, `src/qc_dft.cpp`, `src/ode.cpp`); see "Threading model" and "Sparse linear algebra" above. Not covered: other kernels are serial, there is no work stealing, threads are not used in WebAssembly, and the sparse LU is used only by the BDF integrator; see docs/GAPS.md |
 | Proteins (`include/chemlarp/protein.hpp`): PDB and mmCIF readers (format detected; first model, highest-occupancy alternate location, insertion codes, chain names of any length, HETATM ligands kept as-is, residues listed as missing), disulfides from SSBOND/`_struct_conn` records and S–S distances, chain breaks and termini from C–N distances; `repair()`: missing side-chain atoms from a rotamer library with a backbone-dependent chi1 factor and overlap scoring, residues with incomplete backbone and missing loops built with ideal geometry and closed by cyclic coordinate descent (marked as predicted), missing chain ends on request; `predict_pka()`: pKa of every Asp, Glu, His, Lys and terminus from burial, hydrogen-bond partners and charge–charge terms, with weights fitted to 1,265 measured values; protonation at a pH from those pKa values, disulfide and metal-bound cysteines without HG; hydrogen-bond network optimisation over Asn/Gln/His flips, His tautomers (metal-bound nitrogens bare), Ser/Thr/Cys/Tyr hydroxyl and thiol rotors, NH3+ groups and protonated carboxyl groups, with the undecided groups reported; all hydrogens rebuilt with PDB version 3 names, missing C-terminal OXT added; PDB writer and mmCIF writer (for more than 99,999 atoms or long chain names); sequence net charge, isoelectric point and average molecular weight; `chemlarp protein`, `cl_protein_json`, `cl_protein_json_opts`, Python `protein()`, web Protein panel (PDB ID from RCSB with mmCIF fallback or a file, 3D view or chain trace for large structures, sequences, titration curves from structure and sequence, pKa and state of each residue, flips and built residues listed, download) | **done** (`src/protein.cpp`, `src/protein_build.cpp`, `src/protein_pka.cpp`, `src/protein_protonate.cpp`); measured accuracy in "Proteins: validation" below. Not covered: nucleic acids and ligands are read and kept but get no hydrogens or pKa; Arg, Tyr and Cys keep reference pKa values |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
-| Docking scoring, FEP/MBAR | planned |
+| Docking scoring | planned |
+| Free energies (`include/chemlarp/free_energy.hpp`): exponential averaging, BAR, MBAR with asymptotic uncertainties and the overlap matrix, thermodynamic integration, statistical inefficiency and subsampling, on reduced potentials from any source (`chemlarp mbar`, Python `mbar()`); a soft-core Lennard-Jones particle coupled into the LJ fluid over λ windows, with Widom insertion in the pure fluid as a second route (`chemlarp ljsolv`, Python `lj_solvation()`) | **done** (`src/free_energy.cpp`); MBAR agrees with pymbar 4.0.3 to 5×10⁻¹⁰ kT in free energies and 5×10⁻¹² in uncertainties, is unbiased on exactly sampled oscillators, and agrees with Widom insertion; see "Free energies: validation" below. Not covered: molecules in explicit solvent (no water model or PME), so no hydration free energies; see docs/GAPS.md |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
 | Michelsen stability test + Rachford–Rice two-phase flash; pure-component vapour pressure | **done** |
 | NRTL and original UNIFAC activity coefficients (any number of components), UNIFAC subgroups from structure, Antoine vapour pressures (320 compounds), bubble and dew T and P by modified Raoult's law; `chemlarp vle`, `cl_vle_text_json`, Python `vle()`; web Phase Behaviour panel with T–x–y / P–x–y diagrams and azeotrope marking for binaries | **done** (`src/activity.cpp`); validation in "Activity models: validation" below. Not covered: NRTL parameter database (parameters are supplied by the caller), modified UNIFAC (Dortmund), vapour non-ideality, liquid-liquid splits (dew points that need one fail with VleNotConverged) |
@@ -546,3 +547,36 @@ against RDKit on PubChem files, pure-component properties and the activity model
 Those were run by hand in earlier sessions and the scripts were not kept, so they are claims about a past
 state of the code, not something this runner can confirm. The runner also does not run in CI, because the
 reference data cannot be redistributed and the packages are not installed there.
+
+## Free energies: validation
+
+`scripts/validate_fep.py` (part of `scripts/validate.py`), and `tests/test_free_energy.cpp`:
+
+| Test | Result |
+|---|---|
+| Five harmonic oscillators sampled exactly, f_k = ln(K_k/2π)/2 known: MBAR over 100 replicates | f₄ − f₀ = 1.3964 against 1.3863 exact, standard error 0.0072 (1.4σ); reported uncertainty / observed scatter 0.90–1.05 for the four differences |
+| pymbar 4.0.3 (Shirts & Chodera's implementation) on the same matrices | free energies within 5×10⁻¹⁰ kT, uncertainties within 5×10⁻¹² kT, overlap matrix within 5×10⁻¹¹, a state with no samples included |
+| pymbar on the matrices of ChemLarp's alchemical Lennard-Jones runs (16 windows, about 5,000 subsampled samples) | the same μ_ex and uncertainty to six decimals at ρ* = 0.8, T* = 1.2 and ρ* = 0.5, T* = 1.5 |
+| BAR against two-state MBAR (a mathematical identity) | estimate within 10⁻⁸, uncertainty within 10⁻⁶ |
+| Statistical inefficiency of AR(1) series, g = (1 + φ)/(1 − φ) = 9 | mean of 40 series within 10 % |
+| μ_ex of an LJ particle (N = 108, r_c = 2.5, truncated and shifted): MBAR over soft-core λ windows against Widom insertion into a separate simulation of the pure fluid, six seeds each | ρ* = 0.8, T* = 1.2: μ_ex/kT 0.759 (MBAR), 0.720 (Widom), difference −0.039 ± 0.040; ρ* = 0.5, T* = 1.5: −0.664 and −0.658, difference 0.006 ± 0.014 |
+
+Over eight seeds at ρ* = 0.8, T* = 1.2, MBAR, BAR summed over neighbouring windows, TI and Widom insertion
+gave 0.732, 0.746, 0.744 and 0.722 kT, all differences from MBAR consistent with zero. The uncertainties are
+not equally trustworthy: MBAR's reported error was 0.86 of the scatter between seeds, BAR's 0.49 (summing the
+pair errors ignores that neighbouring pairs share a window's samples), TI's 0.65 (the statistical inefficiency
+of the slowest windows, near λ = 0.25, is underestimated from runs of this length), and Widom's 2.1 (too
+large). Use the MBAR uncertainty.
+
+The λ schedule matters. With 12 evenly spread windows, ∂u/∂λ peaked unseen between λ = 0.2 and 0.3 (it
+reaches 11.3 kT at 0.25), BAR and TI came out 0.1–0.2 kT low, and the minimum neighbour overlap was 0.055; the
+default of 16 windows, denser between 0.1 and 0.5, removes the difference. Exponential averaging straight from
+λ = 0 to 1 is reported to show why it should not be used: about 20 kT instead of 0.7.
+
+**Limits.** These are model systems. A Lennard-Jones particle in a Lennard-Jones fluid tests the estimators,
+the soft-core coupling and the sampling, but not the things a hydration free energy of a drug-like molecule
+needs: a water model, long-range electrostatics (PME), bond constraints, a barostat and a separate decoupling
+of charges and van der Waals terms. None of those exist in ChemLarp yet, so FreeSolv is not reproduced. The
+literature value of μ_ex for this truncated-and-shifted fluid was not checked: equations of state for the
+full Lennard-Jones potential do not apply, and the one for the truncated-and-shifted fluid (Thol et al. 2015)
+was not implemented.

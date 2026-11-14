@@ -23,6 +23,7 @@
 #include "chemlarp/aqueous.hpp"
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
+#include "chemlarp/free_energy.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
@@ -926,6 +927,29 @@ char* cl_lj_json(int cells, double density, double temperature, double cutoff, d
              ",\"pressure_error\":" + jnum(r->pressure_error) + ",\"temperature\":" + jnum(r->temperature) +
              ",\"drift\":" + jnum(r->drift);
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
+  });
+}
+
+char* cl_mbar_json(const char* text) {
+  if (!text) return nullptr;
+  return guarded([&] { return mbar_json(text); });
+}
+
+char* cl_lj_solvation_json(int cells, double density, double temperature, double cutoff, double dt, unsigned equilibration,
+                           unsigned production, unsigned insertions, unsigned seed, int keep_matrix) {
+  return guarded([&] {
+    LjSolvationOptions o;
+    if (cells > 0) o.cells = cells;
+    if (density > 0) o.density = density;
+    if (temperature > 0) o.temperature = temperature;
+    if (cutoff > 0) o.cutoff = cutoff;
+    if (dt > 0) o.dt = dt;
+    if (equilibration > 0) o.equilibration = equilibration;
+    if (production > 0) o.production = production;
+    o.insertions = insertions;
+    if (seed > 0) o.seed = seed;
+    o.keep_matrix = keep_matrix != 0;
+    return lj_solvation_json(o);
   });
 }
 
