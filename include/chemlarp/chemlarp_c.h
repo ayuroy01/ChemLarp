@@ -180,6 +180,20 @@ CHEMLARP_API char* cl_lj_json(int cells, double density, double temperature, dou
  * "min_neighbour_overlap","diagnostics"}; df[i][j] = f_j - f_i. */
 CHEMLARP_API char* cl_mbar_json(const char* text);
 
+/* Virtual lab (include/chemlarp/lab.hpp). Mixing: "portion <label> <mL> [<T C>]" lines, each followed by
+ * "<reagent id or formula> <mol/L>" lines. Returns {"ok","volume_mL","T_initial_C","T_final_C","heat_released_kJ",
+ * "pH","ionic_strength","precipitates":[{phase,formula,mol,grams}],"gases":[{phase,mol,mL}],"major_species",
+ * "not_modelled","hazards":[{kind,severity,message,source,substances}],"diagnostics"}. */
+CHEMLARP_API char* cl_lab_mix_json(const char* text);
+/* Titration: "analyte <mL> [<T C>]", solute lines, "titrant <reagent> <mol/L>", "max <mL>", "points <n>".
+ * Returns {"ok","curve":[[mL,pH]],"equivalence":[{volume_mL,pH}],"not_modelled","hazards","diagnostics"}. */
+CHEMLARP_API char* cl_lab_titration_json(const char* text);
+/* The reagent catalogue with reactive groups and GHS data: {"ok","reagents":[...],"ghs_compounds"}. */
+CHEMLARP_API char* cl_lab_reagents_json(void);
+/* GHS classification of a structure from the bundled PubChem table: {"ok","found","name","cid","signal",
+ * "pictograms","hazards":[{code,percent,text}],"diagnostics"?}. */
+CHEMLARP_API char* cl_ghs_json(const char* smiles);
+
 /* Excess chemical potential of a Lennard-Jones particle in the LJ fluid (reduced units) by alchemical coupling
  * over lambda windows (MBAR, BAR, TI, EXP) and by Widom insertion (insertions > 0). Zero or negative arguments
  * take the defaults. keep_matrix adds "u_kn" and "n_k". Returns {"ok","particles","box","temperature",

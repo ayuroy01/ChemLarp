@@ -627,3 +627,25 @@ body.dropping::after {
 .pr-seq-n { display: inline-block; min-width: 3.2em; color: var(--ink-3); text-align: right; margin-right: 10px; }
 .pr-pos { color: var(--accent); }
 .pr-neg { color: var(--bad); }
+
+/* ---- Virtual lab ---- */
+.lab-editor { display: grid; gap: 12px; }
+.lab-beaker { border: 1px solid var(--hairline); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }
+.lab-beaker-head { display: grid; grid-template-columns: 1fr 88px 76px auto; gap: 8px; align-items: end; }
+.lab-beaker-head input { width: 100%; }
+.lab-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 8px; align-items: center; }
+.lab-row select, .lab-row input { width: 100%; min-width: 0; }
+.lab-small { font-size: 12px; opacity: .72; }
+.lab-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hazards { display: grid; gap: 8px; }
+.hazard { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 9px 11px; border-radius: 10px; background: var(--accent-wash); }
+.hazard.danger { background: var(--bad-wash); }
+.hazard.warning { background: var(--warn-wash); }
+.hazard .sev { font: 600 11px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .04em; }
+.hazard.danger .sev { color: var(--bad); }
+.hazard.warning .sev { color: var(--warn); }
+.hazard .src { font-size: 12px; opacity: .72; margin-top: 2px; }
+@media (max-width: 560px) {
+  .lab-beaker-head { grid-template-columns: 1fr 1fr; }
+  .lab-row { grid-template-columns: minmax(0, 1fr) 84px auto; }
+}

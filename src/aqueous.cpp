@@ -61,6 +61,13 @@ double log_k(const double* a, double lk, double dh, double T) {
          dh / (kRkJ * kLn10) * (1.0 / T - 1.0 / 298.15);
 }
 
+// Reaction enthalpy (kJ/mol) at T by van 't Hoff from the same log K(T): ΔH = R T² ln10 d(log K)/dT. For a
+// constant-ΔH entry this returns dh; for an analytic expression, its derivative.
+double reaction_enthalpy(const double* a, double lk, double dh, double T) {
+  const double h = 0.01;
+  return kRkJ * T * T * kLn10 * (log_k(a, lk, dh, T + h) - log_k(a, lk, dh, T - h)) / (2.0 * h);
+}
+
 // Debye–Hückel A and B at 1 atm from the dielectric constant (Malmberg & Maryott, J. Res. NBS 56 (1956) 1)
 // and the density of water (Kell, J. Chem. Eng. Data 20 (1975) 97), t in °C.
 void debye_huckel(double T, double& A, double& B) {
@@ -206,6 +213,7 @@ struct AqSpeciesRow {
   int charge = 0;
   std::vector<AqTerm> st;
   double logK = 0.0;
+  double dH = 0.0;  // formation from the master species, H+ and H2O, kJ/mol (0 for those)
   bool has_gamma = false;
   double a = 0.0, b = 0.0;
   double alk = 0.0;
@@ -381,6 +389,7 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
     std::vector<AqTerm> st;
     double logK, target, amount, n = 0.0;
     bool on = true;
+    double dH = 0.0;  // dissolution enthalpy, kJ/mol
   };
   std::vector<Phase> phases;
   for (const auto& p : input.phases) {
@@ -391,6 +400,7 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
     }
     const auto& d = kAqPhases[pi];
     Phase ph{pi, terms(d.st), log_k(d.an, d.lk, d.dh, T), p.target_si, p.amount_mol};
+    ph.dH = reaction_enthalpy(d.an, d.lk, d.dh, T);
     for (const auto& t : ph.st)
       if (t.index >= 0) active[t.index] = true;
     phases.push_back(ph);
@@ -439,6 +449,7 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
     }
     if (!ok) continue;
     s.logK = log_k(d.an, d.lk, d.dh, T);
+    s.dH = reaction_enthalpy(d.an, d.lk, d.dh, T);
     s.has_gamma = d.has_gamma;
     s.a = d.a;
     s.b = d.b;
@@ -507,12 +518,18 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
       std::vector<double> f(n, 0.0), scale(n, 1.0), J(n * n, 0.0);
       for (std::size_t c = 0; c < nc; ++c) {
         const int k = comps[c];
-        double tot = total[k], s = 0.0;
+        double tot = total[k], s = 0.0, mag = std::fabs(total[k]);
         for (const auto& ph : phases)
           for (const auto& t : ph.st)
-            if (t.index == k) tot += t.coef * ph.n;
+            if (t.index == k) {
+              tot += t.coef * ph.n;
+              mag += std::fabs(t.coef * ph.n);
+            }
         f[c] = -tot;
-        scale[c] = std::max(std::fabs(tot), 1e-30);
+        // Scale by the largest term of the balance, phase amounts included: when a phase takes nearly all of
+        // a component, total and precipitate cancel, and scaling by the small remainder would leave rounding
+        // error above the tolerance (the solution converged, the test never passed).
+        scale[c] = std::max(mag, 1e-30);
         for (std::size_t j = 0; j < ns; ++j)
           for (const auto& t : sp[j].st)
             if (t.index == k) {
@@ -641,6 +658,7 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
   for (std::size_t j = 0; j < ns; ++j) {
     res.charge_balance_eq += sp[j].charge * m[j];
     res.alkalinity_eq += sp[j].alk * m[j];
+    res.enthalpy_kJ += sp[j].dH * m[j];
     AqueousSpecies out{sp[j].name, sp[j].charge, m[j], m[j] * std::pow(10.0, lg[j]), lg[j], {}};
     for (const auto& t : sp[j].st)
       if (t.index >= 0) out.components.push_back({kAqMasters[t.index].name, t.coef});
@@ -668,7 +686,7 @@ std::optional<AqueousResult> aqueous_equilibrium(const AqueousInput& input, Diag
     res.saturation.push_back({d.name, d.formula, iap - lk, iap, lk});
   }
   for (const auto& ph : phases)
-    res.phases.push_back({kAqPhases[ph.index].name, ph.target, ph.n, ph.amount - ph.n});
+    res.phases.push_back({kAqPhases[ph.index].name, ph.target, ph.n, ph.amount - ph.n, ph.dH});
   if (I > 1.0)
     diag.warn(DiagCode::ThermoApproximation, "ionic strength " + num(I) +
                                                  " mol/kg: the Debye–Hückel and Davies equations are unreliable above about 0.5–1 mol/kg");

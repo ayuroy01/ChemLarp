@@ -157,6 +157,7 @@ Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 thread
 | Multithreading and sparse solvers (`parallel.hpp`, `sparse.hpp`): deterministic thread pool; quantum-chemistry integrals, J/K and DFT grid in parallel; sparse LU with minimum-degree ordering, used by the BDF integrator for large sparse systems | **done** (`src/parallel.cpp`, `src/sparse.cpp`, `src/qc.cpp`, `src/qc_dft.cpp`, `src/ode.cpp`); see "Threading model" and "Sparse linear algebra" above. Not covered: other kernels are serial, there is no work stealing, threads are not used in WebAssembly, and the sparse LU is used only by the BDF integrator; see docs/GAPS.md |
 | Proteins (`include/chemlarp/protein.hpp`): PDB and mmCIF readers (format detected; first model, highest-occupancy alternate location, insertion codes, chain names of any length, HETATM ligands kept as-is, residues listed as missing), disulfides from SSBOND/`_struct_conn` records and S–S distances, chain breaks and termini from C–N distances; `repair()`: missing side-chain atoms from a rotamer library with a backbone-dependent chi1 factor and overlap scoring, residues with incomplete backbone and missing loops built with ideal geometry and closed by cyclic coordinate descent (marked as predicted), missing chain ends on request; `predict_pka()`: pKa of every Asp, Glu, His, Lys and terminus from burial, hydrogen-bond partners and charge–charge terms, with weights fitted to 1,265 measured values; protonation at a pH from those pKa values, disulfide and metal-bound cysteines without HG; hydrogen-bond network optimisation over Asn/Gln/His flips, His tautomers (metal-bound nitrogens bare), Ser/Thr/Cys/Tyr hydroxyl and thiol rotors, NH3+ groups and protonated carboxyl groups, with the undecided groups reported; all hydrogens rebuilt with PDB version 3 names, missing C-terminal OXT added; PDB writer and mmCIF writer (for more than 99,999 atoms or long chain names); sequence net charge, isoelectric point and average molecular weight; `chemlarp protein`, `cl_protein_json`, `cl_protein_json_opts`, Python `protein()`, web Protein panel (PDB ID from RCSB with mmCIF fallback or a file, 3D view or chain trace for large structures, sequences, titration curves from structure and sequence, pKa and state of each residue, flips and built residues listed, download) | **done** (`src/protein.cpp`, `src/protein_build.cpp`, `src/protein_pka.cpp`, `src/protein_protonate.cpp`); measured accuracy in "Proteins: validation" below. Not covered: nucleic acids and ligands are read and kept but get no hydrogens or pKa; Arg, Tyr and Cys keep reference pKa values |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
+| Virtual lab and safety rules (`include/chemlarp/lab.hpp`, web Virtual Lab view, `chemlarp lab|titrate|reagents|ghs`): mixing aqueous solutions (pH, reaction heat and temperature change by Hess's law from the database's log K(T), precipitates that form in the laboratory, gases leaving an open vessel), titration curves with equivalence points, a catalogue of 53 reagents; safety findings computed from the result (GHS pH presumption, boiling, gases with their GHS class), incompatibility rules from NRC *Prudent Practices in the Laboratory* (2011) with section citations, and GHS classifications of 207 laboratory chemicals from PubChem | **done** (`src/lab.cpp`, `src/ghs_data.inc`); against PHREEQC on the same solutions: pH within 0.002, precipitate and gas amounts within 0.3 %, titration curves within 0.001 pH; heat of neutralisation 56.36 kJ/mol (the database's own value; CODATA 55.815, 1 %); see "Virtual lab: validation" below. Not covered: redox between valence states (bleach + acid is not simulated), organic solutes, non-ideal heats; the safety checks are not a risk assessment; see docs/GAPS.md |
 | Docking scoring | planned |
 | Free energies (`include/chemlarp/free_energy.hpp`): exponential averaging, BAR, MBAR with asymptotic uncertainties and the overlap matrix, thermodynamic integration, statistical inefficiency and subsampling, on reduced potentials from any source (`chemlarp mbar`, Python `mbar()`); a soft-core Lennard-Jones particle coupled into the LJ fluid over λ windows, with Widom insertion in the pure fluid as a second route (`chemlarp ljsolv`, Python `lj_solvation()`) | **done** (`src/free_energy.cpp`); MBAR agrees with pymbar 4.0.3 to 5×10⁻¹⁰ kT in free energies and 5×10⁻¹² in uncertainties, is unbiased on exactly sampled oscillators, and agrees with Widom insertion; see "Free energies: validation" below. Not covered: molecules in explicit solvent (no water model or PME), so no hydration free energies; see docs/GAPS.md |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
@@ -582,3 +583,31 @@ of charges and van der Waals terms. None of those exist in ChemLarp yet, so Free
 literature value of μ_ex for this truncated-and-shifted fluid was not checked: equations of state for the
 full Lennard-Jones potential do not apply, and the one for the truncated-and-shifted fluid (Thol et al. 2015)
 was not implemented.
+
+## Virtual lab: validation
+
+`scripts/validate_lab.py` (part of `scripts/validate.py`) and `tests/test_lab.cpp`:
+
+| Test | Result |
+|---|---|
+| Mixtures posed to PHREEQC (IPhreeqc 3, phreeqc.dat) as two SOLUTIONs at ChemLarp's molalities, a MIX and EQUILIBRIUM_PHASES at the temperature the reaction heat brings the mixture to: HCl + NaOH, BaCl₂ + Na₂SO₄, NaHCO₃ + HCl, Na₂S + HCl, CaCl₂ + Na₂CO₃ | pH within 0.002; barite 0.010 %, CO₂ 0.12 %, H₂S 0.26 %, calcite 3 × 10⁻⁵ % |
+| Titration curves, 25 mL of 0.1 M H₃PO₄ with 0.1 M NaOH and of 0.1 M Na₂CO₃ with 0.1 M HCl, at 7–9 volumes | within 0.0008 pH; equivalence points at 25.00 and 50.00 mL |
+| Heat of neutralisation per mole, 0.001–0.1 mol/L | 56.35–56.36 kJ/mol, equal to what phreeqc.dat's log K(T) for water implies (56.359); 1.0 % above CODATA (55.815 kJ/mol, from ΔfH° of H₂O(l) and OH⁻(aq)) |
+| 50 mL of 1 M HCl with 50 mL of 1 M NaOH | +6.74 K (6.67 K from the CODATA value) |
+
+The enthalpies come from the temperature dependence of each species' log K in phreeqc.dat (van 't Hoff), so their accuracy
+is the database's: for water it is 1 % from CODATA, which is what the calorimetry inherits.
+
+The incompatibility rules are the ones *Prudent Practices in the Laboratory* (National Research Council, updated version
+2011) states, each with its section (cyanide with acid, §4.D.2.3; oxidizing with reducing agents, §4.D.2.3 and §5.E.7; strong
+oxidizers with organic material, §4.D.1.4.1 and §6.G.1; permanganate with sulfuric acid and nitric acid with alcohols,
+§4.D.3.3; alkali metals with halogenated solvents, §4.D.2.3; water-reactive substances, §4.D.2.1 and §6.G.6; ammonia with
+hypochlorite or iodine, §6.G.6; inorganic peroxides, §6.G.1); the unit tests check that each fires for its pair and not for
+benign ones. The GHS classifications are PubChem's (first source listed, usually the ECHA C&L Inventory summary) for the pure
+substance, which for hydrochloric acid and aqueous ammonia means the gases; dilute solutions are usually classified lower.
+
+While building this, a defect in the aqueous solver showed up and was fixed: when a phase takes nearly all of a component
+(calcite from Ca²⁺ and CO₃²⁻ at about 25 °C), the mass-balance row was scaled by the small dissolved remainder, so rounding
+error kept the residual just above the tolerance and the solver reported non-convergence at some temperatures (24.8 °C,
+30 °C) although the solution had converged. The rows are now scaled by the largest term of the balance; the PHREEQC
+comparisons of the aqueous module are unchanged.

@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "lab_mix", "titrate", "lab_reagents", "ghs", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
 
 
 class ChemLarpError(RuntimeError):
@@ -108,6 +108,10 @@ _cl_set_threads = _sig("cl_set_threads", None, ctypes.c_int)
 _cl_threads = _sig("cl_threads", ctypes.c_int)
 _cl_protein_opts = _sig("cl_protein_json_opts", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_mbar = _sig("cl_mbar_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_lab_mix = _sig("cl_lab_mix_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_lab_titration = _sig("cl_lab_titration_json", ctypes.c_void_p, ctypes.c_char_p)
+_cl_lab_reagents = _sig("cl_lab_reagents_json", ctypes.c_void_p)
+_cl_ghs = _sig("cl_ghs_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_ljsolv = _sig("cl_lj_solvation_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
                   ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
@@ -445,6 +449,44 @@ def lj_solvation(cells: int = 3, density: float = 0.8, temperature: float = 1.2,
     in the pure fluid. keep_matrix returns the subsampled u_kn and N_k given to MBAR."""
     r = _take_json(_cl_ljsolv(cells, density, temperature, cutoff, dt, equilibration, production, insertions, seed,
                               1 if keep_matrix else 0))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def lab_mix(portions) -> dict:
+    """Mixes aqueous solutions: `portions` is a list of (volume_mL, {reagent id or formula: mol/L}) or
+    (volume_mL, {...}, T_C), or the text format of include/chemlarp/lab.hpp. Returns pH, heat, temperature,
+    precipitates, gases and safety findings (computed, NRC incompatibility rules, GHS)."""
+    text = portions if isinstance(portions, str) else "".join(
+        "portion p%d %r %r\n" % (i, float(p[0]), float(p[2]) if len(p) > 2 else 25.0) +
+        "".join("%s %r\n" % (k, float(v)) for k, v in p[1].items()) for i, p in enumerate(portions))
+    r = _take_json(_cl_lab_mix(text.encode()))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def titrate(analyte_mL: float, analyte: dict, titrant: str, titrant_molarity: float, max_mL: float,
+            points: int = 100, temperature_C: float = 25.0) -> dict:
+    """Titration curve (pH against added volume) and equivalence points."""
+    text = "analyte %r %r\n" % (float(analyte_mL), float(temperature_C))
+    text += "".join("%s %r\n" % (k, float(v)) for k, v in analyte.items())
+    text += "titrant %s %r\nmax %r\npoints %d\n" % (titrant, float(titrant_molarity), float(max_mL), int(points))
+    r = _take_json(_cl_lab_titration(text.encode()))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def lab_reagents() -> list[dict]:
+    """The virtual lab's reagent catalogue (ids, formulas, reactive groups, GHS data)."""
+    return _take_json(_cl_lab_reagents())["reagents"]
+
+
+def ghs(smiles: str) -> dict:
+    """GHS classification of a structure from the bundled PubChem table ({"found": False} when absent)."""
+    r = _take_json(_cl_ghs(smiles.encode()))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

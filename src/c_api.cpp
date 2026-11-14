@@ -24,6 +24,7 @@
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
 #include "chemlarp/free_energy.hpp"
+#include "chemlarp/lab.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
@@ -950,6 +951,31 @@ char* cl_lj_solvation_json(int cells, double density, double temperature, double
     if (seed > 0) o.seed = seed;
     o.keep_matrix = keep_matrix != 0;
     return lj_solvation_json(o);
+  });
+}
+
+char* cl_lab_mix_json(const char* text) {
+  if (!text) return nullptr;
+  return guarded([&] { return lab_mix_json(text); });
+}
+
+char* cl_lab_titration_json(const char* text) {
+  if (!text) return nullptr;
+  return guarded([&] { return lab_titration_json(text); });
+}
+
+char* cl_lab_reagents_json(void) {
+  return guarded([&] { return lab_reagents_json(); });
+}
+
+char* cl_ghs_json(const char* smiles) {
+  if (!smiles) return nullptr;
+  return guarded([&] {
+    ChemicalSystemState st;
+    Diagnostics d;
+    const std::int32_t sp = parse_smiles(st, smiles, d);
+    if (sp < 0) return std::string("{\"ok\":false,\"diagnostics\":") + diagnostics_to_json(d) + "}";
+    return ghs_json(st.species[static_cast<std::size_t>(sp)].canonical_smiles);
   });
 }
 

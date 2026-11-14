@@ -204,6 +204,15 @@ def suites():
             argv=lambda c: [c["python"], "scripts/validate_fep.py"],
         ),
         dict(
+            id="lab",
+            title="Virtual lab: mixtures, titrations, heat of neutralisation",
+            kind="independent",
+            modules=["Interactive lab simulations and safety rules"],
+            reference="PHREEQC (MIX + EQUILIBRIUM_PHASES) on the same solutions; CODATA heat of neutralisation",
+            needs=dict(python=["phreeqpython"], build=["chemlarp"]),
+            argv=lambda c: [c["python"], "scripts/validate_lab.py"],
+        ),
+        dict(
             id="axial",
             title="Axial chirality (allenes, atropisomers)",
             kind="independent",

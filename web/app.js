@@ -782,8 +782,8 @@
   }
 
   // ---- views ------------------------------------------------------------------------------
-  const views = ['structure', 'model3d', 'dynamics', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'protein', 'quantum', 'kinetics', 'flowsheet', 'roadmap'];
-  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', protein: 'pr-form', kinetics: 'kin-form', flowsheet: 'fs-form' };
+  const views = ['structure', 'model3d', 'dynamics', 'draw', 'search', 'reaction', 'equilibrium', 'phases', 'aqueous', 'protein', 'quantum', 'kinetics', 'lab', 'flowsheet', 'roadmap'];
+  const autorun = { search: 'sr-form', reaction: 'rx-form', equilibrium: 'eq-form', phases: 'ph-form', aqueous: 'aq-form', protein: 'pr-form', kinetics: 'kin-form', lab: 'lab-form', flowsheet: 'fs-form' };
   const ran = new Set();
   const current = () => (views.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'structure');
   function show() {
@@ -1542,6 +1542,182 @@ C(4) 2.4
     } catch (err) { fail(out, err); }
   });
   window.addEventListener('resize', () => { if (aqDist && current() === 'aqueous') drawAqDist(); });
+
+  // ---- Virtual lab ------------------------------------------------------------------------------
+  // Beakers of solutions mixed together, or a titration; the engine (include/chemlarp/lab.hpp) computes pH,
+  // heat, precipitates and gases and the safety findings with their sources.
+  const LAB_MIX = [
+    { name: 'Neutralisation: calorimetry', beakers: [{ label: 'Acid', mL: 50, T: 25, solutes: [['hcl', 1]] }, { label: 'Base', mL: 50, T: 25, solutes: [['naoh', 1]] }] },
+    { name: 'Barium sulfate precipitate', beakers: [{ label: 'A', mL: 50, T: 25, solutes: [['bacl2', 0.1]] }, { label: 'B', mL: 50, T: 25, solutes: [['na2so4', 0.1]] }] },
+    { name: 'Calcium carbonate precipitate', beakers: [{ label: 'A', mL: 40, T: 25, solutes: [['cacl2', 0.05]] }, { label: 'B', mL: 60, T: 25, solutes: [['na2co3', 0.05]] }] },
+    { name: 'Baking soda and acid: CO₂', beakers: [{ label: 'A', mL: 50, T: 25, solutes: [['nahco3', 1]] }, { label: 'B', mL: 50, T: 25, solutes: [['hcl', 1]] }] },
+    { name: 'Sulfide and acid: toxic H₂S', beakers: [{ label: 'A', mL: 50, T: 25, solutes: [['na2s', 0.5]] }, { label: 'B', mL: 50, T: 25, solutes: [['hcl', 1]] }] },
+    { name: 'Bleach and ammonia: never mix', beakers: [{ label: 'Bleach', mL: 50, T: 25, solutes: [['naocl', 0.7]] }, { label: 'Ammonia', mL: 50, T: 25, solutes: [['nh3', 1]] }] },
+    { name: 'Lead(II) nitrate and sulfate', beakers: [{ label: 'A', mL: 50, T: 25, solutes: [['pbno3', 0.05]] }, { label: 'B', mL: 50, T: 25, solutes: [['na2so4', 0.05]] }] },
+  ];
+  const LAB_TIT = [
+    { name: 'HCl with NaOH', analyte: { mL: 25, T: 25, solutes: [['hcl', 0.1]] }, titrant: ['naoh', 0.1], max: 50 },
+    { name: 'Phosphoric acid with NaOH', analyte: { mL: 25, T: 25, solutes: [['h3po4', 0.1]] }, titrant: ['naoh', 0.1], max: 80 },
+    { name: 'Sodium carbonate with HCl', analyte: { mL: 25, T: 25, solutes: [['na2co3', 0.1]] }, titrant: ['hcl', 0.1], max: 60 },
+    { name: 'Ammonia with HCl', analyte: { mL: 25, T: 25, solutes: [['nh3', 0.1]] }, titrant: ['hcl', 0.1], max: 50 },
+  ];
+  let labReagents = null;
+  let labMode = 'mix';
+  async function labCatalogue() {
+    if (!labReagents) labReagents = (await engine('reagents', {})).result.reagents;
+    return labReagents;
+  }
+  function reagentSelect(value) {
+    const sel = h('select', { 'aria-label': 'Reagent' });
+    const groups = [['Simulated', true], ['Safety rules only (not in the solution model)', false]];
+    for (const [label, modelled] of groups) {
+      const og = h('optgroup', { label });
+      for (const r of labReagents.filter((x) => x.modelled === modelled))
+        og.append(h('option', { value: r.id, text: r.name + (r.formula ? ' · ' + r.formula : '') }));
+      sel.append(og);
+    }
+    sel.value = value;
+    return sel;
+  }
+  function soluteRow(id, molarity) {
+    const row = h('div', { class: 'lab-row' },
+      reagentSelect(id),
+      h('input', { type: 'number', min: '0', step: 'any', value: String(molarity), 'aria-label': 'Concentration (mol/L)', title: 'mol/L' }),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Remove', title: 'Remove', onclick: () => row.remove() }, icon('close')));
+    return row;
+  }
+  function beakerEl(b, removable) {
+    const rows = h('div', { class: 'lab-rows' }, b.solutes.map(([id, c]) => soluteRow(id, c)));
+    const box = h('div', { class: 'lab-beaker' },
+      h('div', { class: 'lab-beaker-head' },
+        h('div', { class: 'field' }, h('label', { text: 'Beaker' }), h('input', { type: 'text', value: b.label, 'data-k': 'label' })),
+        h('div', { class: 'field' }, h('label', { text: 'Volume (mL)' }), h('input', { type: 'number', min: '0', step: 'any', value: String(b.mL), 'data-k': 'mL' })),
+        h('div', { class: 'field' }, h('label', { text: 'T (°C)' }), h('input', { type: 'number', min: '0', max: '100', step: 'any', value: String(b.T), 'data-k': 'T' })),
+        removable ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Remove beaker', title: 'Remove beaker', onclick: () => box.remove() }, icon('close')) : h('span')),
+      h('div', { class: 'lab-small', text: 'Solutes, mol/L' }),
+      rows,
+      h('div', { class: 'lab-actions' }, h('button', { type: 'button', class: 'chip', text: '+ Solute', onclick: () => rows.append(soluteRow('nacl', 0.1)) })));
+    return box;
+  }
+  function readBeaker(box) {
+    const v = (k) => box.querySelector(`[data-k="${k}"]`).value;
+    const solutes = [...box.querySelectorAll('.lab-row')].map((r) => [r.querySelector('select').value, +r.querySelector('input').value]);
+    return { label: (v('label') || 'beaker').replace(/\s+/g, '_'), mL: +v('mL'), T: +v('T'), solutes };
+  }
+  function labEditor(preset) {
+    const ed = $('lab-editor');
+    if (labMode === 'mix') {
+      ed.replaceChildren(...preset.beakers.map((b, i) => beakerEl(b, i > 1)),
+        h('div', { class: 'lab-actions' }, h('button', { type: 'button', class: 'chip', text: '+ Beaker', onclick: (e) => e.target.parentElement.before(beakerEl({ label: 'C', mL: 25, T: 25, solutes: [['nacl', 0.1]] }, true)) })));
+    } else {
+      const t = preset;
+      ed.replaceChildren(beakerEl({ label: 'Analyte', ...t.analyte }, false),
+        h('div', { class: 'lab-beaker' },
+          h('div', { class: 'lab-small', text: 'Titrant' }),
+          h('div', { class: 'lab-row', id: 'lab-titrant' }, reagentSelect(t.titrant[0]),
+            h('input', { type: 'number', min: '0', step: 'any', value: String(t.titrant[1]), 'aria-label': 'Titrant concentration (mol/L)', title: 'mol/L' }), h('span')),
+          h('div', { class: 'field' }, h('label', { for: 'lab-max', text: 'Add up to (mL)' }), h('input', { type: 'number', id: 'lab-max', min: '1', step: 'any', value: String(t.max) }))));
+    }
+  }
+  function labPresets() {
+    const list = labMode === 'mix' ? LAB_MIX : LAB_TIT;
+    $('lab-preset').replaceChildren(...list.map((x, i) => h('option', { value: String(i), text: x.name })));
+    labEditor(list[0]);
+  }
+  segmented($('lab-mode'), (b) => { labMode = b.dataset.mode; labPresets(); $('lab-form').requestSubmit(); });
+  $('lab-preset').addEventListener('change', () => {
+    labEditor((labMode === 'mix' ? LAB_MIX : LAB_TIT)[+$('lab-preset').value]);
+    $('lab-form').requestSubmit();
+  });
+  // Two lists: what this experiment does (computed from the result, and incompatibility rules), then the
+  // reagents' own GHS classes (pure substances), each by severity.
+  function hazardList(hz) {
+    const order = { danger: 0, warning: 1, info: 2 };
+    const item = (x) => h('div', { class: 'hazard ' + x.severity },
+      h('span', { class: 'sev', text: x.severity }),
+      h('div', {}, h('div', { text: x.message }),
+        h('div', { class: 'src', text: (x.kind === 'ghs' ? 'GHS · ' : x.kind === 'incompatibility' ? 'Incompatibility · ' : 'Computed · ') + x.source })));
+    const by = (list) => [...list].sort((a, b) => order[a.severity] - order[b.severity]).map(item);
+    const own = hz.filter((x) => x.kind !== 'ghs'), reagents = hz.filter((x) => x.kind === 'ghs');
+    return [
+      h('h3', { class: 'lab-small', text: 'This experiment' }),
+      ...(own.length ? by(own) : [h('p', { class: 'muted', text: 'Nothing found for this mixture. That is not a statement that it is safe.' })]),
+      ...(reagents.length ? [h('h3', { class: 'lab-small', text: 'The reagents (GHS, as pure substances)' }), ...by(reagents)] : []),
+    ];
+  }
+  // The headline colour follows what the experiment does, not the reagents' own classes.
+  function labSummary(hz) {
+    const own = hz.filter((x) => x.kind !== 'ghs');
+    return own.some((x) => x.severity === 'danger') ? 'bad' : own.some((x) => x.severity === 'warning') ? 'warn' : 'ok';
+  }
+  $('lab-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = $('lab-out');
+    busy(out, labMode === 'mix' ? 'Mixing…' : 'Titrating…');
+    try {
+      await labCatalogue();
+      if (!$('lab-editor').children.length) labPresets();
+      const beakers = [...$('lab-editor').querySelectorAll('.lab-beaker')].filter((b) => b.querySelector('[data-k]')).map(readBeaker);
+      let r, ms;
+      if (labMode === 'mix') {
+        const text = beakers.map((b) => `portion ${b.label} ${b.mL} ${b.T}\n` + b.solutes.map(([id, c]) => `${id} ${c}`).join('\n')).join('\n');
+        ({ result: r, ms } = await engine('labmix', { text }));
+      } else {
+        const a = beakers[0];
+        const tr = $('lab-titrant');
+        const text = `analyte ${a.mL} ${a.T}\n` + a.solutes.map(([id, c]) => `${id} ${c}`).join('\n') +
+          `\ntitrant ${tr.querySelector('select').value} ${+tr.querySelector('input').value}\nmax ${+$('lab-max').value}\npoints 200\n`;
+        ({ result: r, ms } = await engine('titrate', { text }));
+      }
+      if (!r.ok) {
+        $('lab-results').hidden = true;
+        out.replaceChildren(status('bad', 'The experiment could not be computed'), ...diagnostics(r.diagnostics));
+        return;
+      }
+      $('lab-results').hidden = false;
+      $('lab-safety').replaceChildren(...hazardList(r.hazards));
+      const notModelled = r.not_modelled.length ? `not simulated: ${r.not_modelled.join(', ')}` : '';
+      if (labMode === 'mix') {
+        $('lab-chart-card').hidden = true;
+        const dT = r.T_final_C - r.T_initial_C;
+        out.replaceChildren(
+          status(labSummary(r.hazards), `pH ${fixed(r.pH, 2)}`,
+            `${fixed(r.T_initial_C, 1)} → ${fixed(r.T_final_C, 1)} °C` + (notModelled ? ' · ' + notModelled : '')),
+          h('div', { class: 'metrics' },
+            metric('pH', fixed(r.pH, 2)),
+            metric('Temperature change', Math.abs(dT) < 0.005 ? '0.00' : (dT > 0 ? '+' : '') + fixed(dT, 2), 'K'),
+            metric('Heat released', Math.abs(r.heat_released_kJ) < 5e-4 ? '0' : fmt(r.heat_released_kJ, 3), 'kJ'),
+            metric('Volume', fmt(r.volume_mL, 4), 'mL')),
+          ...diagnostics(r.diagnostics));
+        const rows = [...r.precipitates.map((p) => [p.phase + ' (' + p.formula + ')', 'precipitate', fmt(p.mol, 3) + ' mol', fmt(p.grams, 3) + ' g']),
+          ...r.gases.map((g) => [g.phase.replace('(g)', ''), 'gas, leaves the open vessel', fmt(g.mol, 3) + ' mol', fmt(g.mL, 3) + ' mL at 25 °C, 1 atm'])];
+        $('lab-products-card').hidden = !rows.length;
+        $('lab-products').replaceChildren(h('table', {},
+          h('thead', {}, h('tr', {}, h('th', { text: 'Substance' }), h('th', { text: 'Forms as' }), h('th', { class: 'num', text: 'Amount' }), h('th', { class: 'num', text: 'Mass or volume' }))),
+          h('tbody', {}, rows.map((c) => h('tr', {}, h('td', { text: c[0] }), h('td', { text: c[1] }), h('td', { class: 'num', text: c[2] }), h('td', { class: 'num', text: c[3] }))))));
+        $('lab-species-card').hidden = false;
+        $('lab-species').replaceChildren(h('table', {},
+          h('thead', {}, h('tr', {}, h('th', { text: 'Species' }), h('th', { class: 'num', text: 'Molality' }))),
+          h('tbody', {}, r.major_species.map((x) => h('tr', {}, h('td', { class: 'mono', text: x.name }), h('td', { class: 'num', text: fmt(x.molality, 4) }))))));
+      } else {
+        $('lab-products-card').hidden = true;
+        $('lab-species-card').hidden = true;
+        $('lab-chart-card').hidden = false;
+        const eq = r.equivalence;
+        $('lab-eq').textContent = eq.length ? 'equivalence: ' + eq.map((x) => `${fixed(x.volume_mL, 2)} mL (pH ${fixed(x.pH, 2)})`).join(', ') : 'no equivalence point in range';
+        Charts.lineChart($('lab-chart'), [{ name: 'pH', points: r.curve }],
+          { xLabel: 'titrant added (mL)', yLabel: 'pH', markers: eq.map((x) => ({ x: x.volume_mL, y: x.pH, label: fixed(x.volume_mL, 1) + ' mL' })) });
+        const last = r.curve[r.curve.length - 1];
+        out.replaceChildren(
+          status(labSummary(r.hazards), eq.length ? `${eq.length} equivalence point${eq.length > 1 ? 's' : ''}` : 'No equivalence point',
+            `start pH ${fixed(r.curve[0][1], 2)} · end pH ${fixed(last[1], 2)}` + (notModelled ? ' · ' + notModelled : '')),
+          h('div', { class: 'metrics' },
+            ...eq.slice(0, 3).map((x, i) => metric('Equivalence ' + (i + 1), fixed(x.volume_mL, 2), 'mL')),
+            metric('Compute time', String(Math.round(ms)), 'ms')),
+          ...diagnostics(r.diagnostics));
+      }
+    } catch (err) { fail(out, err); }
+  });
 
   // ---- Flowsheet ------------------------------------------------------------------------------
   const FS_EXAMPLES = [

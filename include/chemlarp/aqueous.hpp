@@ -73,6 +73,7 @@ struct PhaseChange {
   double target_si = 0.0;
   double dissolved_mol = 0.0;  // per kg water; negative: precipitated
   double remaining_mol = 0.0;
+  double dissolution_enthalpy_kJ = 0.0;  // ΔH of phase -> master species (kJ/mol), from d(log K)/dT
 };
 
 struct AqueousResult {
@@ -80,6 +81,10 @@ struct AqueousResult {
   double A_dh = 0.0, B_dh = 0.0;           // Debye–Hückel A (kg^0.5 mol^-0.5) and B (kg^0.5 mol^-0.5 Å^-1)
   double charge_balance_eq = 0.0;          // Σ z m, eq/kg water
   double alkalinity_eq = 0.0;              // eq/kg water (PHREEQC's definition)
+  // Σ m_j ΔH_j over the species (kJ per kg water), each ΔH_j the enthalpy of forming species j from the master
+  // species, H+ and H2O (van 't Hoff from the database's log K(T)). Differences between states of the same
+  // elements are reaction heats (Hess's law); excess enthalpies of the electrolyte are not included.
+  double enthalpy_kJ = 0.0;
   std::vector<AqueousSpecies> species;     // by decreasing molality
   std::vector<std::pair<std::string, double>> totals;  // component totals after phase reactions
   std::vector<SaturationIndex> saturation;  // every phase whose components are all present

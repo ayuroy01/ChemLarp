@@ -40,6 +40,10 @@ const calls = {
   qc: (M, a) => callJson(M, 'cl_qc_json', ['string', 'string', 'string', 'number', 'number', 'number'], [a.input, a.method || 'hf', a.basis || 'STO-3G', a.mult || 0, a.grid || 2, a.memory || 384]),
   read: (M, a) => callJson(M, 'cl_read_molecules_json', ['string', 'string', 'number', 'number'], [a.text, a.format || '', a.keepH ? 1 : 0, a.max || 0]),
   depict: (M, a) => callJson(M, 'cl_depict_json', ['string', 'number', 'number'], [a.smiles, a.bond || 30, a.flags == null ? 1 : a.flags]),
+  labmix: (M, a) => callJson(M, 'cl_lab_mix_json', ['string'], [a.text]),
+  titrate: (M, a) => callJson(M, 'cl_lab_titration_json', ['string'], [a.text]),
+  reagents: (M) => callJson(M, 'cl_lab_reagents_json', [], []),
+  ghs: (M, a) => callJson(M, 'cl_ghs_json', ['string'], [a.smiles]),
   embed: (M, a) => callJson(M, 'cl_embed32_json', ['string', 'number', 'number', 'number'], [a.smiles, a.seed || 42, a.candidates || 5, a.minimize ? 1 : 0]),
 };
 

@@ -56,6 +56,7 @@
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
 #include "chemlarp/free_energy.hpp"
+#include "chemlarp/lab.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
@@ -103,6 +104,10 @@ int usage() {
       "  chemlarp ljsolv [--cells n] [--density r] [-T t] [--equil N] [--steps N] [--insertions M] [--seed N]\n"
       "                  [--matrix]      excess chemical potential of an LJ particle: MBAR, BAR, TI, Widom\n"
       "  chemlarp mbar <file|->          MBAR on reduced potentials (first line: sample counts; then K rows u_kn)\n"
+      "  chemlarp lab <file|->           mix solutions: pH, heat, precipitates, gases, safety (include/chemlarp/lab.hpp)\n"
+      "  chemlarp titrate <file|->       titration curve and equivalence points\n"
+      "  chemlarp reagents               the virtual lab's reagent catalogue with GHS data\n"
+      "  chemlarp ghs <SMILES>           GHS classification from the bundled PubChem table\n"
       "  chemlarp inchi <SMILES> [--key]\n"
       "  chemlarp name <SMILES>...          (IUPAC name; '-' reads SMILES lines from stdin)\n"
       "  chemlarp read <file.mol|.sdf|.pdb|.cml> [--format mol|pdb|cml] [--keep-h] [--inchi]\n"
@@ -979,6 +984,44 @@ int cmd_mbar(const std::vector<std::string>& args) {
   return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
 }
 
+namespace {
+bool read_text_arg(const std::string& a, std::string& text) {
+  if (a == "-") {
+    text.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+    return true;
+  }
+  std::ifstream in(a, std::ios::binary);
+  if (!in) {
+    std::fprintf(stderr, "cannot read %s\n", a.c_str());
+    return false;
+  }
+  text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  return true;
+}
+int print_json(const std::string& out) {
+  std::printf("%s\n", out.c_str());
+  return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
+}
+}  // namespace
+
+int cmd_lab(const std::vector<std::string>& args, bool titration) {
+  std::string text;
+  if (args.size() != 1 || !read_text_arg(args[0], text)) return usage();
+  return print_json(titration ? lab_titration_json(text) : lab_mix_json(text));
+}
+
+int cmd_ghs(const std::vector<std::string>& args) {
+  if (args.size() != 1) return usage();
+  ChemicalSystemState st;
+  Diagnostics d;
+  const auto sp = parse_smiles(st, args[0], d);
+  if (sp < 0) {
+    print_diagnostics(d, args[0]);
+    return 1;
+  }
+  return print_json(ghs_json(st.species[static_cast<std::size_t>(sp)].canonical_smiles));
+}
+
 int cmd_inchi(const std::vector<std::string>& args) {
   std::string smiles;
   bool key_only = false;
@@ -1424,6 +1467,10 @@ int main(int argc, char** argv) {
   if (cmd == "lj") return cmd_lj(args);
   if (cmd == "ljsolv") return cmd_ljsolv(args);
   if (cmd == "mbar" && !args.empty()) return cmd_mbar(args);
+  if (cmd == "lab" && !args.empty()) return cmd_lab(args, false);
+  if (cmd == "titrate" && !args.empty()) return cmd_lab(args, true);
+  if (cmd == "reagents") return print_json(lab_reagents_json());
+  if (cmd == "ghs" && !args.empty()) return cmd_ghs(args);
   if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
   if (cmd == "protein" && !args.empty()) return cmd_protein(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);

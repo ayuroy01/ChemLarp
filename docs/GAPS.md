@@ -165,6 +165,23 @@ view, each run in CI with an engine call through its window.
 | No iOS app (needs an Apple developer account); no Linux desktop package (the installable web app covers Linux) | — | WKWebView shell like macOS for iOS; WebKitGTK or an AppImage for Linux if wanted. |
 | Accessibility and keyboard behaviour inside the native windows were not reviewed separately from the web app | all three | Check VoiceOver/Narrator/TalkBack on each shell. |
 
+## Virtual lab and safety rules (`src/lab.cpp`, `include/chemlarp/lab.hpp`, `src/ghs_data.inc`, web Virtual Lab)
+
+Done 2026-11-14: mixing, titrations, calorimetry, precipitates and gases on the aqueous model; computed hazards; NRC
+incompatibility rules; PubChem GHS for 207 chemicals. Validated against PHREEQC and CODATA.
+
+| Gap | Where | To resume |
+|---|---|---|
+| No redox between valence states, so bleach + acid (chlorine), permanganate or dichromate oxidations, metals dissolving in acid are not simulated | `src/aqueous.cpp` | Couple valence states through electron activity (pe) as PHREEQC does; phreeqc.dat has the half-reactions. |
+| Bleach + acid has no incompatibility rule: *Prudent Practices* (2011) does not state it in the chapters used | `kRules` in `src/lab.cpp` | Add with a second citable source (e.g. the CAMEO Chemicals reactivity profile in the PubChem record of sodium hypochlorite; needs download approval). |
+| Reagents outside phreeqc.dat (hypochlorite, permanganate, peroxides, cyanide, silver, organics, metals) take part in the safety rules only | reagent catalogue | Extend the database (llnl.dat has more species) or give such reagents their own reaction rules. |
+| Molality from molarity assumes the water mass equals the volume times 0.99705 kg/L: a few per cent high at 1 mol/L | `src/lab.cpp` | Use solution densities (e.g. from Pitzer apparent molar volumes) when concentrated. |
+| Heat: no excess (non-ideal) enthalpies or heats of dilution; heat capacity 4.184 J/(g K) and 1 g/mL for the whole volume; no heat loss | `lab_mix` | Apparent molar heat capacities and enthalpies of dilution for concentrated solutions. |
+| The GHS data are the pure substances' (hydrochloric acid as hydrogen chloride gas, aqueous ammonia as ammonia gas); concentration limits for solutions are not applied | `ghs_hazard` | Apply GHS concentration limits (generic cut-offs or the ECHA specific limits) to the solution's concentration. |
+| PubChem's name lookup resolved "white phosphorus" to the red phosphorus record; that entry is dropped as a duplicate | `scripts/gen_ghs_data.py` | Look such compounds up by CID instead of name. |
+| No computed warning thresholds for temperature short of boiling (burn risk), gas volumes in a closed vessel (pressure), or toxic-gas exposure limits | `computed_hazards` | Need sourced thresholds (e.g. ISO 13732-1 for hot surfaces, occupational exposure limits). |
+| No kinetics: everything reaches equilibrium at once (no slow precipitation, no dissolution rates, no gas transfer rate) | `lab_mix` | The kinetics module could drive time-resolved lab experiments. |
+
 ## Validation runner (`scripts/validate.py`, `scripts/validate_rdkit.py`)
 
 Done 2026-11-14: one runner for every validation suite, with a Markdown/JSON report that separates
@@ -188,4 +205,3 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 |---|---|---|
 | Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
 | Hydration free energies in explicit water (FreeSolv) | L | Split from the FEP module on 2026-11-14. Needs a water model (TIP3P), periodic molecular MD with neighbour lists, PME electrostatics, SETTLE/SHAKE constraints, a barostat, and decoupling of charges then van der Waals terms of the solute; the estimators (`free_energy.hpp`) are ready. Validate against FreeSolv (Mobley & Guthrie 2014, public, CC-BY) on 20–50 small neutral molecules. |
-| Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
