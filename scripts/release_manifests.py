@@ -41,9 +41,9 @@ def main():
         values["SHA256_WINDOWS_X64"] = sha256(win)
     if a.source_tarball:
         values["SHA256"] = sha256(a.source_tarball)
-    templates = [("packaging/homebrew/chemlarp.rb", "homebrew/chemlarp.rb")]
-    for f in sorted(os.listdir(os.path.join(ROOT, "packaging", "winget"))):
-        templates.append(("packaging/winget/" + f, "winget/manifests/a/ayuroy01/ChemLarp/%s/%s" % (v, f)))
+    templates = [("release/homebrew/chemlarp.rb", "homebrew/chemlarp.rb")]
+    for f in sorted(os.listdir(os.path.join(ROOT, "release", "winget"))):
+        templates.append(("release/winget/" + f, "winget/manifests/a/ayuroy01/ChemLarp/%s/%s" % (v, f)))
     left = []
     for src, dst in templates:
         text = open(os.path.join(ROOT, src)).read()

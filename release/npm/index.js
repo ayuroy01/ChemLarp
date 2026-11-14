@@ -26,8 +26,16 @@ function wrap(M) {
     inchi: (smiles) => call('cl_inchi_json', ['string'], [smiles]),
     iupacName: (smiles) => call('cl_iupac_name_json', ['string'], [smiles]),
     depict: (smiles, bondPx = 30, flags = 1) => call('cl_depict_json', ['string', 'number', 'number'], [smiles, bondPx, flags]),
-    embed: (smiles, { seed = 42, candidates = 5, minimize = true } = {}) =>
-      call('cl_embed32_json', ['string', 'number', 'number', 'number'], [smiles, seed, candidates, minimize ? 1 : 0]),
+    // Adds `elements` and `coordinates` ([x, y, z] in Å per atom) from the XYZ text, as the Python binding does.
+    embed: (smiles, { seed = 42, candidates = 5, minimize = true } = {}) => {
+      const r = call('cl_embed32_json', ['string', 'number', 'number', 'number'], [smiles, seed, candidates, minimize ? 1 : 0]);
+      if (r.ok && typeof r.xyz === 'string') {
+        const rows = r.xyz.split('\n').slice(2).filter((l) => l.trim());
+        r.elements = rows.map((l) => l.trim().split(/\s+/)[0]);
+        r.coordinates = rows.map((l) => l.trim().split(/\s+/).slice(1, 4).map(Number));
+      }
+      return r;
+    },
     readMolecules: (text, { format = '', keepHydrogens = false, max = 0 } = {}) =>
       call('cl_read_molecules_json', ['string', 'string', 'number', 'number'], [text, format, keepHydrogens ? 1 : 0, max]),
     smartsMatch: (smiles, smarts, { chiral = false, max = 1000 } = {}) =>

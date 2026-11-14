@@ -8,9 +8,9 @@ steps are at the end of this file.
 | Package | What it holds | Built by | Tested by |
 |---|---|---|---|
 | Python wheel `chemlarp` | the shared library (loaded with ctypes), the Python module, and the `chemlarp` command | `setup.py` (make on macOS/Linux, CMake on Windows) via cibuildwheel | `scripts/wheel_smoke_test.py` in a clean environment |
-| npm package `chemlarp` | the engine compiled to WebAssembly for Node, with a JavaScript wrapper | `scripts/build_npm.sh` (Emscripten) | `packaging/npm/test.js`, then an install of the packed tarball |
+| npm package `chemlarp` | the engine compiled to WebAssembly for Node, with a JavaScript wrapper | `scripts/build_npm.sh` (Emscripten) | `release/npm/test.js`, then an install of the packed tarball |
 | Homebrew formula | the CLI, shared library, headers and data under the Homebrew prefix | `make install` | the formula's `test do` block (`brew test`) |
-| winget manifests | the portable `chemlarp.exe` from the release zip | `packaging/winget/*.yaml`, filled by `scripts/release_manifests.py` | YAML parse; installation needs a published release |
+| winget manifests | the portable `chemlarp.exe` from the release zip | `release/winget/*.yaml`, filled by `scripts/release_manifests.py` | YAML parse; installation needs a published release |
 | Command-line archives | `chemlarp` / `chemlarp.exe` with the licence, for Linux x64, macOS arm64, Windows x64 | make; CMake with the static MSVC runtime on Windows | runs `chemlarp canon` on the build machine |
 
 The version is written in four places (CMakeLists.txt, `cl_version()`, pyproject.toml, the npm package.json);

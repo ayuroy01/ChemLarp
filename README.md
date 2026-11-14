@@ -21,7 +21,7 @@ npm or Homebrew yet. Until then:
   `python3 -m pip wheel . -w dist`), then `pip install chemlarp-*.whl`. It includes the `chemlarp` command.
 - **Node.js**: the npm tarball from the same run, `npm install chemlarp-0.1.0.tgz`; then
   `const c = await require('chemlarp').load()`.
-- **Homebrew** (macOS, Linux): `brew install --HEAD` with `packaging/homebrew/chemlarp.rb` in a tap.
+- **Homebrew** (macOS, Linux): `brew install --HEAD` with `release/homebrew/chemlarp.rb` in a tap.
 - **From source**: `make install PREFIX=$HOME/.local` installs the CLI, the shared library and the headers.
 
 See [docs/PACKAGING.md](docs/PACKAGING.md) for how each package is built and how a release is published.

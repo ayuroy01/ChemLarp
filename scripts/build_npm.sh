@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Node.js package: the C++ engine compiled to WebAssembly for Node, with the wrapper in packaging/npm.
+# Node.js package: the C++ engine compiled to WebAssembly for Node, with the wrapper in release/npm.
 # Output: build/npm and build/npm/chemlarp-<version>.tgz (npm pack); the package's smoke test is run first.
 # Requires the Emscripten SDK (em++ on PATH) and Node 18+.
 set -euo pipefail
@@ -12,7 +12,7 @@ em++ -std=c++20 -O3 -fexceptions -Iinclude -DCHEMLARP_STATIC src/*.cpp -o "$OUT/
   -sMODULARIZE=1 -sEXPORT_NAME=createChemLarp -sENVIRONMENT=node \
   -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4194304 \
   -sEXPORTED_FUNCTIONS="$EXPORTS" -sEXPORTED_RUNTIME_METHODS='["ccall","UTF8ToString"]'
-cp packaging/npm/package.json packaging/npm/index.js packaging/npm/index.d.ts packaging/npm/test.js \
-   packaging/npm/README.md LICENSE "$OUT/"
+cp release/npm/package.json release/npm/index.js release/npm/index.d.ts release/npm/test.js \
+   release/npm/README.md LICENSE "$OUT/"
 (cd "$OUT" && node test.js && npm pack)
 echo "npm package built in $OUT"
