@@ -1,4 +1,5 @@
 #include "chemlarp/ode.hpp"
+#include "chemlarp/sparse.hpp"
 
 #include <algorithm>
 #include <cfloat>
@@ -148,6 +149,8 @@ bool integrate_bdf(const OdeRhs& rhs, const OdeJacobian* jacobian, double t0, st
   std::vector<double> c, y_pred, y_new, fv, G, J(n * n), M(n * n), fp;
   std::vector<double> nodes;
   LuFactor lu;
+  SparseLu slu;
+  std::vector<std::size_t> sparse_order, sparse_colptr, sparse_rowind;
 
   while (t < t_end) {
     if (stats.steps >= opt.max_steps) {
@@ -199,7 +202,26 @@ bool integrate_bdf(const OdeRhs& rhs, const OdeJacobian* jacobian, double t0, st
     }
     for (std::size_t i = 0; i < n; ++i)
       for (std::size_t j = 0; j < n; ++j) M[i * n + j] = (i == j ? c[0] : 0.0) - J[i * n + j];
-    bool converged = lu.factor(M, n);
+    bool converged;
+    {
+      std::size_t nz = 0;
+      for (double v : M) nz += v != 0.0;
+      const bool use_sparse = opt.linear_solver == 2 || (opt.linear_solver == 0 && n >= 60 && 5 * nz <= n * n);
+      stats.sparse = use_sparse;
+      if (use_sparse) {
+        SparseMatrix sm = SparseMatrix::from_dense(M.data(), n);
+        // The column ordering depends only on the pattern: reuse it while the pattern is unchanged.
+        if (sm.colptr != sparse_colptr || sm.rowind != sparse_rowind) {
+          sparse_order = minimum_degree_order(sm);
+          sparse_colptr = sm.colptr;
+          sparse_rowind = sm.rowind;
+        }
+        converged = slu.factor(sm, sparse_order);
+        stats.factor_nnz = slu.nnz_l() + slu.nnz_u();
+      } else {
+        converged = lu.factor(M, n);
+      }
+    }
 
     std::vector<double> s(n, 0.0);  // history part of the corrector
     for (int j = 1; j <= ke; ++j) {
@@ -214,7 +236,7 @@ bool integrate_bdf(const OdeRhs& rhs, const OdeJacobian* jacobian, double t0, st
         f(t_new, y_new, fv);
         G.resize(n);
         for (std::size_t i = 0; i < n; ++i) G[i] = -(c[0] * y_new[i] + s[i] - fv[i]);
-        lu.solve(G);
+        if (stats.sparse) slu.solve(G); else lu.solve(G);
         bool finite = true;
         for (std::size_t i = 0; i < n; ++i) {
           y_new[i] += G[i];

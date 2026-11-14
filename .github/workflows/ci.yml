@@ -71,3 +71,14 @@ jobs:
           install: make mingw-w64-ucrt-x86_64-gcc
       - name: Build and test
         run: make -j4 all && make test
+
+  tsan:
+    name: ubuntu-latest (ThreadSanitizer, 4 threads)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test with ThreadSanitizer
+        run: |
+          clang++ -std=c++20 -O1 -g -fsanitize=thread -pthread -Itests -Iinclude -DCHEMLARP_STATIC \
+            -DCHEMLARP_TEST_DATA_DIR="\"$PWD/data\"" src/*.cpp tests/*.cpp -o tests_tsan
+          CHEMLARP_THREADS=4 TSAN_OPTIONS=halt_on_error=1 ./tests_tsan

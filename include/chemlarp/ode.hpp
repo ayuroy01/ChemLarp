@@ -31,6 +31,9 @@ struct BdfOptions {
   double h_max = 0.0;               // 0 = unlimited
   std::size_t max_steps = 500000;
   int max_order = 5;
+  // Linear solver for the Newton iteration matrix: 0 = automatic (sparse LU when n >= 60 and at most a fifth
+  // of the Jacobian is nonzero), 1 = dense LU, 2 = sparse LU (see sparse.hpp).
+  int linear_solver = 0;
 };
 
 struct BdfStats {
@@ -40,6 +43,8 @@ struct BdfStats {
   std::size_t rhs_evals = 0;
   std::size_t jacobian_evals = 0;
   int max_order_used = 0;
+  bool sparse = false;          // the last factorisation used the sparse solver
+  std::size_t factor_nnz = 0;   // nonzeros of L + U in the last sparse factorisation
   double last_h = 0.0;
 };
 

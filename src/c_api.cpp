@@ -29,6 +29,8 @@
 #include "chemlarp/iupac.hpp"
 #include "chemlarp/md.hpp"
 #include "chemlarp/mmff.hpp"
+#include <thread>
+#include "chemlarp/parallel.hpp"
 #include "chemlarp/protein.hpp"
 #include "chemlarp/molio.hpp"
 #include "chemlarp/qc.hpp"
@@ -842,6 +844,15 @@ char* cl_mmff_json(const char* smiles, const char* variant, int minimize) {
     return mmff_json(smiles, v == "MMFF94s" || v == "mmff94s" ? MmffVariant::Mmff94s : MmffVariant::Mmff94, minimize != 0);
   });
 }
+
+void cl_set_threads(int n) {
+  if (n <= 0) {
+    n = static_cast<int>(std::thread::hardware_concurrency());
+    if (const char* e = std::getenv("CHEMLARP_THREADS")) n = std::atoi(e);
+  }
+  set_thread_count(std::max(1, n));
+}
+int cl_threads(void) { return thread_count(); }
 
 char* cl_protein_json(const char* pdb_text, double pH) {
   if (!pdb_text) return nullptr;

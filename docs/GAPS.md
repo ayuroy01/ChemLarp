@@ -74,6 +74,19 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 | MMFF: no OPLS-AA, no distance-dependent dielectric, no periodic/solvated systems, no cutoffs (all pairs summed) | `src/mmff*.cpp`; cutoffs need a neighbour list (see MD). |
 | MD: no periodic boxes for molecules, solvent, SHAKE/RATTLE, NPT barostat, electrostatics with UFF, neighbour lists, multiple time steps | `src/md*.cpp`. Neighbour lists are prerequisite for "Multithreading and sparse solvers" and FEP. |
 
+## Threads and sparse solvers (`src/parallel.cpp`, `src/sparse.cpp`)
+
+| Gap | Now | To resume |
+|---|---|---|
+| Serial kernels | only QC (integrals, J/K, DFT grid) is parallel | Next candidates by cost: conformer embedding attempts (`embed_species` loop over attempts; each attempt independent, keep the lowest-energy in attempt order), MD/MMFF non-bonded pair loops (partition by atom, private force arrays added in order), protein repair (loop trials), SMARTS screening over many molecules (`cl_search_json`), side-chain scoring. Use `parallel_for` / `parallel_sum` with a fixed partition count so results stay bit-identical. |
+| QC scaling | 3.1× on 4 threads, 3.7× on 10 threads (72.5 s to 19.7 s) on an Apple M2 with 4 performance cores; not measured on a larger machine | The serial part is the SCF linear algebra (`symmetric_eigen`, `mul`, O(n³)) and the grid setup; parallelise `mul` by row blocks; the eigensolver needs a blocked Householder or divide-and-conquer. |
+| No work stealing | one atomic counter per region | Enough for coarse loops; fine-grained nested parallelism would need the Chase–Lev design in docs/ARCHITECTURE.md history (git log). |
+| WebAssembly is single-threaded | `__EMSCRIPTEN_PTHREADS__` not set | Needs `-pthread` builds and cross-origin isolation (COOP/COEP headers), which GitHub Pages cannot send; a service-worker header shim (coi-serviceworker) is the usual workaround. |
+| Sparse LU only in BDF | kinetics with ≥ 60 species and a sparse Newton matrix | Distillation (block-tridiagonal, already O(N) by block Thomas) does not need it; an equation-oriented flowsheet solver would. The Newton matrix is still assembled dense (n² memory): pass a sparse Jacobian through `OdeJacobian` for very large mechanisms. |
+| Ordering cost | exact minimum degree on an explicit elimination graph (std::set adjacency) | Fine to a few thousand unknowns; for larger systems implement AMD (Amestoy, Davis & Duff 1996) with quotient graphs. |
+| Finite-difference Jacobian is dense | n right-hand-side evaluations when no analytic Jacobian is given | Curtis–Powell–Reid column colouring once a sparsity pattern is known (from the caller, since a pattern detected at one state can miss entries that are zero there). |
+| ThreadSanitizer only on Linux CI | crashes on this macOS (Darwin 25) even for a trivial program | Re-check with a newer Xcode clang. |
+
 ## Thermodynamics and process
 
 | Gap | To resume |
@@ -94,6 +107,5 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 | Free-energy perturbation (FEP/MBAR) | M | Needs MD with solvent, periodic boxes and electrostatics (see MD gaps). Validate MBAR on analytic harmonic oscillators, then hydration free energies vs FreeSolv. |
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
 | Native installers (.apk, .exe, .dmg) | S | CI packaging; signing needs the user's certificates. |
-| Multithreading and sparse solvers | S | std::thread pools for MD/QC grids; sparse LU for flowsheets/distillation. |
 | Packages (pip, Homebrew, winget, Node) | S | Publishing needs the user's accounts; prepare manifests only. |
 | Validation against reference data | M | Collect the per-module validation scripts into one runner and a report. |

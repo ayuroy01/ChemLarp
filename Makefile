@@ -21,6 +21,8 @@ else
   else
     SHARED      := build/libchemlarp.so
     SHARED_FLAG := -shared
+    CXXFLAGS    += -pthread
+    LDFLAGS     += -pthread
   endif
 endif
 

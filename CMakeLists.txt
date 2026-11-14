@@ -41,11 +41,12 @@ endif()
 file(GLOB CHEMLARP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 
 # Static library: linked into the CLI and tests.
+find_package(Threads REQUIRED)
 add_library(chemlarp_static STATIC ${CHEMLARP_SOURCES})
 target_include_directories(chemlarp_static PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_definitions(chemlarp_static PUBLIC CHEMLARP_STATIC)
-target_link_libraries(chemlarp_static PRIVATE chemlarp_warnings)
+target_link_libraries(chemlarp_static PRIVATE chemlarp_warnings PUBLIC Threads::Threads)
 
 # Shared library: the C ABI for Python (ctypes), Node and other FFI consumers.
 #   Windows: chemlarp.dll (+ chemlarp.lib import library)   macOS: libchemlarp.dylib   Linux: libchemlarp.so
@@ -53,7 +54,7 @@ add_library(chemlarp SHARED ${CHEMLARP_SOURCES})
 target_include_directories(chemlarp PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_definitions(chemlarp PRIVATE CHEMLARP_BUILD_DLL)
-target_link_libraries(chemlarp PRIVATE chemlarp_warnings)
+target_link_libraries(chemlarp PRIVATE chemlarp_warnings Threads::Threads)
 set_target_properties(chemlarp PROPERTIES VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
 if(MINGW)
   # Self-contained DLL: no libstdc++/libgcc DLLs needed next to it.

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <map>
 
+#include "chemlarp/parallel.hpp"
 #include "qc_internal.hpp"
 
 namespace chemlarp::qc {
@@ -365,10 +366,25 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
   XcResult out;
   out.va.assign(n * n, 0.0);
   if (!restricted) out.vb.assign(n * n, 0.0);
-  std::vector<int> fn;
-  // function-major arrays: value[f * np + p]
-  std::vector<double> phi, gx, gy, gz, xa, xb, wa, wb, sub;
-  for (const auto& [b0, b1] : impl_->batches) {
+  // Batches are split into a fixed number of contiguous parts (it depends on the grid and the basis size,
+  // not on the thread count); each part accumulates its own potential and energy, and the parts are added
+  // in order, so the result is the same for any number of threads.
+  struct Acc {
+    Mat va, vb;
+    double energy = 0.0, electrons = 0.0;
+  };
+  const std::size_t nb = impl_->batches.size();
+  const std::size_t cap = std::max<std::size_t>(1, static_cast<std::size_t>(2e7 / static_cast<double>(n * n + 1)));
+  const std::size_t parts = std::max<std::size_t>(1, std::min<std::size_t>({nb, 32, cap}));
+  std::vector<Acc> acc(parts);
+  parallel_for(parts, [&](std::size_t part) {
+    Acc& A = acc[part];
+    A.va.assign(n * n, 0.0);
+    if (!restricted) A.vb.assign(n * n, 0.0);
+    std::vector<int> fn;
+    // function-major arrays: value[f * np + p]
+    std::vector<double> phi, gx, gy, gz, xa, xb, wa, wb, sub;
+    auto batch = [&](std::size_t b0, std::size_t b1) {
     const std::size_t np = b1 - b0;
     double cx = 0, cy = 0, cz = 0;
     for (std::size_t i = b0; i < b1; ++i) { cx += impl_->pts[i].x; cy += impl_->pts[i].y; cz += impl_->pts[i].z; }
@@ -385,7 +401,7 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
       const int ncomp = (sh.L + 1) * (sh.L + 2) / 2;
       for (int k = 0; k < ncomp; ++k) fn.push_back(sh.first + k);
     }
-    if (fn.empty()) continue;
+    if (fn.empty()) return;
     std::size_t nf = fn.size();
     phi.assign(nf * np, 0.0);
     if (gga) { gx.assign(nf * np, 0.0); gy.assign(nf * np, 0.0); gz.assign(nf * np, 0.0); }
@@ -442,7 +458,7 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
         }
         ++keep;
       }
-      if (keep == 0) continue;
+      if (keep == 0) return;
       fn.resize(keep);
       nf = keep;
     }
@@ -480,7 +496,7 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
     std::vector<std::array<double, 3>> fa(np, {0, 0, 0}), fb(np, {0, 0, 0});
     for (std::size_t ip = 0; ip < np; ++ip) {
       const double w = impl_->pts[b0 + ip].w;
-      out.electrons += w * (ra[ip] + rb[ip]);
+      A.electrons += w * (ra[ip] + rb[ip]);
       const bool a_on = ra[ip] > 1e-14, b_on = rb[ip] > 1e-14;
       if (!a_on && !b_on) continue;
       const double saa = ga[ip][0] * ga[ip][0] + ga[ip][1] * ga[ip][1] + ga[ip][2] * ga[ip][2];
@@ -490,7 +506,7 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
                                  D::var(std::max(saa, 1e-60), 2), D::var(sab, 3), D::var(std::max(sbb, 1e-60), 4),
                                  !restricted, a_on, b_on);
       if (!std::isfinite(e.v)) continue;
-      out.energy += w * e.v;
+      A.energy += w * e.v;
       vra[ip] = w * e.d[0];
       vrb[ip] = w * e.d[1];
       if (gga)
@@ -523,8 +539,18 @@ XcResult XcIntegrator::evaluate(const Mat& pa, const Mat& pb, bool restricted) c
         for (std::size_t g = 0; g < nf; ++g)
           v[static_cast<std::size_t>(fn[f]) * n + static_cast<std::size_t>(fn[g])] += sub[f * nf + g] + sub[g * nf + f];
     };
-    potential(vra, fa, wa, out.va);
-    if (!restricted) potential(vrb, fb, wb, out.vb);
+    potential(vra, fa, wa, A.va);
+    if (!restricted) potential(vrb, fb, wb, A.vb);
+      };
+    for (std::size_t bi = partition_begin(nb, parts, part); bi < partition_begin(nb, parts, part + 1); ++bi)
+      batch(impl_->batches[bi].first, impl_->batches[bi].second);
+  });
+  for (const Acc& A : acc) {
+    out.energy += A.energy;
+    out.electrons += A.electrons;
+    for (std::size_t k = 0; k < n * n; ++k) out.va[k] += A.va[k];
+    if (!restricted)
+      for (std::size_t k = 0; k < n * n; ++k) out.vb[k] += A.vb[k];
   }
   if (restricted) out.vb = out.va;
   return out;

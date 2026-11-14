@@ -21,7 +21,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
 
 
 class ChemLarpError(RuntimeError):
@@ -102,6 +102,8 @@ _cl_md = _sig("cl_md_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, c
               ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_char_p)
 _cl_mmff = _sig("cl_mmff_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
 _cl_protein = _sig("cl_protein_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
+_cl_set_threads = _sig("cl_set_threads", None, ctypes.c_int)
+_cl_threads = _sig("cl_threads", ctypes.c_int)
 _cl_protein_opts = _sig("cl_protein_json_opts", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
@@ -369,6 +371,17 @@ def mmff(smiles: str, variant: str = "MMFF94", minimize: bool = True) -> dict:
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r
+
+
+def set_threads(n: int = 0) -> None:
+    """Threads for the parallel kernels (quantum chemistry); results do not depend on the number.
+    0 restores the default (CHEMLARP_THREADS, else the number of processors)."""
+    _cl_set_threads(int(n))
+
+
+def threads() -> int:
+    """Threads the parallel kernels currently use."""
+    return _cl_threads()
 
 
 def protein(pdb: str, pH: float = 7.4, repair: bool = True, loops: bool = True, termini: bool = False,

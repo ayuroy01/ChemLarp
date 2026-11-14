@@ -222,6 +222,12 @@ CHEMLARP_API char* cl_qc_json(const char* input, const char* method, const char*
 
 CHEMLARP_API char* cl_search_json(const char* smiles_lines, const char* smarts, const char* query_smiles, int radius, int bits);
 
+/* Threads used by the parallel kernels (quantum chemistry integrals, J/K build and DFT grid). Results do
+ * not depend on the number. Default: CHEMLARP_THREADS from the environment, else the hardware
+ * concurrency; WebAssembly builds always use 1. cl_set_threads(n <= 0) restores the default. */
+CHEMLARP_API void cl_set_threads(int n);
+CHEMLARP_API int cl_threads(void);
+
 CHEMLARP_API void cl_free_string(char* s);
 
 #ifdef __cplusplus

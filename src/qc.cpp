@@ -1,3 +1,4 @@
+#include "chemlarp/parallel.hpp"
 #include "chemlarp/qc.hpp"
 
 #include <algorithm>
@@ -479,10 +480,11 @@ bool two_electron(const Basis& basis, double limit_mb, Eri& eri, std::string& er
   std::vector<ShellPair> pairs;
   for (int a = 0; a < ns; ++a)
     for (int b = 0; b <= a; ++b) pairs.push_back(make_pair(basis, a, b));
-  std::vector<double> buf, work, g;
-  // Schwarz bounds per shell pair
+  // Schwarz bounds per shell pair. Each shell pair (and each row x below) writes only its own outputs, so
+  // the loops run in parallel with results independent of the thread count.
   std::vector<double> q(pairs.size(), 0.0);
-  for (std::size_t k = 0; k < pairs.size(); ++k) {
+  parallel_for(pairs.size(), [&](std::size_t k) {
+    std::vector<double> buf, work, g;
     shell_quartet(basis, pairs[k], pairs[k], buf, work, g);
     const Shell& A = basis.shells[static_cast<std::size_t>(pairs[k].a)];
     const Shell& B = basis.shells[static_cast<std::size_t>(pairs[k].b)];
@@ -494,8 +496,10 @@ bool two_electron(const Basis& basis, double limit_mb, Eri& eri, std::string& er
         mx = std::max(mx, std::fabs(buf[(i * nb + j) * nab + i * nb + j]) * s * s);
       }
     q[k] = std::sqrt(mx);
-  }
-  for (std::size_t x = 0; x < pairs.size(); ++x)
+  });
+  parallel_for(pairs.size(), [&](std::size_t xr) {
+    const std::size_t x = pairs.size() - 1 - xr;  // longest rows first
+    std::vector<double> buf, work, g;
     for (std::size_t y = 0; y <= x; ++y) {
       if (q[x] * q[y] < 1e-12) continue;
       shell_quartet(basis, pairs[x], pairs[y], buf, work, g);
@@ -515,6 +519,7 @@ bool two_electron(const Basis& basis, double limit_mb, Eri& eri, std::string& er
               eri.v[pair_index(pair_index(fi, fj), pair_index(fk, fl))] = buf[(i * nb + j) * (nc * nd) + k * nd + l] * s;
             }
     }
+  });
   return true;
 }
 
@@ -523,48 +528,78 @@ bool two_electron(const Basis& basis, double limit_mb, Eri& eri, std::string& er
 // applied in all eight permutations, which needs no duplicate tests.
 void build_jk(const Eri& eri, const Mat& pt, const Mat* pa, const Mat* pb, Mat& j, Mat* ka, Mat* kb) {
   const std::size_t n = static_cast<std::size_t>(eri.n);
-  j.assign(n * n, 0.0);
-  if (ka) ka->assign(n * n, 0.0);
-  if (kb) kb->assign(n * n, 0.0);
   const double* v = eri.v.data();
-  std::size_t idx = 0;
   // pairs in packed order: ij = i(i+1)/2 + j
   std::vector<std::pair<std::size_t, std::size_t>> pairs;
   pairs.reserve(n * (n + 1) / 2);
   for (std::size_t i = 0; i < n; ++i)
     for (std::size_t jj = 0; jj <= i; ++jj) pairs.push_back({i, jj});
+  const std::size_t np = pairs.size();
   const double* P = pt.data();
-  double* J = j.data();
-  auto exchange = [&](const Mat& pm, Mat& km, std::size_t i, std::size_t jj, std::size_t k, std::size_t l, double x) {
-    const double* Q = pm.data();
-    double* K = km.data();
-    K[i * n + k] += Q[jj * n + l] * x;
-    K[jj * n + k] += Q[i * n + l] * x;
-    K[i * n + l] += Q[jj * n + k] * x;
-    K[jj * n + l] += Q[i * n + k] * x;
-    K[k * n + i] += Q[l * n + jj] * x;
-    K[l * n + i] += Q[k * n + jj] * x;
-    K[k * n + jj] += Q[l * n + i] * x;
-    K[l * n + jj] += Q[k * n + i] * x;
-  };
-  for (std::size_t ij = 0; ij < pairs.size(); ++ij) {
-    const auto [i, jj] = pairs[ij];
-    for (std::size_t kl = 0; kl <= ij; ++kl, ++idx) {
-      double x = v[idx];
-      if (x == 0.0) continue;
-      const auto [k, l] = pairs[kl];
-      if (i == jj) x *= 0.5;
-      if (k == l) x *= 0.5;
-      if (ij == kl) x *= 0.5;
-      const double pij = P[i * n + jj] + P[jj * n + i], pkl = P[k * n + l] + P[l * n + k];
-      J[i * n + jj] += pkl * x;
-      J[jj * n + i] += pkl * x;
-      J[k * n + l] += pij * x;
-      J[l * n + k] += pij * x;
-      if (ka) exchange(*pa, *ka, i, jj, k, l, x);
-      if (kb) exchange(*pb, *kb, i, jj, k, l, x);
+  // Rows ij are split into a fixed number of parts with about the same number of integrals (row ij has
+  // ij+1); each part accumulates its own J and K, and the parts are added in order. The number of parts
+  // depends on the basis size only, so the result is the same for any thread count.
+  const std::size_t nmat = 1 + (ka ? 1 : 0) + (kb ? 1 : 0);
+  const std::size_t cap = std::max<std::size_t>(1, static_cast<std::size_t>(3e7 / static_cast<double>(nmat * n * n + 1)));
+  const std::size_t parts = std::max<std::size_t>(1, std::min<std::size_t>({np, 32, cap}));
+  std::vector<std::size_t> start(parts + 1, np);
+  {
+    const double total = 0.5 * static_cast<double>(np) * static_cast<double>(np + 1);
+    std::size_t row = 0;
+    for (std::size_t k = 0; k < parts; ++k) {
+      const double target = total * static_cast<double>(k) / static_cast<double>(parts);
+      while (row < np && 0.5 * static_cast<double>(row) * static_cast<double>(row + 1) < target) ++row;
+      start[k] = row;
     }
   }
+  std::vector<Mat> pj(parts), pka(parts), pkb(parts);
+  parallel_for(parts, [&](std::size_t part) {
+    Mat& Jm = pj[part];
+    Jm.assign(n * n, 0.0);
+    if (ka) pka[part].assign(n * n, 0.0);
+    if (kb) pkb[part].assign(n * n, 0.0);
+    double* J = Jm.data();
+    auto exchange = [&](const Mat& pm, Mat& km, std::size_t i, std::size_t jj, std::size_t k, std::size_t l, double x) {
+      const double* Q = pm.data();
+      double* K = km.data();
+      K[i * n + k] += Q[jj * n + l] * x;
+      K[jj * n + k] += Q[i * n + l] * x;
+      K[i * n + l] += Q[jj * n + k] * x;
+      K[jj * n + l] += Q[i * n + k] * x;
+      K[k * n + i] += Q[l * n + jj] * x;
+      K[l * n + i] += Q[k * n + jj] * x;
+      K[k * n + jj] += Q[l * n + i] * x;
+      K[l * n + jj] += Q[k * n + i] * x;
+    };
+    for (std::size_t ij = start[part]; ij < start[part + 1]; ++ij) {
+      const auto [i, jj] = pairs[ij];
+      std::size_t idx = ij * (ij + 1) / 2;
+      for (std::size_t kl = 0; kl <= ij; ++kl, ++idx) {
+        double x = v[idx];
+        if (x == 0.0) continue;
+        const auto [k, l] = pairs[kl];
+        if (i == jj) x *= 0.5;
+        if (k == l) x *= 0.5;
+        if (ij == kl) x *= 0.5;
+        const double pij = P[i * n + jj] + P[jj * n + i], pkl = P[k * n + l] + P[l * n + k];
+        J[i * n + jj] += pkl * x;
+        J[jj * n + i] += pkl * x;
+        J[k * n + l] += pij * x;
+        J[l * n + k] += pij * x;
+        if (ka) exchange(*pa, pka[part], i, jj, k, l, x);
+        if (kb) exchange(*pb, pkb[part], i, jj, k, l, x);
+      }
+    }
+  });
+  j.assign(n * n, 0.0);
+  if (ka) ka->assign(n * n, 0.0);
+  if (kb) kb->assign(n * n, 0.0);
+  for (std::size_t part = 0; part < parts; ++part)
+    for (std::size_t t = 0; t < n * n; ++t) {
+      j[t] += pj[part][t];
+      if (ka) (*ka)[t] += pka[part][t];
+      if (kb) (*kb)[t] += pkb[part][t];
+    }
 }
 
 Mat mul(const Mat& a, const Mat& b, int n, bool ta = false, bool tb = false) {
