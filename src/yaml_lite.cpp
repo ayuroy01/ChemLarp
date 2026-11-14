@@ -167,7 +167,7 @@ class Parser {
       } else {
         child = value(val, line);
       }
-      n.map.emplace_back(std::move(key), std::move(child));
+      n.map.push_back(MapEntry{std::move(key), std::move(child)});
     }
     if (ok_ && i_ < l_.size() && l_[i_].indent > indent) fail("unexpected indentation", l_[i_].line);
     return n;
@@ -249,7 +249,7 @@ class Parser {
           skip_ws(s, p);
           val = (p < s.size() && (s[p] == '[' || s[p] == '{')) ? flow(s, p, line) : flow_scalar(s, p, line);
         }
-        n.map.emplace_back(key.scalar, std::move(val));
+        n.map.push_back(MapEntry{key.scalar, std::move(val)});
         skip_ws(s, p);
         if (p < s.size() && s[p] == ',') { ++p; continue; }
         if (p < s.size() && s[p] == '}') { ++p; return n; }
