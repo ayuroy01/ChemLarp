@@ -45,6 +45,9 @@ jobs:
           # The wheel is py3-none-<platform> (ctypes, no extension module): one build per platform serves
           # every Python from 3.10.
           CIBW_BUILD: "cp312-*"
+          # Unpinned build tools: the pinned set of cibuildwheel 2.21 includes packaging 24.1, too old for the
+          # SPDX licence expression in pyproject.toml (setuptools needs packaging.licenses, packaging >= 24.2).
+          CIBW_DEPENDENCY_VERSIONS: latest
           CIBW_SKIP: "*-musllinux_*"
           CIBW_ARCHS_LINUX: native
           CIBW_ARCHS_MACOS: "arm64 x86_64"
