@@ -204,7 +204,9 @@ jobs:
           $wv = (Get-ChildItem build/nuget -Directory -Filter 'Microsoft.Web.WebView2.*' | Select-Object -First 1).FullName + '\build\native'
           New-Item -ItemType Directory -Force build/windows/stage/bin | Out-Null
           python release/windows/make_ico.py release/windows/chemlarp.ico web/icons/icon-192.png
-          rc /nologo /DCHEMLARP_VERSION_COMMA=$comma "/DCHEMLARP_VERSION_STR=\`"$V\`"" /fo build/windows/app.res release/windows/app.rc
+          Set-Content -Encoding ascii build/windows/version.h "#define CHEMLARP_VERSION_COMMA $comma`n#define CHEMLARP_VERSION_STR `"$V`""
+          rc /nologo /i build/windows /fo build/windows/app.res release/windows/app.rc
+          if ($LASTEXITCODE -ne 0) { throw "rc failed" }
           cl /nologo /O2 /EHsc /std:c++17 /MT /DUNICODE /D_UNICODE /I "$wv\include" release/windows/main.cpp build/windows/app.res `
              /Fobuild/windows/ /Fe:build/windows/stage/ChemLarp.exe /link /SUBSYSTEM:WINDOWS "$wv\x64\WebView2LoaderStatic.lib" `
              user32.lib ole32.lib shell32.lib advapi32.lib version.lib
