@@ -199,7 +199,7 @@
         {
           "name": "Native installers (.apk, .exe, .dmg)",
           "size": "S",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Multithreading and sparse solvers",

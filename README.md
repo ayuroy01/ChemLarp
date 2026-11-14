@@ -23,6 +23,9 @@ npm or Homebrew yet. Until then:
   `const c = await require('chemlarp').load()`.
 - **Homebrew** (macOS, Linux): `brew install --HEAD` with `release/homebrew/chemlarp.rb` in a tap.
 - **From source**: `make install PREFIX=$HOME/.local` installs the CLI, the shared library and the headers.
+- **Desktop and Android apps**: `ChemLarp-*-macos.dmg`, `ChemLarp-*-windows-x64-setup.exe` and
+  `ChemLarp-*-android.apk` from the same workflow run: the web app in a native window, offline. They are not
+  code-signed yet, so macOS asks before the first launch (right-click > Open) and Windows SmartScreen may warn.
 
 See [docs/PACKAGING.md](docs/PACKAGING.md) for how each package is built and how a release is published.
 

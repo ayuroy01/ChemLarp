@@ -149,6 +149,22 @@ draft release on a tag. All built and installed in CI; macOS wheels also tested 
 | The npm package exposes 16 of the C API's functions (the web worker's set plus MBAR) | `release/npm/index.js` | Generate the wrapper from `chemlarp_c.h` instead of listing calls by hand. |
 | Homebrew HEAD builds the main branch, not the commit under test, so a pull request's formula change is tested against main | `homebrew` job | Point `head` at the checkout (`brew install --HEAD` with a local `url`) in CI. |
 
+## Native apps (`release/macos`, `release/windows`, `release/android`, scripts/build_macos_app.sh, scripts/build_android.sh)
+
+Done 2026-11-14: macOS .dmg, Windows installer, Android .apk, each the offline web app in the platform's web
+view, each run in CI with an engine call through its window.
+
+| Gap | Where | To resume |
+|---|---|---|
+| No code signing or notarization: macOS ad hoc only (Gatekeeper asks), Windows unsigned (SmartScreen), Android signed with a throwaway key per build (a later APK will not install over an earlier one) | `scripts/build_macos_app.sh`, `installer-windows`, `scripts/build_android.sh` | Needs the owner's Apple Developer ID (codesign + notarytool), a Windows code-signing certificate (signtool), and an Android release keystore (CHEMLARP_KEYSTORE as a CI secret). |
+| Android: exports (SVG, PNG, MOL) do not save: the WebView ignores the page's blob downloads | `release/android/.../MainActivity.java` | Add a JavaScript interface that receives the file as base64 and writes it through the Storage Access Framework (ACTION_CREATE_DOCUMENT); the web app would call it when present. |
+| Android: Google Play needs an app bundle (.aab) signed with the owner's key; only an APK is built | `release/android` | `gradle bundleRelease` with the release keystore. |
+| Windows: the WebView2 Runtime is assumed (Windows 11, current Windows 10); the installer does not bundle the bootstrapper | `release/windows/chemlarp.iss` | Bundle MicrosoftEdgeWebview2Setup.exe and run it from [Run] when the runtime is missing. |
+| Windows: x64 only (no Arm64 build) | `installer-windows` | cl.exe /arm64 cross-compiler and the arm64 WebView2 loader. |
+| The apps do not update themselves (the web app on GitHub Pages does) | all three | Sparkle (macOS), winget upgrade (Windows), Play Store (Android) once published. |
+| No iOS app (needs an Apple developer account); no Linux desktop package (the installable web app covers Linux) | — | WKWebView shell like macOS for iOS; WebKitGTK or an AppImage for Linux if wanted. |
+| Accessibility and keyboard behaviour inside the native windows were not reviewed separately from the web app | all three | Check VoiceOver/Narrator/TalkBack on each shell. |
+
 ## Validation runner (`scripts/validate.py`, `scripts/validate_rdkit.py`)
 
 Done 2026-11-14: one runner for every validation suite, with a Markdown/JSON report that separates
@@ -173,4 +189,3 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
 | Hydration free energies in explicit water (FreeSolv) | L | Split from the FEP module on 2026-11-14. Needs a water model (TIP3P), periodic molecular MD with neighbour lists, PME electrostatics, SETTLE/SHAKE constraints, a barostat, and decoupling of charges then van der Waals terms of the solute; the estimators (`free_energy.hpp`) are ready. Validate against FreeSolv (Mobley & Guthrie 2014, public, CC-BY) on 20–50 small neutral molecules. |
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
-| Native installers (.apk, .exe, .dmg) | S | CI packaging; signing needs the user's certificates. |
