@@ -166,6 +166,7 @@ Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 thread
 | Flowsheet solver: units connected by named streams in a text format (`include/chemlarp/flowsheet.hpp`), sequential-modular calculation, tear streams from the back edges of a depth-first search (or chosen by the user, with initial guesses), Wegstein acceleration (q bounded to [-5, 0]) or direct substitution on component flows and enthalpy, overall mass and energy balance; `chemlarp flowsheet`, `cl_flowsheet_json`, Python `flowsheet()`, web Flowsheet panel with an automatic process flow diagram | **done** (`src/flowsheet.cpp`); validation in "Flowsheet solver: validation" below. Not covered: design specifications and controllers (adjusting a unit parameter to meet a target), simultaneous (equation-oriented) solution, Broyden acceleration, minimal tear sets for nested loops, a graphical editor |
 | Aqueous solution chemistry: speciation (36 components including valence states, 188 aqueous species, 64 minerals and gases from phreeqc.dat), pH from the charge balance or fixed, ionic strength, activity coefficients (WATEQ Debye–Hückel or Davies; 0.1 I for neutral species; water activity), log K(T) from analytic expressions or van 't Hoff over 0–100 °C, saturation indices, equilibrium with minerals and gases (dissolution limited by the amount present, precipitation), alkalinity; input by component totals or by formula (`add NaHCO3 2`, valence states from the formula); `chemlarp solution`, `cl_aqueous_json`, Python `solution()`, web Aqueous Chemistry panel with species, saturation indices and a distribution-with-pH chart | **done** (`src/aqueous.cpp`); validation in "Aqueous chemistry: validation" below. Not covered: redox equilibria between valence states (pe), Pitzer equations for brines (the model is for ionic strength below about 0.5–1 mol/kg), changes in the mass of water, pressure effects, kinetics, surface complexation and ion exchange, organic acids (not in phreeqc.dat) |
 | Distillation columns: rigorous equilibrium-stage model (MESH equations with the stream model of the unit operations: modified Raoult with ideal or UNIFAC liquid, liquid and ideal-gas enthalpies), total or partial condenser, kettle reboiler, several feeds, linear pressure profile, reflux ratio with distillate or bottoms flow; Naphtali–Sandholm Newton solution with a block-tridiagonal finite-difference Jacobian and line search, started from constant molar overflow and bubble-point (Wang–Henke) passes (`include/chemlarp/column.hpp`); `column` unit in flowsheets (CLI, C API, Python), web stage-profile chart | **done** (`src/column.cpp`); validation in "Distillation columns: validation" below. Not covered: other specifications (purity, recovery, boilup or duty), side draws and pumparounds, stage efficiencies, two liquid phases, non-condensable components in the column, shortcut (Fenske–Underwood–Gilliland) design |
+| Validation runner (`scripts/validate.py`): one command runs every validation suite the machine can run and writes a Markdown/JSON report; `scripts/validate_rdkit.py` adds structure identity, CIP labels, SMARTS counts and fingerprints against RDKit | **done**; 14 suites, all passing on 2026-11-14 (see "Running the validations" below). The report keeps independent references apart from in-repo expectations, names every skipped suite and what was missing, and lists the roadmap modules that no suite compares with anything outside the repository. Not covered: the InChI, IUPAC-name, quantum-chemistry, reader and pure-component comparisons reported in the rows above have no script here, and the runner does not run in CI; see docs/GAPS.md |
 | Installable web app (WebAssembly, PWA, GitHub Pages) | **done**: https://ayuroy01.github.io/ChemLarp/ |
 | Worker pool | planned (design above) |
 | Node.js addon | planned (C ABI is ready for it) |
@@ -485,3 +486,63 @@ About a third of the amides and rings have no hydrogen-bond partner that disting
 
 **Limits.** Loops longer than about six residues and chain ends are built so that the structure is complete, not because their conformation is known. A pKa shifted by several units is predicted with an error near 2 units. A histidine, Asn or Gln with no hydrogen-bond partner cannot be decided from the structure by any method that uses only the structure; it is reported instead of guessed silently. Nucleic acids, ligands and nonstandard residues get no hydrogens.
 
+## Running the validations
+
+`scripts/validate.py` runs every validation suite in one go and writes a report:
+
+```
+make validate DATA=path/to/reference-data PY=path/to/venv/bin/python
+python3 scripts/validate.py --list            # what can run here, and what is missing
+```
+
+Nothing is downloaded. The reference data (PDB, mmCIF and neutron structures, the MMFF94 validation suite,
+the CDK and centres jars, a SMILES sample) is not redistributed with ChemLarp; the header of
+`scripts/validate.py` lists the layout and where each piece comes from, and a suite whose data, Python
+packages or external tools are missing is skipped with the missing items named. The packages the suites need
+(phreeqpython, thermo, scipy, rdkit, biopython) usually live in a virtual environment outside the
+repository, which is what `--python` points at.
+
+The report separates two kinds of evidence, because they do not carry the same weight:
+
+- **independent** — compared with another implementation of the same model (PHREEQC, RDKit, CDK, Biopython,
+  thermo with scipy), with published measurements, or with a definition computed a second way;
+- **in-repo** — the C++ test suite. Its reference values come from outside (JANAF tables, Merck's MMFF94
+  output, crystal structures), but they are frozen in the repository rather than recomputed, so a wrong
+  value would stay wrong.
+
+All 14 suites passed on 2026-11-14 (macOS, commit 1d818e1):
+
+| Suite | Checks | Compared with |
+|---|---|---|
+| C++ test suite (in-repo) | 223 tests | in-repo expectations and bundled reference data |
+| Aqueous speciation, saturation indices, solubility | 139 | PHREEQC on the same database; measured pKw, calcite and gypsum solubility |
+| Distillation columns | 13 | the same MESH equations solved by scipy with thermo's correlations and UNIFAC |
+| Flowsheet solver | 24 | closed-form balances (Felder & Rousseau) and scipy/thermo equation-oriented solutions |
+| Molecular dynamics | 21 | an independent Monte Carlo sampler of the same ensemble; normal modes; equipartition |
+| MMFF94 against RDKit | 3 | RDKit's MMFF94 on the same coordinates |
+| MMFF94 validation suite | 23 | Merck's OPTIMOL output for 759 molecules |
+| Protein hydrogens, sequences, pI, mass | 33 | deposited NMR hydrogens; Biopython |
+| Side-chain rebuilding | chi1 704/777 (90.6%) | held-out X-ray side chains deleted and rebuilt |
+| Loop rebuilding | 3-12 residues | held-out X-ray loops deleted and rebuilt |
+| Protonation against neutron structures | 216/236 hydroxyls | experimental deuterium positions |
+| PDB and mmCIF of the same entry | 9 | the two deposited formats |
+| Axial chirality | 367 allenes, 124 biaryls | CDK with the centres CIP labeller |
+| Structure identity, CIP, SMARTS, fingerprints | 5 | RDKit |
+
+The RDKit structure suite is new with the runner. On a 1,500-molecule mixed sample (PubChem compounds and
+enumerated stereoisomers): every molecule keeps its constitution through ChemLarp's canonical SMILES, judged
+by RDKit (1,500 of 1,500); 1,488 keep their stereochemistry as well, the 12 others being four `[P@H]`
+phosphines, whose markers ChemLarp does not read, and eight stereoisomers of one chlorophyll-like macrocycle
+that lose a double-bond configuration when the ring is written aromatic (both in docs/GAPS.md); CIP
+descriptors agree on 742 of 750 molecules with stereochemistry (3,186 of 3,194 units), every difference being
+a stereo marker on a three-coordinate P or N; SMARTS unique match counts agree on all 16,000 pattern-molecule
+pairs; and Morgan radius-2 Tanimoto differs from RDKit's by 0.0115 on average (largest 0.080) over 2,000
+random pairs, ChemLarp's own 32-bit hash making bit-for-bit equality impossible by construction.
+
+**Limits.** The report's last two tables are the honest part of it: the roadmap modules that no suite here
+compares with anything outside the repository, and the comparisons these notes report that no script
+reproduces (InChI against PubChem, IUPAC names through OPSIN, quantum chemistry against PySCF, the readers
+against RDKit on PubChem files, pure-component properties and the activity models against thermo and DDBst).
+Those were run by hand in earlier sessions and the scripts were not kept, so they are claims about a past
+state of the code, not something this runner can confirm. The runner also does not run in CI, because the
+reference data cannot be redistributed and the packages are not installed there.

@@ -209,7 +209,7 @@
         {
           "name": "Validation against reference data",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         }
       ]
     }

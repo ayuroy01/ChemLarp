@@ -36,6 +36,7 @@ Reference data (re-download into a scratch folder; never into the repo):
 
 | Gap | Where | To resume |
 |---|---|---|
+| Canonical SMILES of a mancude macrocycle can drop one double-bond configuration: an exocyclic C=C whose ring neighbour is written aromatic loses its `/` mark (InChI b layer shows `?` where the input has a configuration). 8 of 1,500 molecules in the validation sample, all stereoisomers of one chlorophyll-like macrocycle | `src/canonical.cpp` (double-bond marks), `src/rings.cpp` (aromatic perception) | Reproduce with `scripts/validate_rdkit.py`, class "stereo, other": `C=CC1=C(C)C2=NC/1=C/C1=NC(=C(CC)C/1=C/O)/C=C1N=C3C(=C\1C)C(=O)[C@@H](C(=O)OC)/C3=C1/N/C(=C\2)[C@H](C)[C@H]1CCC(=O)OC`. The reference atom of the double bond is a ring atom that becomes aromatic, so the writer has no non-aromatic neighbour to hang the mark on; keep the Kekule neighbour for the mark, or write such rings in Kekule form. |
 | CIP: `[P@H]` phosphines and quinoid `c(=C)` input not parsed; rule-5 double bonds print E/Z, not seqCis/seqTrans | `src/cip*.cpp`, SMILES parser | 47/6312 enumerated stereoisomers differ from RDKit; list them with the CIP validation script and fix one class at a time. |
 | InChI: isotopic stereo, allene stereo, /f and /r layers, polymers, some charge-migration/salt rules (diazonium, N-oxides, macrocycle metal complexes) | `src/inchi*.cpp` | Compare against the reference InChI on PubChem subsets that contain these features. |
 | 2D layout: bridged polycycles legible but not template-quality | `src/depict*.cpp` | Add cage templates (adamantane, morphinan, bicyclo[2.2.2]). |
@@ -115,6 +116,23 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 | Aqueous: no redox (pe), no Pitzer (valid below I ≈ 0.5–1 mol/kg), water mass fixed, no pressure effects, kinetics, surface complexation, ion exchange, organic acids | phreeqc.dat / pitzer.dat (public domain, USGS). |
 | Distillation: only the current specifications; no purity/recovery/boilup/duty specs, side draws, pumparounds, stage efficiencies, two liquids, non-condensables, shortcut FUG design | `src/distillation*.cpp`. |
 
+## Validation runner (`scripts/validate.py`, `scripts/validate_rdkit.py`)
+
+Done 2026-11-14: one runner for every validation suite, with a Markdown/JSON report that separates
+independent references from in-repo expectations, lists what was skipped and why, and lists the roadmap
+modules with no independent suite. `make validate DATA=... PY=...`.
+
+| Gap | Where | To resume |
+|---|---|---|
+| Validations that docs/ARCHITECTURE.md reports but no script reproduces: InChI against PubChem (1483/1500), IUPAC names through OPSIN (14,188/14,193), quantum chemistry against PySCF, readers against RDKit on PubChem 2D/3D files, pure-component properties and EoS/activity models against thermo and DDBst | the `NOT_SCRIPTED` list in `scripts/validate.py` is the authoritative list | Each needs its data source re-fetched (PubChem sample with InChIs, OPSIN jar, pyscf, DDBst extracts) and the ad-hoc script rewritten against the current API. The old throwaway versions are gone, so these are the largest remaining pieces of this module. |
+| CIP labels are compared as a multiset per molecule, not atom by atom, because the two programs number atoms differently; a swap between two centres of one molecule would pass | `scripts/validate_rdkit.py` part B | Map atoms through a canonical ranking (or match our canonical SMILES to RDKit's output atom order) and compare per atom. |
+| SMARTS comparison uses 40 patterns on the first 400 molecules, not RDKit's full fragment set on the whole sample (the documented 187,375 pairs) | `scripts/validate_rdkit.py` part C | Read the patterns from RDKit's `FragmentDescriptors.csv` as the earlier run did, and drop the 400-molecule cap. |
+| Fingerprints are compared through similarity values (mean difference, Spearman), not bit by bit, because ChemLarp uses its own 32-bit hash | `scripts/validate_rdkit.py` part D | Compare the sets of environment identifiers instead of the hashed bits. |
+| The runner does not run in CI: the reference data is not redistributable and the Python packages are not installed there | `.github/workflows/ci.yml` | A job could install thermo/rdkit/biopython and run the suites that need no downloads (md, rdkit-structure with a committed SMILES sample, mmff-rdkit). |
+| Tolerances live inside each script, so the report shows pass/fail but not how close each number was to its limit | the suite scripts | Have each script print a machine-readable line (name, value, tolerance) and collect those in the report. |
+| No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
+| Docking and FEP/MBAR have no suites because the modules are not built | — | Add when those modules land (redocking RMSD on a public complex set; MBAR on analytic oscillators). |
+
 ## Roadmap modules not started (data/roadmap.json)
 
 | Module | Size | Notes for starting |
@@ -124,4 +142,3 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
 | Native installers (.apk, .exe, .dmg) | S | CI packaging; signing needs the user's certificates. |
 | Packages (pip, Homebrew, winget, Node) | S | Publishing needs the user's accounts; prepare manifests only. |
-| Validation against reference data | M | Collect the per-module validation scripts into one runner and a report. |

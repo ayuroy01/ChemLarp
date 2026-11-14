@@ -33,7 +33,7 @@ TEST_OBJ := $(TEST_SRC:tests/%.cpp=build/obj/tests/%.o)
 CLI      := build/chemlarp$(EXE)
 TESTS    := build/chemlarp_tests$(EXE)
 
-.PHONY: all test clean
+.PHONY: all test validate clean
 
 all: build/libchemlarp.a $(SHARED) $(CLI) $(TESTS)
 
@@ -64,6 +64,12 @@ $(TESTS): $(TEST_OBJ) build/libchemlarp.a
 
 test: $(TESTS)
 	./$(TESTS)
+
+# Every validation suite that can run here, and a report (see scripts/validate.py for the data layout):
+#   make validate DATA=path/to/reference-data PY=path/to/venv/bin/python
+validate: all
+	python3 scripts/validate.py $(if $(DATA),--data $(DATA),) $(if $(PY),--python $(PY),) \
+	  --report build/validation-report.md --json build/validation-report.json
 
 clean:
 	rm -rf build
