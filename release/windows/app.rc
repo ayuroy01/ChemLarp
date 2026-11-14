@@ -1,0 +1,28 @@
+// Icon and version information of ChemLarp.exe. CHEMLARP_VERSION_COMMA (e.g. 0,1,0,0) and CHEMLARP_VERSION_STR
+// (e.g. "0.1.0") are passed with /D by the build (see .github/workflows/packages.yml).
+#include <winver.h>
+APPICON ICON "chemlarp.ico"
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION CHEMLARP_VERSION_COMMA
+PRODUCTVERSION CHEMLARP_VERSION_COMMA
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "ayuroy01"
+      VALUE "FileDescription", "ChemLarp"
+      VALUE "FileVersion", CHEMLARP_VERSION_STR
+      VALUE "ProductName", "ChemLarp"
+      VALUE "ProductVersion", CHEMLARP_VERSION_STR
+      VALUE "LegalCopyright", "Apache License 2.0"
+      VALUE "OriginalFilename", "ChemLarp.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

@@ -2,7 +2,8 @@ name: packages
 
 # Builds and installs every package on each push, so a release only has to attach files that were already
 # tested: Python wheels (Linux x86_64/aarch64, macOS arm64/x86_64, Windows x64), the npm package
-# (WebAssembly), portable command-line archives, and a Homebrew install from the formula. Nothing is
+# (WebAssembly), portable command-line archives, a Homebrew install from the formula, and the native apps
+# (macOS .dmg, Windows installer, Android .apk), each run with an engine call through its window. Nothing is
 # published: on a tag v*, a draft GitHub release is made with the files and the filled manifests, and
 # publishing to PyPI, npm, Homebrew and winget stays a manual step (docs/PACKAGING.md).
 on:
@@ -138,18 +139,173 @@ jobs:
           brew install --HEAD local/chemlarp/chemlarp
           brew test local/chemlarp/chemlarp
 
+  # The web app (WebAssembly engine and UI), built once for the three native installers.
+  web-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.56
+      - run: scripts/build_web.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-app
+          path: build/web
+
+  installer-macos:
+    needs: web-app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-app
+          path: webapp
+      - name: Build ChemLarp.app and the disk image (runs the server self-test)
+        run: scripts/build_macos_app.sh webapp build/macos
+      - name: Open the app and run an engine call through its window
+        run: |
+          app=build/macos/ChemLarp.app/Contents/MacOS/ChemLarp
+          "$app" --smoke & pid=$!
+          for i in $(seq 1 120); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          if kill -0 $pid 2>/dev/null; then kill $pid; echo "smoke timed out"; exit 1; fi
+          wait $pid
+      - name: The disk image mounts and holds the app
+        run: |
+          dmg=$(ls build/macos/*.dmg)
+          hdiutil attach "$dmg" -nobrowse -mountpoint /tmp/chemlarp-dmg
+          test -x /tmp/chemlarp-dmg/ChemLarp.app/Contents/MacOS/ChemLarp
+          lipo -info /tmp/chemlarp-dmg/ChemLarp.app/Contents/MacOS/ChemLarp
+          hdiutil detach /tmp/chemlarp-dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos
+          path: build/macos/*.dmg
+
+  installer-windows:
+    needs: web-app
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-app
+          path: webapp
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Build ChemLarp.exe (WebView2) and the command-line program
+        shell: pwsh
+        run: |
+          $V = python scripts/check_packages.py --version-only
+          $comma = ($V.Split('.') + '0') -join ','
+          nuget install Microsoft.Web.WebView2 -OutputDirectory build/nuget -NonInteractive | Out-Null
+          $wv = (Get-ChildItem build/nuget -Directory -Filter 'Microsoft.Web.WebView2.*' | Select-Object -First 1).FullName + '\build\native'
+          New-Item -ItemType Directory -Force build/windows/stage/bin | Out-Null
+          python release/windows/make_ico.py release/windows/chemlarp.ico web/icons/icon-192.png
+          rc /nologo /DCHEMLARP_VERSION_COMMA=$comma "/DCHEMLARP_VERSION_STR=\`"$V\`"" /fo build/windows/app.res release/windows/app.rc
+          cl /nologo /O2 /EHsc /std:c++17 /MT /DUNICODE /D_UNICODE /I "$wv\include" release/windows/main.cpp build/windows/app.res `
+             /Fobuild/windows/ /Fe:build/windows/stage/ChemLarp.exe /link /SUBSYSTEM:WINDOWS "$wv\x64\WebView2LoaderStatic.lib" `
+             user32.lib ole32.lib shell32.lib advapi32.lib version.lib
+          if ($LASTEXITCODE -ne 0) { throw "cl failed" }
+          Copy-Item -Recurse webapp build/windows/stage/web
+          cmake -S . -B build/cmake -DCHEMLARP_BUILD_TESTS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build/cmake --config Release --target chemlarp_cli --parallel
+          Copy-Item build/cmake/Release/chemlarp.exe build/windows/stage/bin/chemlarp.exe
+          Copy-Item LICENSE build/windows/stage/
+          "V=$V" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run an engine call through the window
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath build/windows/stage/ChemLarp.exe -ArgumentList '--smoke', "$pwd\smoke.txt" -PassThru -Wait
+          Get-Content smoke.txt
+          if ($p.ExitCode -ne 0) { throw "smoke test failed ($($p.ExitCode))" }
+      - name: Installer (Inno Setup), installed silently and run from its installed place
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DAppVersion=$env:V" "/DStage=$pwd\build\windows\stage" "/DOutDir=$pwd\build\windows" release/windows/chemlarp.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          $setup = Get-ChildItem build/windows/ChemLarp-*-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/NORESTART' -Wait
+          $app = "$env:LOCALAPPDATA\Programs\ChemLarp\ChemLarp.exe"
+          if (-not (Test-Path $app)) { throw "not installed at $app" }
+          $p = Start-Process -FilePath $app -ArgumentList '--smoke', "$pwd\smoke2.txt" -PassThru -Wait
+          Get-Content smoke2.txt
+          if ($p.ExitCode -ne 0) { throw "installed app smoke test failed" }
+          & "$env:LOCALAPPDATA\Programs\ChemLarp\bin\chemlarp.exe" canon C1=CC=CC=C1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: build/windows/ChemLarp-*-setup.exe
+
+  installer-android:
+    needs: web-app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-app
+          path: webapp
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+      - name: SDK platform and build tools
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      - name: Build and sign the APK
+        run: scripts/build_android.sh webapp build/android
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Install on an emulator and run an engine call through the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: scripts/android_smoke.sh build/android/ChemLarp-*-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-android
+          path: build/android/*.apk
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [versions, wheels, npm, cli, homebrew]
+    needs: [versions, wheels, npm, cli, homebrew, installer-macos, installer-windows, installer-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # Every artifact except the web app (which is inside the installers already).
       - uses: actions/download-artifact@v4
         with:
+          pattern: wheel-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm
+          path: dist
       - name: Manifests with checksums
         run: |
           V="${GITHUB_REF_NAME#v}"

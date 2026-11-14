@@ -1933,7 +1933,9 @@ cooler C S2 -> L T=330
     installEvent = null;
     $('install-btn').hidden = true;
   });
-  const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+  // No service worker on a development server or inside the native apps (macOS and Android serve the bundled
+  // files from 127.0.0.1; Windows maps them to chemlarp.local, where WebView2 has no service workers).
+  const local = ['localhost', '127.0.0.1', 'chemlarp.local'].includes(location.hostname);
   if ('serviceWorker' in navigator && location.protocol !== 'file:' && !local) {
     // A new deploy installs a new worker, which takes control at once (skipWaiting + claim); reload then,
     // so the page runs the new build instead of waiting for the next visit. Check for one whenever the
