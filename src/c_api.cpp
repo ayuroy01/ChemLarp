@@ -841,6 +841,22 @@ char* cl_protein_json(const char* pdb_text, double pH) {
   return guarded([&] { return protein_json(pdb_text, pH); });
 }
 
+char* cl_protein_json_opts(const char* text, double pH, int flags) {
+  if (!text) return nullptr;
+  if (!(pH >= 0.0 && pH <= 14.0))
+    return dup("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":\"pH must be between 0 and 14\"}]}");
+  return guarded([&] {
+    ProteinJsonOptions o;
+    o.pH = pH;
+    o.repair = !(flags & 1);
+    o.loops = !(flags & 2);
+    o.termini = (flags & 4) != 0;
+    o.flips = !(flags & 8);
+    o.structure_pka = !(flags & 16);
+    return protein_json(text, o);
+  });
+}
+
 char* cl_lj_json(int cells, double density, double temperature, double cutoff, double dt, unsigned equilibration,
                  unsigned production, const char* thermostat, unsigned seed) {
   return guarded([&] {

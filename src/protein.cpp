@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +13,7 @@
 
 #include "chemlarp/elements.hpp"
 #include "chemlarp/json.hpp"
+#include "protein_internal.hpp"
 
 namespace chemlarp {
 
@@ -31,167 +33,262 @@ std::size_t Protein::atom_count() const {
   return n;
 }
 
+using namespace detail;
+
+
 namespace {
 
-// ---------------------------------------------------------------------------------------------------------
-// Templates: heavy-atom bonds inside each standard residue and the hydrogens on each parent atom.
-
-struct HDef {
-  const char* parent;
-  std::vector<const char*> names;
-  char geom;          // 'T' tetrahedral, 'P' planar sp2, 'R' rotatable OH/SH, 'A' aromatic OH (in plane)
-  const char* prev;   // T with two heavy neighbours: the neighbour toward the backbone (prochirality);
-                      // P with one heavy neighbour: the reference atom whose side is "cis"
-  bool first_cis;     // P with two H: whether the first name is cis to `prev`
+// One coordinate record of either file format.
+struct RawAtom {
+  ProteinAtom atom;
+  std::string resname, chain;
+  int number = 0;
+  char icode = ' ';
+  char alt = ' ';
+  bool hetatm = false;
 };
 
-struct ResidueDef {
-  char code;
-  std::vector<std::pair<const char*, const char*>> bonds;  // side chain (CA-CB onward)
-  std::vector<HDef> h;
-  std::array<int, 5> formula;  // C H N O S of the residue in a chain (free amino acid minus water)
+struct RawFile {
+  std::string title;
+  std::vector<RawAtom> atoms;                    // first model only
+  std::vector<std::array<std::string, 4>> ssbond;  // chain, number, chain, number
+  std::vector<MissingResidue> missing;
 };
 
-const std::map<std::string, ResidueDef>& residue_defs() {
-  static const std::map<std::string, ResidueDef> d = {
-      {"ALA", {'A', {{"CA", "CB"}}, {{"CB", {"HB1", "HB2", "HB3"}, 'T', nullptr, false}}, {3, 5, 1, 1, 0}}},
-      {"ARG", {'R', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD"}, {"CD", "NE"}, {"NE", "CZ"}, {"CZ", "NH1"}, {"CZ", "NH2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false},
-                {"CD", {"HD2", "HD3"}, 'T', "CG", false}, {"NE", {"HE"}, 'P', nullptr, false},
-                {"NH1", {"HH11", "HH12"}, 'P', "NE", true}, {"NH2", {"HH21", "HH22"}, 'P', "NE", true}},
-               {6, 12, 4, 1, 0}}},
-      {"ASN", {'N', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "OD1"}, {"CG", "ND2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"ND2", {"HD21", "HD22"}, 'P', "OD1", false}}, {4, 6, 2, 2, 0}}},
-      {"ASP", {'D', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "OD1"}, {"CG", "OD2"}}, {{"CB", {"HB2", "HB3"}, 'T', "CA", false}},
-               {4, 5, 1, 3, 0}}},
-      {"CYS", {'C', {{"CA", "CB"}, {"CB", "SG"}}, {{"CB", {"HB2", "HB3"}, 'T', "CA", false}}, {3, 5, 1, 1, 1}}},
-      {"GLN", {'Q', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD"}, {"CD", "OE1"}, {"CD", "NE2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false},
-                {"NE2", {"HE21", "HE22"}, 'P', "OE1", false}},
-               {5, 8, 2, 2, 0}}},
-      {"GLU", {'E', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD"}, {"CD", "OE1"}, {"CD", "OE2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false}}, {5, 7, 1, 3, 0}}},
-      {"GLY", {'G', {}, {}, {2, 3, 1, 1, 0}}},
-      {"HIS", {'H', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "ND1"}, {"CG", "CD2"}, {"ND1", "CE1"}, {"CE1", "NE2"}, {"NE2", "CD2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CD2", {"HD2"}, 'P', nullptr, false},
-                {"CE1", {"HE1"}, 'P', nullptr, false}},
-               {6, 7, 3, 1, 0}}},
-      {"ILE", {'I', {{"CA", "CB"}, {"CB", "CG1"}, {"CB", "CG2"}, {"CG1", "CD1"}},
-               {{"CB", {"HB"}, 'T', nullptr, false}, {"CG1", {"HG12", "HG13"}, 'T', "CB", false},
-                {"CG2", {"HG21", "HG22", "HG23"}, 'T', nullptr, false}, {"CD1", {"HD11", "HD12", "HD13"}, 'T', nullptr, false}},
-               {6, 11, 1, 1, 0}}},
-      {"LEU", {'L', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD1"}, {"CG", "CD2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG"}, 'T', nullptr, false},
-                {"CD1", {"HD11", "HD12", "HD13"}, 'T', nullptr, false}, {"CD2", {"HD21", "HD22", "HD23"}, 'T', nullptr, false}},
-               {6, 11, 1, 1, 0}}},
-      {"LYS", {'K', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD"}, {"CD", "CE"}, {"CE", "NZ"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false},
-                {"CD", {"HD2", "HD3"}, 'T', "CG", false}, {"CE", {"HE2", "HE3"}, 'T', "CD", false}},
-               {6, 12, 2, 1, 0}}},
-      {"MET", {'M', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "SD"}, {"SD", "CE"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false},
-                {"CE", {"HE1", "HE2", "HE3"}, 'T', nullptr, false}},
-               {5, 9, 1, 1, 1}}},
-      {"PHE", {'F', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD1"}, {"CG", "CD2"}, {"CD1", "CE1"}, {"CD2", "CE2"}, {"CE1", "CZ"}, {"CE2", "CZ"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CD1", {"HD1"}, 'P', nullptr, false}, {"CD2", {"HD2"}, 'P', nullptr, false},
-                {"CE1", {"HE1"}, 'P', nullptr, false}, {"CE2", {"HE2"}, 'P', nullptr, false}, {"CZ", {"HZ"}, 'P', nullptr, false}},
-               {9, 9, 1, 1, 0}}},
-      {"PRO", {'P', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD"}, {"CD", "N"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CG", {"HG2", "HG3"}, 'T', "CB", false},
-                {"CD", {"HD2", "HD3"}, 'T', "CG", false}},
-               {5, 7, 1, 1, 0}}},
-      {"SER", {'S', {{"CA", "CB"}, {"CB", "OG"}}, {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"OG", {"HG"}, 'R', nullptr, false}},
-               {3, 5, 1, 2, 0}}},
-      {"THR", {'T', {{"CA", "CB"}, {"CB", "OG1"}, {"CB", "CG2"}},
-               {{"CB", {"HB"}, 'T', nullptr, false}, {"OG1", {"HG1"}, 'R', nullptr, false},
-                {"CG2", {"HG21", "HG22", "HG23"}, 'T', nullptr, false}},
-               {4, 7, 1, 2, 0}}},
-      {"TRP", {'W', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD1"}, {"CG", "CD2"}, {"CD1", "NE1"}, {"NE1", "CE2"}, {"CE2", "CD2"},
-                     {"CE2", "CZ2"}, {"CD2", "CE3"}, {"CE3", "CZ3"}, {"CZ3", "CH2"}, {"CH2", "CZ2"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CD1", {"HD1"}, 'P', nullptr, false}, {"NE1", {"HE1"}, 'P', nullptr, false},
-                {"CE3", {"HE3"}, 'P', nullptr, false}, {"CZ2", {"HZ2"}, 'P', nullptr, false}, {"CZ3", {"HZ3"}, 'P', nullptr, false},
-                {"CH2", {"HH2"}, 'P', nullptr, false}},
-               {11, 10, 2, 1, 0}}},
-      {"TYR", {'Y', {{"CA", "CB"}, {"CB", "CG"}, {"CG", "CD1"}, {"CG", "CD2"}, {"CD1", "CE1"}, {"CD2", "CE2"}, {"CE1", "CZ"}, {"CE2", "CZ"}, {"CZ", "OH"}},
-               {{"CB", {"HB2", "HB3"}, 'T', "CA", false}, {"CD1", {"HD1"}, 'P', nullptr, false}, {"CD2", {"HD2"}, 'P', nullptr, false},
-                {"CE1", {"HE1"}, 'P', nullptr, false}, {"CE2", {"HE2"}, 'P', nullptr, false}},
-               {9, 9, 1, 2, 0}}},
-      {"VAL", {'V', {{"CA", "CB"}, {"CB", "CG1"}, {"CB", "CG2"}},
-               {{"CB", {"HB"}, 'T', nullptr, false}, {"CG1", {"HG11", "HG12", "HG13"}, 'T', nullptr, false},
-                {"CG2", {"HG21", "HG22", "HG23"}, 'T', nullptr, false}},
-               {5, 9, 1, 1, 0}}},
+void set_element(ProteinAtom& a, std::string el, const std::string& name_field) {
+  if (el.empty()) {  // from the atom name: the first letter
+    for (char c : name_field)
+      if (std::isalpha(static_cast<unsigned char>(c))) {
+        el = std::string(1, c);
+        break;
+      }
+  }
+  if (!el.empty()) el[0] = char(std::toupper(static_cast<unsigned char>(el[0])));
+  if (el.size() == 2) el[1] = char(std::tolower(static_cast<unsigned char>(el[1])));
+  a.element = el;
+}
+
+// Residues, alternate locations, disulfides, termini and chain breaks from the raw records.
+std::optional<Protein> assemble(RawFile& raw, Diagnostics& diag) {
+  Protein p;
+  p.title = raw.title;
+  p.missing_residues = std::move(raw.missing);
+  std::map<std::string, std::size_t> index;  // residue key -> index
+  std::map<std::pair<std::size_t, std::string>, std::pair<ProteinAtom, double>> chosen;  // (res, name) -> atom, occupancy
+  std::vector<std::pair<std::size_t, std::string>> order;
+  for (auto& ra : raw.atoms) {
+    const std::string key = ra.chain + "|" + std::to_string(ra.number) + "|" + std::string(1, ra.icode) + "|" + ra.resname;
+    auto it = index.find(key);
+    if (it == index.end()) {
+      ProteinResidue r;
+      r.name = ra.resname;
+      r.chain = ra.chain;
+      r.number = ra.number;
+      r.icode = ra.icode;
+      r.hetero = ra.hetatm && !residue_defs().count(canonical_name(ra.resname));
+      p.residues.push_back(r);
+      it = index.emplace(key, p.residues.size() - 1).first;
+    }
+    const auto k = std::make_pair(it->second, ra.atom.name);
+    auto c = chosen.find(k);
+    if (c == chosen.end()) {
+      chosen.emplace(k, std::make_pair(ra.atom, ra.atom.occupancy));
+      order.push_back(k);
+    } else if (ra.alt != ' ' && ra.atom.occupancy > c->second.second) {
+      c->second = {ra.atom, ra.atom.occupancy};
+    }
+  }
+  for (const auto& k : order) p.residues[k.first].atoms.push_back(chosen[k].first);
+  if (p.residues.empty()) {
+    diag.error(DiagCode::UnknownFileFormat, "no atom records");
+    return std::nullopt;
+  }
+  // Disulfides: SSBOND records and S–S distance.
+  std::set<std::pair<std::size_t, std::size_t>> ss;
+  std::vector<std::size_t> cys;
+  for (std::size_t i = 0; i < p.residues.size(); ++i)
+    if (canonical_name(p.residues[i].name) == "CYS" && p.residues[i].atom("SG")) cys.push_back(i);
+  // Cell list on SG positions (large structures have thousands of cysteines).
+  {
+    std::map<std::array<int, 3>, std::vector<std::size_t>> cells;
+    auto cell = [](const ProteinAtom& a) { return std::array<int, 3>{int(std::floor(a.x / 3.0)), int(std::floor(a.y / 3.0)), int(std::floor(a.z / 3.0))}; };
+    for (std::size_t i : cys) cells[cell(*p.residues[i].atom("SG"))].push_back(i);
+    for (std::size_t i : cys) {
+      const ProteinAtom& s = *p.residues[i].atom("SG");
+      const auto c = cell(s);
+      for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dz = -1; dz <= 1; ++dz) {
+            auto it = cells.find({c[0] + dx, c[1] + dy, c[2] + dz});
+            if (it == cells.end()) continue;
+            for (std::size_t j : it->second)
+              if (j > i && dist(s, *p.residues[j].atom("SG")) < 2.5) ss.insert({i, j});
+          }
+    }
+  }
+  for (const auto& s : raw.ssbond) {
+    std::size_t ia = SIZE_MAX, ib = SIZE_MAX;
+    for (std::size_t i : cys) {
+      const auto& r = p.residues[i];
+      if (r.chain == s[0] && std::to_string(r.number) == s[1]) ia = i;
+      if (r.chain == s[2] && std::to_string(r.number) == s[3]) ib = i;
+    }
+    if (ia != SIZE_MAX && ib != SIZE_MAX && ia != ib) ss.insert({std::min(ia, ib), std::max(ia, ib)});
+  }
+  p.disulfides.assign(ss.begin(), ss.end());
+  // Termini and chain breaks among amino-acid residues of each chain.
+  std::map<std::string, std::size_t> last_in_chain;  // previous amino-acid residue of the chain
+  std::vector<std::size_t> prev_of(p.residues.size(), SIZE_MAX);
+  for (std::size_t i = 0; i < p.residues.size(); ++i) {
+    if (!residue_defs().count(canonical_name(p.residues[i].name))) continue;
+    auto it = last_in_chain.find(p.residues[i].chain);
+    if (it != last_in_chain.end()) prev_of[i] = it->second;
+    last_in_chain[p.residues[i].chain] = i;
+  }
+  for (std::size_t i = 0; i < p.residues.size(); ++i) {
+    auto& r = p.residues[i];
+    if (!residue_defs().count(canonical_name(r.name))) continue;
+    r.n_terminal = true;
+    r.c_terminal = true;
+  }
+  for (std::size_t i = 0; i < p.residues.size(); ++i) {
+    const std::size_t prev = prev_of[i];
+    if (prev == SIZE_MAX) continue;
+    const ProteinAtom* N = p.residues[i].atom("N");
+    const ProteinAtom* C = p.residues[prev].atom("C");
+    if (N && C && dist(*C, *N) < 2.0) {
+      p.residues[i].n_terminal = false;
+      p.residues[prev].c_terminal = false;
+    } else {
+      p.chain_breaks.push_back(i);
+    }
+  }
+  return p;
+}
+
+// ---- mmCIF ----------------------------------------------------------------------------------------------
+
+struct CifTable {
+  std::vector<std::string> columns;
+  std::vector<std::string_view> cells;  // row-major
+  std::size_t rows() const { return columns.empty() ? 0 : cells.size() / columns.size(); }
+  int column(std::string_view name) const {
+    for (std::size_t i = 0; i < columns.size(); ++i)
+      if (columns[i] == name) return int(i);
+    return -1;
+  }
+};
+
+// The categories named in `wanted` (e.g. "_atom_site") of the first data block. Values keep their text;
+// "." and "?" (not given) become empty.
+std::map<std::string, CifTable> parse_cif(std::string_view t, const std::set<std::string>& wanted) {
+  std::map<std::string, CifTable> out;
+  std::size_t i = 0;
+  const std::size_t n = t.size();
+  bool quoted = false;
+  auto next = [&](std::string_view& tok) -> bool {
+    for (;;) {
+      while (i < n && (t[i] == ' ' || t[i] == '\t' || t[i] == '\r' || t[i] == '\n')) ++i;
+      if (i >= n) return false;
+      if (t[i] == '#') {
+        while (i < n && t[i] != '\n') ++i;
+        continue;
+      }
+      break;
+    }
+    quoted = false;
+    if (t[i] == ';' && (i == 0 || t[i - 1] == '\n')) {  // text field up to a line starting with ';'
+      const std::size_t b = i + 1;
+      std::size_t e = t.find("\n;", b);
+      if (e == std::string_view::npos) e = n;
+      tok = t.substr(b, e - b);
+      i = std::min(n, e + 2);
+      quoted = true;
+      return true;
+    }
+    if (t[i] == '\'' || t[i] == '"') {
+      const char q = t[i];
+      const std::size_t b = ++i;
+      while (i < n && !(t[i] == q && (i + 1 >= n || t[i + 1] == ' ' || t[i + 1] == '\t' || t[i + 1] == '\r' || t[i + 1] == '\n')) && t[i] != '\n') ++i;
+      tok = t.substr(b, i - b);
+      if (i < n) ++i;
+      quoted = true;
+      return true;
+    }
+    const std::size_t b = i;
+    while (i < n && t[i] != ' ' && t[i] != '\t' && t[i] != '\r' && t[i] != '\n') ++i;
+    tok = t.substr(b, i - b);
+    return true;
   };
-  return d;
+  auto value = [&](std::string_view v) { return !quoted && (v == "." || v == "?") ? std::string_view{} : v; };
+  auto category = [](std::string_view name) { return std::string(name.substr(0, name.find('.'))); };
+  auto item = [](std::string_view name) {
+    const auto d = name.find('.');
+    return std::string(d == std::string_view::npos ? std::string_view{} : name.substr(d + 1));
+  };
+  std::string_view tok;
+  bool have = next(tok);
+  int blocks = 0;
+  while (have) {
+    if (!quoted && tok.substr(0, 5) == "data_") {
+      if (++blocks > 1) break;
+      have = next(tok);
+    } else if (!quoted && tok == "loop_") {
+      std::vector<std::string_view> names;
+      while ((have = next(tok)) && !quoted && !tok.empty() && tok[0] == '_') names.push_back(tok);
+      CifTable* tab = nullptr;
+      if (!names.empty() && wanted.count(category(names[0]))) {
+        tab = &out[category(names[0])];
+        for (auto nm : names) tab->columns.push_back(item(nm));
+      }
+      while (have && (quoted || !(tok.empty() || tok[0] == '_' || tok == "loop_" || tok.substr(0, 5) == "data_"))) {
+        if (tab) tab->cells.push_back(value(tok));
+        have = next(tok);
+      }
+      if (tab && !tab->columns.empty()) tab->cells.resize(tab->cells.size() - tab->cells.size() % tab->columns.size());
+    } else if (!quoted && !tok.empty() && tok[0] == '_') {
+      const std::string_view name = tok;
+      have = next(tok);
+      if (!have) break;
+      if (wanted.count(category(name))) {
+        auto& tab = out[category(name)];
+        tab.columns.push_back(item(name));
+        tab.cells.push_back(value(tok));
+      }
+      have = next(tok);
+    } else {
+      have = next(tok);
+    }
+  }
+  return out;
 }
 
-// Common alternative residue names (protonation-state names of force fields, selenomethionine excluded).
-std::string canonical_name(const std::string& n) {
-  static const std::map<std::string, std::string> alias = {
-      {"HID", "HIS"}, {"HIE", "HIS"}, {"HIP", "HIS"}, {"HSD", "HIS"}, {"HSE", "HIS"}, {"HSP", "HIS"}, {"HSE", "HIS"},
-      {"ASH", "ASP"}, {"GLH", "GLU"}, {"LYN", "LYS"}, {"CYX", "CYS"}, {"CYM", "CYS"}, {"TYM", "TYR"}, {"ARN", "ARG"}};
-  auto it = alias.find(n);
-  return it != alias.end() ? it->second : n;
+int to_int(std::string_view s, int fallback = 0) {
+  if (s.empty()) return fallback;
+  return std::atoi(std::string(s).c_str());
+}
+double to_double(std::string_view s, double fallback = 0.0) {
+  if (s.empty()) return fallback;
+  return std::atof(std::string(s).c_str());
 }
 
-using Vec = std::array<double, 3>;
-Vec pos(const ProteinAtom& a) { return {a.x, a.y, a.z}; }
-Vec sub(Vec a, Vec b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
-Vec add(Vec a, Vec b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
-Vec mul(Vec a, double s) { return {a[0] * s, a[1] * s, a[2] * s}; }
-double dot(Vec a, Vec b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-Vec cross(Vec a, Vec b) { return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]}; }
-double norm(Vec a) { return std::sqrt(dot(a, a)); }
-Vec unit(Vec a) {
-  const double n = norm(a);
-  return n > 0 ? mul(a, 1.0 / n) : Vec{1, 0, 0};
+bool looks_like_cif(std::string_view text) {
+  const auto a = text.find_first_not_of(" \t\r\n");
+  if (a == std::string_view::npos) return false;
+  if (text.substr(a, 5) == "data_") return true;
+  return text.find("_atom_site.") != std::string_view::npos && text.find("\nATOM  ") == std::string_view::npos && text.substr(0, 6) != "ATOM  ";
 }
-double dist(const ProteinAtom& a, const ProteinAtom& b) { return norm(sub(pos(a), pos(b))); }
-
-// Position of atom D given A-B-C, bond C-D, angle B-C-D and dihedral A-B-C-D (degrees).
-Vec place(Vec A, Vec B, Vec C, double bond, double angle_deg, double dihedral_deg) {
-  const double ang = angle_deg * std::numbers::pi / 180.0, dih = dihedral_deg * std::numbers::pi / 180.0;
-  const Vec bc = unit(sub(C, B));
-  const Vec n = unit(cross(sub(B, A), bc));
-  const Vec m = cross(n, bc);
-  const Vec d2 = {-bond * std::cos(ang), bond * std::sin(ang) * std::cos(dih), bond * std::sin(ang) * std::sin(dih)};
-  return add(C, add(add(mul(bc, d2[0]), mul(m, d2[1])), mul(n, d2[2])));
-}
-
-std::string trim(const std::string& s) {
-  const auto a = s.find_first_not_of(' ');
-  if (a == std::string::npos) return "";
-  return s.substr(a, s.find_last_not_of(' ') - a + 1);
-}
-
-std::string residue_label(const ProteinResidue& r) {
-  return (r.chain.empty() ? std::string("_") : r.chain) + " " + std::to_string(r.number) +
-         (r.icode != ' ' ? std::string(1, r.icode) : "") + " " + r.name;
-}
-
-// Model pKa values (PROPKA 3).
-struct Pka {
-  double asp = 3.80, glu = 4.50, his = 6.50, cys = 9.00, tyr = 10.00, lys = 10.50, arg = 12.50, nterm = 8.00, cterm = 3.20;
-};
 
 }  // namespace
 
 std::optional<Protein> read_protein_pdb(std::string_view text, Diagnostics& diag) {
-  Protein p;
+  RawFile raw;
   std::istringstream in{std::string(text)};
-  std::map<std::string, std::size_t> index;  // residue key -> index
-  struct Pending {
-    std::size_t res;
-    ProteinAtom atom;
-    char alt;
-  };
-  std::map<std::pair<std::size_t, std::string>, std::pair<ProteinAtom, double>> chosen;  // (res, name) -> atom, occupancy
-  std::vector<std::pair<std::size_t, std::string>> order;
-  std::vector<std::array<std::string, 4>> ssbond;
   bool in_model = false, model_done = false;
   for (std::string line; std::getline(in, line);) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     const std::string rec = line.substr(0, 6);
-    if (rec == "TITLE " && p.title.size() < 300) p.title += (p.title.empty() ? "" : " ") + trim(line.size() > 10 ? line.substr(10) : "");
+    if (rec == "TITLE " && raw.title.size() < 300) raw.title += (raw.title.empty() ? "" : " ") + trim(line.size() > 10 ? line.substr(10) : "");
     if (rec == "MODEL ") {
       if (in_model || model_done) model_done = true;
       in_model = true;
@@ -201,98 +298,146 @@ std::optional<Protein> read_protein_pdb(std::string_view text, Diagnostics& diag
       in_model = false;
     }
     if (rec == "SSBOND" && line.size() >= 35)
-      ssbond.push_back({line.substr(15, 1), trim(line.substr(17, 5)), line.substr(29, 1), trim(line.substr(31, 5))});
+      raw.ssbond.push_back({trim(line.substr(15, 1)), trim(line.substr(17, 5)), trim(line.substr(29, 1)), trim(line.substr(31, 5))});
+    if (rec == "REMARK" && line.size() >= 26 && line.substr(6, 4) == " 465") {
+      // "REMARK 465   M RES C SSSEQI": optional model, residue name, chain, number, insertion code.
+      const std::string res = trim(line.substr(15, 3));
+      const std::string num = trim(line.substr(21, 5));
+      const std::string model = trim(line.substr(10, 4));
+      const bool numeric = !num.empty() && (std::isdigit(static_cast<unsigned char>(num.back())) != 0) &&
+                           num.find_first_not_of("-0123456789") == std::string::npos;
+      if (res.size() == 3 && numeric && (model.empty() || model == "1") && std::isupper(static_cast<unsigned char>(res[0]))) {
+        MissingResidue m;
+        m.name = res;
+        m.chain = trim(line.substr(19, 1));
+        m.number = std::atoi(num.c_str());
+        m.icode = line.size() > 26 ? line[26] : ' ';
+        raw.missing.push_back(m);
+      }
+    }
     if ((rec != "ATOM  " && rec != "HETATM") || model_done) continue;
     if (line.size() < 54) {
       diag.warn(DiagCode::MalformedRecord, "short ATOM record skipped: " + line);
       continue;
     }
-    ProteinAtom a;
+    RawAtom ra;
+    ProteinAtom& a = ra.atom;
     a.name = trim(line.substr(12, 4));
-    const char alt = line[16];
-    const std::string resname = trim(line.substr(17, 3));
-    const std::string chain = trim(line.substr(21, 1));
-    const int num = std::atoi(line.substr(22, 4).c_str());
-    const char icode = line.size() > 26 ? line[26] : ' ';
+    ra.alt = line[16];
+    ra.resname = trim(line.substr(17, 3));
+    ra.chain = trim(line.substr(21, 1));
+    ra.number = std::atoi(line.substr(22, 4).c_str());
+    ra.icode = line.size() > 26 ? line[26] : ' ';
+    ra.hetatm = rec == "HETATM";
     a.x = std::atof(line.substr(30, 8).c_str());
     a.y = std::atof(line.substr(38, 8).c_str());
     a.z = std::atof(line.substr(46, 8).c_str());
     a.occupancy = line.size() >= 60 ? std::atof(line.substr(54, 6).c_str()) : 1.0;
     a.bfactor = line.size() >= 66 ? std::atof(line.substr(60, 6).c_str()) : 0.0;
-    std::string el = line.size() >= 78 ? trim(line.substr(76, 2)) : "";
-    if (el.empty()) {  // from the atom name: first letter(s) that are letters
-      std::string nm = trim(line.substr(12, 2));
-      el = nm.empty() ? "" : std::string(1, nm[0] == ' ' || std::isdigit(static_cast<unsigned char>(nm[0])) ? nm[1] : nm[0]);
-    }
-    if (el.size() == 2) el[1] = char(std::tolower(static_cast<unsigned char>(el[1])));
-    a.element = el;
+    // Without an element column, a name starting in column 13 is a two-letter element only for HETATM.
+    set_element(a, line.size() >= 78 ? trim(line.substr(76, 2)) : "", line.substr(12, 4));
     if (line.size() >= 80) {
       const std::string c = trim(line.substr(78, 2));
       if (c.size() == 2 && std::isdigit(static_cast<unsigned char>(c[0]))) a.charge = (c[1] == '-' ? -1 : 1) * (c[0] - '0');
     }
-    const std::string key = chain + "|" + std::to_string(num) + "|" + std::string(1, icode) + "|" + resname;
-    auto it = index.find(key);
-    if (it == index.end()) {
-      ProteinResidue r;
-      r.name = resname;
-      r.chain = chain;
-      r.number = num;
-      r.icode = icode;
-      r.hetero = rec == "HETATM" && !residue_defs().count(canonical_name(resname));
-      p.residues.push_back(r);
-      it = index.emplace(key, p.residues.size() - 1).first;
-    }
-    const auto k = std::make_pair(it->second, a.name);
-    auto c = chosen.find(k);
-    if (c == chosen.end()) {
-      chosen.emplace(k, std::make_pair(a, a.occupancy));
-      order.push_back(k);
-    } else if (alt != ' ' && a.occupancy > c->second.second) {
-      c->second = {a, a.occupancy};
+    raw.atoms.push_back(std::move(ra));
+  }
+  return assemble(raw, diag);
+}
+
+std::optional<Protein> read_protein_cif(std::string_view text, Diagnostics& diag) {
+  const auto tabs = parse_cif(text, {"_atom_site", "_struct", "_pdbx_poly_seq_scheme", "_struct_conn"});
+  RawFile raw;
+  if (auto it = tabs.find("_struct"); it != tabs.end()) {
+    const int c = it->second.column("title");
+    if (c >= 0 && it->second.rows() > 0) {
+      raw.title = std::string(it->second.cells[std::size_t(c)]);
+      for (char& ch : raw.title)
+        if (ch == '\n' || ch == '\r') ch = ' ';
+      raw.title = trim(raw.title);
     }
   }
-  for (const auto& k : order) p.residues[k.first].atoms.push_back(chosen[k].first);
-  if (p.residues.empty()) {
-    diag.error(DiagCode::UnknownFileFormat, "no ATOM or HETATM records");
+  auto it = tabs.find("_atom_site");
+  if (it == tabs.end() || it->second.rows() == 0) {
+    diag.error(DiagCode::UnknownFileFormat, "no _atom_site records");
     return std::nullopt;
   }
-  // Disulfides: SSBOND records and S–S distance.
-  std::set<std::pair<std::size_t, std::size_t>> ss;
-  std::vector<std::size_t> cys;
-  for (std::size_t i = 0; i < p.residues.size(); ++i)
-    if (canonical_name(p.residues[i].name) == "CYS" && p.residues[i].atom("SG")) cys.push_back(i);
-  for (std::size_t a = 0; a < cys.size(); ++a)
-    for (std::size_t b = a + 1; b < cys.size(); ++b)
-      if (dist(*p.residues[cys[a]].atom("SG"), *p.residues[cys[b]].atom("SG")) < 2.5) ss.insert({cys[a], cys[b]});
-  for (const auto& s : ssbond) {
-    std::size_t ia = SIZE_MAX, ib = SIZE_MAX;
-    for (std::size_t i : cys) {
-      const auto& r = p.residues[i];
-      if ((r.chain.empty() ? " " : r.chain) == (s[0] == "" ? " " : s[0]) && std::to_string(r.number) == s[1]) ia = i;
-      if ((r.chain.empty() ? " " : r.chain) == (s[2] == "" ? " " : s[2]) && std::to_string(r.number) == s[3]) ib = i;
+  const CifTable& t = it->second;
+  auto col = [&](const char* a, const char* b = nullptr) {
+    int c = t.column(a);
+    if (c < 0 && b) c = t.column(b);
+    return c;
+  };
+  const int c_group = col("group_PDB"), c_el = col("type_symbol"), c_name = col("auth_atom_id", "label_atom_id"),
+            c_name2 = col("label_atom_id"), c_alt = col("label_alt_id"), c_res = col("auth_comp_id", "label_comp_id"),
+            c_chain = col("auth_asym_id", "label_asym_id"), c_seq = col("auth_seq_id", "label_seq_id"),
+            c_ins = col("pdbx_PDB_ins_code"), c_x = col("Cartn_x"), c_y = col("Cartn_y"), c_z = col("Cartn_z"),
+            c_occ = col("occupancy"), c_b = col("B_iso_or_equiv"), c_q = col("pdbx_formal_charge"),
+            c_model = col("pdbx_PDB_model_num");
+  if (c_name < 0 || c_res < 0 || c_x < 0 || c_y < 0 || c_z < 0 || c_seq < 0) {
+    diag.error(DiagCode::MalformedRecord, "_atom_site lacks atom names, residue names, numbers or coordinates");
+    return std::nullopt;
+  }
+  const std::size_t nc = t.columns.size();
+  std::string_view first_model;
+  raw.atoms.reserve(t.rows());
+  for (std::size_t r = 0; r < t.rows(); ++r) {
+    const std::string_view* row = &t.cells[r * nc];
+    auto get = [&](int c) { return c < 0 ? std::string_view{} : row[c]; };
+    if (c_model >= 0) {
+      if (r == 0) first_model = get(c_model);
+      else if (get(c_model) != first_model) break;
     }
-    if (ia != SIZE_MAX && ib != SIZE_MAX) ss.insert({std::min(ia, ib), std::max(ia, ib)});
+    RawAtom ra;
+    ProteinAtom& a = ra.atom;
+    a.name = std::string(get(c_name2).empty() ? get(c_name) : get(c_name2));
+    ra.alt = get(c_alt).empty() ? ' ' : get(c_alt)[0];
+    ra.resname = std::string(get(c_res));
+    ra.chain = std::string(get(c_chain));
+    ra.number = to_int(get(c_seq));
+    ra.icode = get(c_ins).empty() ? ' ' : get(c_ins)[0];
+    ra.hetatm = get(c_group) == "HETATM";
+    a.x = to_double(get(c_x));
+    a.y = to_double(get(c_y));
+    a.z = to_double(get(c_z));
+    a.occupancy = to_double(get(c_occ), 1.0);
+    a.bfactor = to_double(get(c_b));
+    a.charge = to_int(get(c_q));
+    set_element(a, std::string(get(c_el)), a.name);
+    raw.atoms.push_back(std::move(ra));
   }
-  p.disulfides.assign(ss.begin(), ss.end());
-  // Termini and chain breaks among amino-acid residues of each chain.
-  for (std::size_t i = 0; i < p.residues.size(); ++i) {
-    auto& r = p.residues[i];
-    if (!residue_defs().count(canonical_name(r.name))) continue;
-    std::size_t prev = SIZE_MAX, next = SIZE_MAX;
-    for (std::size_t j = i; j-- > 0;)
-      if (p.residues[j].chain == r.chain && residue_defs().count(canonical_name(p.residues[j].name))) { prev = j; break; }
-    for (std::size_t j = i + 1; j < p.residues.size(); ++j)
-      if (p.residues[j].chain == r.chain && residue_defs().count(canonical_name(p.residues[j].name))) { next = j; break; }
-    const ProteinAtom* N = r.atom("N");
-    const ProteinAtom* C = r.atom("C");
-    bool linked_prev = false, linked_next = false;
-    if (prev != SIZE_MAX && N && p.residues[prev].atom("C")) linked_prev = dist(*p.residues[prev].atom("C"), *N) < 2.0;
-    if (next != SIZE_MAX && C && p.residues[next].atom("N")) linked_next = dist(*C, *p.residues[next].atom("N")) < 2.0;
-    r.n_terminal = !linked_prev;
-    r.c_terminal = !linked_next;
-    if (prev != SIZE_MAX && !linked_prev) p.chain_breaks.push_back(i);
+  if (auto sc = tabs.find("_struct_conn"); sc != tabs.end()) {
+    const CifTable& s = sc->second;
+    const int ty = s.column("conn_type_id"), a1 = s.column("ptnr1_auth_asym_id"), n1 = s.column("ptnr1_auth_seq_id"),
+              a2 = s.column("ptnr2_auth_asym_id"), n2 = s.column("ptnr2_auth_seq_id");
+    if (ty >= 0 && a1 >= 0 && n1 >= 0 && a2 >= 0 && n2 >= 0)
+      for (std::size_t r = 0; r < s.rows(); ++r) {
+        const std::string_view* row = &s.cells[r * s.columns.size()];
+        if (row[ty] == "disulf") raw.ssbond.push_back({std::string(row[a1]), std::string(row[n1]), std::string(row[a2]), std::string(row[n2])});
+      }
   }
-  return p;
+  if (auto ps = tabs.find("_pdbx_poly_seq_scheme"); ps != tabs.end()) {
+    // A residue of the sequence with no auth_seq_num has no coordinates.
+    const CifTable& s = ps->second;
+    const int mon = s.column("mon_id"), pdbn = s.column("pdb_seq_num"), auth = s.column("auth_seq_num"),
+              strand = s.column("pdb_strand_id"), ins = s.column("pdb_ins_code");
+    if (mon >= 0 && pdbn >= 0 && auth >= 0 && strand >= 0)
+      for (std::size_t r = 0; r < s.rows(); ++r) {
+        const std::string_view* row = &s.cells[r * s.columns.size()];
+        if (!row[auth].empty()) continue;
+        MissingResidue m;
+        m.name = std::string(row[mon]);
+        m.chain = std::string(row[strand]);
+        m.number = to_int(row[pdbn]);
+        m.icode = ins >= 0 && !row[ins].empty() ? row[ins][0] : ' ';
+        raw.missing.push_back(m);
+      }
+  }
+  return assemble(raw, diag);
+}
+
+std::optional<Protein> read_protein(std::string_view text, Diagnostics& diag) {
+  return looks_like_cif(text) ? read_protein_cif(text, diag) : read_protein_pdb(text, diag);
 }
 
 std::vector<std::pair<std::string, std::string>> chain_sequences(const Protein& p) {
@@ -306,311 +451,16 @@ std::vector<std::pair<std::string, std::string>> chain_sequences(const Protein& 
   return out;
 }
 
-ProtonationReport protonate(Protein& p, const ProtonationOptions& opt, Diagnostics& diag) {
-  ProtonationReport rep;
-  const Pka K;
-  const double pH = opt.pH;
-  // Remove hydrogens.
-  for (auto& r : p.residues) {
-    if (r.hetero) continue;
-    const std::size_t before = r.atoms.size();
-    r.atoms.erase(std::remove_if(r.atoms.begin(), r.atoms.end(), [](const ProteinAtom& a) { return a.element == "H" || a.element == "D"; }),
-                  r.atoms.end());
-    rep.hydrogens_removed += before - r.atoms.size();
-  }
-  std::set<std::size_t> in_ss;
-  for (const auto& [a, b] : p.disulfides) in_ss.insert(a), in_ss.insert(b);
-  // Heavy atoms of everything, for hydrogen-bond acceptors and metals.
-  struct Site {
-    Vec x;
-    std::string el;
-    std::size_t res;
-    std::string name;
-  };
-  std::vector<Site> heavy;
-  for (std::size_t i = 0; i < p.residues.size(); ++i)
-    for (const auto& a : p.residues[i].atoms) heavy.push_back({pos(a), a.element, i, a.name});
-  auto is_metal = [](const std::string& e) {
-    return e == "Zn" || e == "Fe" || e == "Cu" || e == "Mg" || e == "Ca" || e == "Mn" || e == "Co" || e == "Ni" || e == "Na" || e == "K";
-  };
-  // Acceptor score of a polar hydrogen position: distance to the nearest O/N of another residue (or of
-  // this residue's backbone carbonyl), ignoring the parent's own neighbours.
-  auto acceptor_distance = [&](Vec h, std::size_t res, const std::string& parent) {
-    double best = 1e9;
-    for (const auto& s : heavy) {
-      if (s.el != "O" && s.el != "N") continue;
-      if (s.res == res && (s.name == parent || s.name != "O")) continue;
-      best = std::min(best, norm(sub(s.x, h)));
-    }
-    return best;
-  };
-  const auto& defs = residue_defs();
-  for (std::size_t ri = 0; ri < p.residues.size(); ++ri) {
-    auto& r = p.residues[ri];
-    const std::string base = canonical_name(r.name);
-    auto dit = defs.find(base);
-    if (dit == defs.end()) {
-      if (!r.hetero || (r.name != "HOH" && r.name != "WAT"))
-        if (std::find(rep.unknown_residues.begin(), rep.unknown_residues.end(), r.name) == rep.unknown_residues.end() && !r.hetero)
-          rep.unknown_residues.push_back(r.name);
-      continue;
-    }
-    const ResidueDef& def = dit->second;
-    // Missing heavy atoms.
-    std::vector<std::string> need = {"N", "CA", "C", "O"};
-    for (const auto& [a, b] : def.bonds) need.push_back(a), need.push_back(b);
-    std::sort(need.begin(), need.end());
-    need.erase(std::unique(need.begin(), need.end()), need.end());
-    for (const auto& n : need)
-      if (!r.atom(n)) rep.missing_atoms.push_back(residue_label(r) + " " + n);
-    // Terminal OXT.
-    if (r.c_terminal && opt.add_oxt && !r.atom("OXT") && r.atom("C") && r.atom("O") && r.atom("CA")) {
-      const Vec c = pos(*r.atom("C"));
-      const Vec dir = unit(add(unit(sub(pos(*r.atom("CA")), c)), unit(sub(pos(*r.atom("O")), c))));
-      ProteinAtom o;
-      o.name = "OXT";
-      o.element = "O";
-      const Vec x = sub(c, mul(dir, 1.25));
-      o.x = x[0], o.y = x[1], o.z = x[2];
-      o.added = true;
-      r.atoms.push_back(o);
-    }
-    // Protonation state.
-    int charge = 0;
-    std::string state = base;
-    bool his_d = false, his_e = false;
-    if (base == "ASP") {
-      state = pH < K.asp ? "ASH" : "ASP";
-      charge = pH < K.asp ? 0 : -1;
-    } else if (base == "GLU") {
-      state = pH < K.glu ? "GLH" : "GLU";
-      charge = pH < K.glu ? 0 : -1;
-    } else if (base == "LYS") {
-      state = pH < K.lys ? "LYS" : "LYN";
-      charge = pH < K.lys ? 1 : 0;
-    } else if (base == "ARG") {
-      state = pH < K.arg ? "ARG" : "ARN";
-      charge = pH < K.arg ? 1 : 0;
-    } else if (base == "TYR") {
-      state = pH < K.tyr ? "TYR" : "TYM";
-      charge = pH < K.tyr ? 0 : -1;
-    } else if (base == "CYS") {
-      if (in_ss.count(ri)) state = "CYX";
-      else {
-        state = pH < K.cys ? "CYS" : "CYM";
-        charge = pH < K.cys ? 0 : -1;
-      }
-    } else if (base == "HIS") {
-      const ProteinAtom* nd = r.atom("ND1");
-      const ProteinAtom* ne = r.atom("NE2");
-      bool nd_metal = false, ne_metal = false, nd_hb = false, ne_hb = false;
-      for (const auto& s : heavy) {
-        if (s.res == ri) continue;
-        for (int k = 0; k < 2; ++k) {
-          const ProteinAtom* n = k ? ne : nd;
-          if (!n) continue;
-          const double d = norm(sub(s.x, pos(*n)));
-          if (is_metal(s.el) && d < 2.6) (k ? ne_metal : nd_metal) = true;
-          if ((s.el == "O" || s.el == "N") && d < 3.2) (k ? ne_hb : nd_hb) = true;
-        }
-      }
-      if (pH < K.his && !nd_metal && !ne_metal) {
-        state = "HIP";
-        his_d = his_e = true;
-        charge = 1;
-      } else if (ne_metal || (nd_hb && !ne_hb && !nd_metal)) {
-        state = "HID";
-        his_d = true;
-      } else {
-        state = "HIE";
-        his_e = true;
-      }
-    }
-    // Termini.
-    const bool nh3 = r.n_terminal && pH < K.nterm;
-    const bool cooh = r.c_terminal && pH < K.cterm;
-    if (r.n_terminal) charge += nh3 ? 1 : 0;
-    if (r.c_terminal) charge += cooh ? 0 : -1;
-    r.state = state;
-    r.charge = charge;
-    rep.net_charge += charge;
-    // Neighbours of an atom (inside the residue, plus the peptide links).
-    auto neighbours = [&](const std::string& name) {
-      std::vector<Vec> out;
-      std::vector<std::string> names;
-      auto addn = [&](const ProteinAtom* a, const std::string& n) {
-        if (a) out.push_back(pos(*a)), names.push_back(n);
-      };
-      std::vector<std::pair<std::string, std::string>> bonds = {{"N", "CA"}, {"CA", "C"}, {"C", "O"}, {"C", "OXT"}};
-      bonds.insert(bonds.end(), def.bonds.begin(), def.bonds.end());
-      for (const auto& [a, b] : bonds) {
-        if (name == a) addn(r.atom(b), b);
-        if (name == b) addn(r.atom(a), a);
-      }
-      if (name == "N" && !r.n_terminal)
-        for (std::size_t j = ri; j-- > 0;)
-          if (p.residues[j].chain == r.chain && defs.count(canonical_name(p.residues[j].name))) {
-            addn(p.residues[j].atom("C"), "C-");
-            break;
-          }
-      return std::make_pair(out, names);
-    };
-    auto push = [&](const std::string& name, Vec x) {
-      ProteinAtom h;
-      h.name = name;
-      h.element = "H";
-      h.x = x[0], h.y = x[1], h.z = x[2];
-      h.added = true;
-      r.atoms.push_back(h);
-      ++rep.hydrogens_added;
-    };
-    auto bond_len = [](const std::string& parent_el, bool aromatic) {
-      if (parent_el == "N") return 1.01;
-      if (parent_el == "O") return 0.96;
-      if (parent_el == "S") return 1.34;
-      return aromatic ? 1.08 : 1.09;
-    };
-    // Hydrogen definitions for this residue and state.
-    std::vector<HDef> hs;
-    if (base == "GLY") hs.push_back({"CA", {"HA2", "HA3"}, 'T', "N", false});
-    else hs.push_back({"CA", {"HA"}, 'T', nullptr, false});
-    if (r.n_terminal) {
-      if (base == "PRO") hs.push_back({"N", nh3 ? std::vector<const char*>{"H2", "H3"} : std::vector<const char*>{"H2"}, 'T', nullptr, false});
-      else hs.push_back({"N", nh3 ? std::vector<const char*>{"H1", "H2", "H3"} : std::vector<const char*>{"H1", "H2"}, 'T', nullptr, false});
-    } else if (base != "PRO") {
-      hs.push_back({"N", {"H"}, 'P', nullptr, false});
-    }
-    for (const auto& h : def.h) {
-      HDef x = h;
-      if (base == "LYS" && state == "LYN" && std::string(h.parent) == "NZ") continue;
-      hs.push_back(x);
-    }
-    if (base == "LYS") hs.push_back({"NZ", state == "LYS" ? std::vector<const char*>{"HZ1", "HZ2", "HZ3"} : std::vector<const char*>{"HZ1", "HZ2"}, 'T', nullptr, false});
-    if (base == "ARG" && state == "ARN") {
-      for (auto& x : hs)
-        if (std::string(x.parent) == "NH2") x.names = {"HH21"};
-    }
-    if (base == "SER") {}
-    if (base == "CYS" && state == "CYS") hs.push_back({"SG", {"HG"}, 'R', nullptr, false});
-    if (base == "TYR" && state == "TYR") hs.push_back({"OH", {"HH"}, 'A', nullptr, false});
-    if (base == "HIS") {
-      if (his_d) hs.push_back({"ND1", {"HD1"}, 'P', nullptr, false});
-      if (his_e) hs.push_back({"NE2", {"HE2"}, 'P', nullptr, false});
-    }
-    if (state == "ASH") hs.push_back({"OD2", {"HD2"}, 'C', "OD1", false});
-    if (state == "GLH") hs.push_back({"OE2", {"HE2"}, 'C', "OE1", false});
-    if (cooh && r.atom("OXT")) hs.push_back({"OXT", {"HXT"}, 'C', "O", false});
-    // Place them.
-    for (const auto& h : hs) {
-      const ProteinAtom* P = r.atom(h.parent);
-      if (!P) continue;
-      const Vec c = pos(*P);
-      auto [nb, nbn] = neighbours(h.parent);
-      if (nb.empty()) continue;
-      const bool aromatic = h.geom == 'P' && P->element == "C";
-      const double d = bond_len(P->element, aromatic);
-      const std::size_t n = h.names.size();
-      if (h.geom == 'T') {
-        if (nb.size() >= 3 && n == 1) {
-          Vec s{0, 0, 0};
-          for (const auto& v : nb) s = add(s, unit(sub(v, c)));
-          push(h.names[0], add(c, mul(unit(mul(s, -1.0)), d)));
-        } else if (nb.size() == 2 && n == 2) {
-          // Prochirality: H2 has a negative sign of ((prev − C) × (next − C)) · (H − C).
-          Vec prev = nb[0], next = nb[1];
-          if (h.prev && nbn[1] == h.prev) std::swap(prev, next);
-          const Vec u1 = unit(sub(prev, c)), u2 = unit(sub(next, c));
-          const Vec b = unit(mul(add(u1, u2), -1.0));
-          const Vec nn = unit(cross(u1, u2));
-          const double a = 54.735 * std::numbers::pi / 180.0;
-          const Vec ha = add(c, mul(add(mul(b, std::cos(a)), mul(nn, std::sin(a))), d));
-          const Vec hb = add(c, mul(add(mul(b, std::cos(a)), mul(nn, -std::sin(a))), d));
-          const bool a_is_2 = dot(cross(sub(prev, c), sub(next, c)), sub(ha, c)) < 0;
-          push(h.names[0], a_is_2 ? ha : hb);
-          push(h.names[1], a_is_2 ? hb : ha);
-        } else if (nb.size() == 2 && n == 1) {
-          Vec s = add(unit(sub(nb[0], c)), unit(sub(nb[1], c)));
-          push(h.names[0], add(c, mul(unit(mul(s, -1.0)), d)));
-        } else if (nb.size() == 1) {
-          // Methyl / NH3+: staggered against a reference atom bonded to the neighbour.
-          const std::string nbname = nbn[0];
-          auto [nb2, nb2n] = neighbours(nbname == "C-" ? "C" : nbname);
-          Vec ref = c;
-          for (std::size_t k = 0; k < nb2.size(); ++k)
-            if (nb2n[k] != h.parent) {
-              ref = nb2[k];
-              break;
-            }
-          if (nbname == "CA" && std::string(h.parent) == "N") ref = r.atom("C") ? pos(*r.atom("C")) : ref;
-          const double dihs[3] = {180.0, 60.0, -60.0};
-          for (std::size_t k = 0; k < n && k < 3; ++k) push(h.names[k], place(ref, nb[0], c, d, 109.47, dihs[k]));
-        }
-      } else if (h.geom == 'P') {
-        if (nb.size() >= 2 && n == 1) {
-          Vec s = add(unit(sub(nb[0], c)), unit(sub(nb[1], c)));
-          push(h.names[0], add(c, mul(unit(mul(s, -1.0)), d)));
-        } else if (nb.size() == 1) {
-          // sp2 NH2 (or NH): in the plane of the neighbour X and the reference atom R bonded to X.
-          const Vec X = nb[0];
-          auto [nb2, nb2n] = neighbours(nbn[0]);
-          Vec R = c;
-          for (std::size_t k = 0; k < nb2.size(); ++k)
-            if ((h.prev && nb2n[k] == h.prev) || (!h.prev && nb2n[k] != h.parent)) {
-              R = nb2[k];
-              break;
-            }
-          // cis to R: dihedral R-X-P-H = 0; trans: 180.
-          const Vec hc = place(R, X, c, d, 120.0, 0.0), ht = place(R, X, c, d, 120.0, 180.0);
-          if (n == 2) {
-            push(h.names[0], h.first_cis ? hc : ht);
-            push(h.names[1], h.first_cis ? ht : hc);
-          } else {
-            push(h.names[0], ht);
-          }
-        }
-      } else if (h.geom == 'R' || h.geom == 'A' || h.geom == 'C') {
-        // One H on O or S with a single heavy neighbour X; dihedral about X–P chosen below.
-        const Vec X = nb[0];
-        auto [nb2, nb2n] = neighbours(nbn[0]);
-        Vec R = c;
-        for (std::size_t k = 0; k < nb2.size(); ++k)
-          if ((h.prev && nb2n[k] == h.prev) || (!h.prev && nb2n[k] != h.parent)) {
-            R = nb2[k];
-            break;
-          }
-        const double angle = P->element == "S" ? 96.0 : (h.geom == 'C' ? 108.0 : 109.47);
-        std::vector<double> cand;
-        if (h.geom == 'C') cand = {0.0};               // carboxylic acid: syn
-        else if (h.geom == 'A') cand = {0.0, 180.0};    // phenol: in the ring plane
-        else cand = {180.0, 60.0, -60.0};               // alcohol, thiol: staggered
-        double best_d = 1e9;
-        Vec best = place(R, X, c, d, angle, cand[0]);
-        for (double t : cand) {
-          const Vec x = place(R, X, c, d, angle, t);
-          const double a = acceptor_distance(x, ri, h.parent);
-          if (a < best_d - 1e-9 && a < 2.6) best_d = a, best = x;
-        }
-        push(h.names[0], best);
-      }
-    }
-  }
-  if (!rep.missing_atoms.empty())
-    diag.warn(DiagCode::MalformedRecord, std::to_string(rep.missing_atoms.size()) +
-                                             " heavy atoms of standard residues are missing (e.g. " + rep.missing_atoms[0] +
-                                             "); their hydrogens are not placed");
-  if (!rep.unknown_residues.empty()) {
-    std::string l;
-    for (const auto& u : rep.unknown_residues) l += (l.empty() ? "" : ", ") + u;
-    diag.warn(DiagCode::FileContentIgnored, "no template for residue(s) " + l + ": left without hydrogens");
-  }
-  return rep;
-}
-
 std::string write_protein_pdb(const Protein& p) {
   std::string out;
   char b[128];
   if (!p.title.empty()) out += "REMARK   1 " + p.title.substr(0, 68) + "\n";
   out += "REMARK   2 WRITTEN BY CHEMLARP\n";
+  {
+    std::size_t n = 0;
+    for (const auto& r : p.residues) n += r.predicted;
+    if (n) out += "REMARK   3 " + std::to_string(n) + " RESIDUES WITHOUT EXPERIMENTAL COORDINATES WERE BUILT (OCCUPANCY 0.00)\n";
+  }
   int serial = 0;
   for (std::size_t k = 0; k < p.disulfides.size(); ++k) {
     const auto& a = p.residues[p.disulfides[k].first];
@@ -638,7 +488,7 @@ std::string write_protein_pdb(const Protein& p) {
       for (char& ch : el) ch = char(std::toupper(static_cast<unsigned char>(ch)));
       std::snprintf(b, sizeof b, "%-6s%5d %-4.4s %3.3s %1s%4d%c   %8.3f%8.3f%8.3f%6.2f%6.2f          %2s%2s\n",
                     r.hetero ? "HETATM" : "ATOM", serial % 100000, nm.c_str(), rn.c_str(), r.chain.empty() ? " " : r.chain.c_str(),
-                    r.number, r.icode, a.x, a.y, a.z, a.occupancy, a.bfactor, el.c_str(), chg);
+                    r.number, r.icode, a.x, a.y, a.z, r.predicted ? 0.0 : a.occupancy, a.bfactor, el.c_str(), chg);
       out += b;
     }
   }
@@ -718,27 +568,90 @@ double sequence_molecular_weight(std::string_view sequence) {
   return any ? w : 0.0;
 }
 
-std::string protein_json(std::string_view pdb_text, double pH) {
+bool fits_pdb_format(const Protein& p) {
+  if (p.atom_count() > 99999) return false;
+  for (const auto& r : p.residues)
+    if (r.chain.size() > 1 || r.number > 9999 || r.number < -999) return false;
+  return true;
+}
+
+std::string write_protein_cif(const Protein& p) {
+  auto q = [](const std::string& s) {
+    if (s.empty()) return std::string("?");
+    if (s.find('\'') != std::string::npos) return "\"" + s + "\"";
+    if (s.find('"') != std::string::npos || s.find(' ') != std::string::npos || s[0] == '_' || s[0] == '#') return "'" + s + "'";
+    return s;
+  };
+  std::string out = "data_chemlarp\n#\n";
+  if (!p.title.empty()) {
+    std::string t = p.title;
+    for (char& c : t)
+      if (c == '\n' || c == '\r') c = ' ';
+    out += "_struct.title\n;" + t + "\n;\n#\n";
+  }
+  out += "loop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_alt_id\n"
+         "_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_entity_id\n_atom_site.label_seq_id\n"
+         "_atom_site.pdbx_PDB_ins_code\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n"
+         "_atom_site.B_iso_or_equiv\n_atom_site.pdbx_formal_charge\n_atom_site.auth_seq_id\n_atom_site.auth_comp_id\n"
+         "_atom_site.auth_asym_id\n_atom_site.auth_atom_id\n_atom_site.pdbx_PDB_model_num\n";
+  char b[256];
+  std::size_t serial = 0;
+  for (const auto& r : p.residues) {
+    const std::string chain = q(r.chain.empty() ? std::string("A") : r.chain), comp = q(r.name);
+    const std::string ins = r.icode == ' ' ? std::string("?") : std::string(1, r.icode);
+    for (const auto& a : r.atoms) {
+      std::string el = a.element;
+      for (char& ch : el) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+      const std::string name = q(a.name);
+      std::snprintf(b, sizeof b, "%s %zu %s %s . %s %s 1 %d %s %.3f %.3f %.3f %.2f %.2f %s %d %s %s %s 1\n", r.hetero ? "HETATM" : "ATOM",
+                    ++serial, el.empty() ? "X" : el.c_str(), name.c_str(), comp.c_str(), chain.c_str(), r.number, ins.c_str(), a.x, a.y, a.z,
+                    a.occupancy, a.bfactor, a.charge ? std::to_string(a.charge).c_str() : "?", r.number, comp.c_str(), chain.c_str(),
+                    name.c_str());
+      out += b;
+    }
+  }
+  return out + "#\n";
+}
+
+std::string protein_json(std::string_view pdb_text, double pH) { return protein_json(pdb_text, ProteinJsonOptions{pH}); }
+
+std::string protein_json(std::string_view text, const ProteinJsonOptions& jo) {
   Diagnostics d;
-  auto p = read_protein_pdb(pdb_text, d);
+  auto p = read_protein(text, d);
   std::string o = std::string("{\"ok\":") + (p ? "true" : "false");
   auto jn = [](double v) {
     char b[40];
     std::snprintf(b, sizeof b, "%.10g", v);
     return std::isfinite(v) ? std::string(b) : std::string("null");
   };
+  auto list = [](const std::vector<std::string>& v) {
+    std::string s = "[";
+    for (std::size_t k = 0; k < v.size(); ++k) s += (k ? "," : "") + json_escape(v[k]);
+    return s + "]";
+  };
   if (p) {
+    RepairReport fix;
+    const std::size_t listed_missing = p->missing_residues.size();
+    if (jo.repair) {
+      RepairOptions ro;
+      ro.loops = jo.loops;
+      ro.termini = jo.termini;
+      fix = repair(*p, ro, d);
+    }
     ProtonationOptions opt;
-    opt.pH = pH;
+    opt.pH = jo.pH;
+    opt.flips = jo.flips;
+    opt.structure_pka = jo.structure_pka;
     const auto rep = protonate(*p, opt, d);
+    const auto& pka = rep.pka;
     o += ",\"title\":" + json_escape(p->title) + ",\"chains\":[";
     std::string all;
     const auto seqs = chain_sequences(*p);
+    std::map<std::string, std::size_t> chain_count;
+    for (const auto& r : p->residues) ++chain_count[r.chain];
     for (std::size_t i = 0; i < seqs.size(); ++i) {
-      std::size_t n = 0;
-      for (const auto& r : p->residues) n += r.chain == seqs[i].first;
       o += (i ? "," : "") + std::string("{\"id\":") + json_escape(seqs[i].first) + ",\"sequence\":" + json_escape(seqs[i].second) +
-           ",\"residues\":" + std::to_string(n) + ",\"pI\":" + jn(isoelectric_point(seqs[i].second)) +
+           ",\"residues\":" + std::to_string(chain_count[seqs[i].first]) + ",\"pI\":" + jn(isoelectric_point(seqs[i].second)) +
            ",\"molecular_weight\":" + jn(sequence_molecular_weight(seqs[i].second)) + "}";
       all += seqs[i].second;
     }
@@ -751,8 +664,20 @@ std::string protein_json(std::string_view pdb_text, double pH) {
       o += (first ? "" : ",") + std::string("{\"chain\":") + json_escape(r.chain) + ",\"number\":" + std::to_string(r.number) +
            ",\"icode\":" + json_escape(std::string(r.icode == ' ' ? "" : std::string(1, r.icode))) + ",\"name\":" +
            json_escape(r.name) + ",\"state\":" + json_escape(r.state) + ",\"charge\":" + std::to_string(r.charge) +
-           ",\"n_terminal\":" + (r.n_terminal ? "true" : "false") + ",\"c_terminal\":" + (r.c_terminal ? "true" : "false") + "}";
+           ",\"n_terminal\":" + (r.n_terminal ? "true" : "false") + ",\"c_terminal\":" + (r.c_terminal ? "true" : "false") +
+           ",\"predicted\":" + (r.predicted ? "true" : "false") + "}";
       first = false;
+    }
+    o += "],\"pka\":[";
+    for (std::size_t k = 0; k < pka.size(); ++k) {
+      const auto& s = pka[k];
+      const auto& r = p->residues[s.residue];
+      o += (k ? "," : "") + std::string("{\"chain\":") + json_escape(r.chain) + ",\"number\":" + std::to_string(r.number) +
+           ",\"name\":" + json_escape(r.name) + ",\"group\":" + json_escape(s.group) + ",\"reference\":" + jn(s.reference) +
+           ",\"pKa\":" + jn(s.pka) + ",\"desolvation\":" + jn(s.desolvation) + ",\"hydrogen_bonds\":" + jn(s.hydrogen_bonds) +
+           ",\"charges\":" + jn(s.charges) + ",\"buried\":" + jn(s.buried) + ",\"features\":[";
+      for (int i = 0; i < kPkaFeatures; ++i) o += (i ? "," : "") + jn(s.features[i]);
+      o += "]}";
     }
     o += "],\"disulfides\":[";
     for (std::size_t k = 0; k < p->disulfides.size(); ++k) {
@@ -766,18 +691,33 @@ std::string protein_json(std::string_view pdb_text, double pH) {
       const auto& r = p->residues[p->chain_breaks[k]];
       o += (k ? "," : "") + json_escape(r.chain + " " + std::to_string(r.number));
     }
-    o += "],\"missing_atoms\":[";
-    for (std::size_t k = 0; k < rep.missing_atoms.size(); ++k) o += (k ? "," : "") + json_escape(rep.missing_atoms[k]);
-    o += "],\"unknown_residues\":[";
-    for (std::size_t k = 0; k < rep.unknown_residues.size(); ++k) o += (k ? "," : "") + json_escape(rep.unknown_residues[k]);
-    o += "],\"atoms\":" + std::to_string(p->atom_count()) + ",\"hydrogens_added\":" + std::to_string(rep.hydrogens_added) +
+    o += "],\"missing_atoms\":" + list(rep.missing_atoms) + ",\"unknown_residues\":" + list(rep.unknown_residues) +
+         ",\"flipped\":" + list(rep.flipped) + ",\"undetermined\":" + list(rep.undetermined) +
+         ",\"repair\":{\"atoms_added\":" + std::to_string(fix.atoms_added) + ",\"completed_residues\":" + list(fix.completed_residues) +
+         ",\"built_residues\":" + list(fix.built_residues) + ",\"not_built\":" + list(fix.not_built) +
+         ",\"missing_residues_listed\":" + std::to_string(listed_missing) + ",\"missing_residues_left\":" +
+         std::to_string(p->missing_residues.size()) + "}";
+    o += ",\"atoms\":" + std::to_string(p->atom_count()) + ",\"hydrogens_added\":" + std::to_string(rep.hydrogens_added) +
          ",\"hydrogens_removed\":" + std::to_string(rep.hydrogens_removed) + ",\"net_charge\":" + std::to_string(rep.net_charge) +
          ",\"pI\":" + jn(all.empty() ? 0.0 : isoelectric_point(all)) + ",\"titration\":[";
     for (int k = 0; k <= 56; ++k) {
       const double ph = k * 0.25;
       o += (k ? ",[" : "[") + jn(ph) + "," + jn(sequence_net_charge(all, ph)) + "]";
     }
-    o += "],\"pdb\":" + json_escape(write_protein_pdb(*p));
+    // Net charge against pH from the structure-based pKa values (Henderson–Hasselbalch for each group).
+    o += "],\"titration_structure\":[";
+    for (int k = 0; k <= 56; ++k) {
+      const double ph = k * 0.25;
+      double q = 0.0;
+      for (const auto& s : pka) {
+        const bool acid = s.group == "ASP" || s.group == "GLU" || s.group == "CYS" || s.group == "TYR" || s.group == "C-";
+        q += acid ? -1.0 / (1.0 + std::pow(10.0, s.pka - ph)) : 1.0 / (1.0 + std::pow(10.0, ph - s.pka));
+      }
+      o += (k ? ",[" : "[") + jn(ph) + "," + jn(q) + "]";
+    }
+    const bool pdb_ok = fits_pdb_format(*p);
+    o += "],\"format\":" + std::string(pdb_ok ? "\"pdb\"" : "\"cif\"") + ",\"pdb\":" + json_escape(pdb_ok ? write_protein_pdb(*p) : std::string()) +
+         ",\"cif\":" + json_escape(pdb_ok ? std::string() : write_protein_cif(*p));
   }
   return o + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";
 }

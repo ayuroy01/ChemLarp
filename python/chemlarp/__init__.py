@@ -102,6 +102,7 @@ _cl_md = _sig("cl_md_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, c
               ctypes.c_char_p, ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_int, ctypes.c_char_p)
 _cl_mmff = _sig("cl_mmff_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int)
 _cl_protein = _sig("cl_protein_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double)
+_cl_protein_opts = _sig("cl_protein_json_opts", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -370,14 +371,22 @@ def mmff(smiles: str, variant: str = "MMFF94", minimize: bool = True) -> dict:
     return r
 
 
-def protein(pdb: str, pH: float = 7.4) -> dict:
-    """Read a protein from PDB text (or a path to a .pdb file): chain sequences, isoelectric points and
-    molecular weights, disulfides, protonation state of each titratable residue at the pH (PROPKA model
-    pKa values), and the structure with all hydrogens rebuilt ("pdb")."""
-    if "\n" not in pdb and pdb.lower().endswith((".pdb", ".ent")):
+def protein(pdb: str, pH: float = 7.4, repair: bool = True, loops: bool = True, termini: bool = False,
+            flips: bool = True, structure_pka: bool = True) -> dict:
+    """Read a protein from PDB or mmCIF text (or a path to a .pdb, .ent or .cif file): chain sequences,
+    isoelectric points and molecular weights, disulfides, the pKa of each titratable group predicted from
+    the structure ("pka"), protonation states at the pH with the hydrogen-bond network optimised, and the
+    structure with all hydrogens rebuilt ("pdb", or "cif" when the PDB format cannot hold it; see "format").
+
+    repair completes side chains with missing atoms; loops builds residues the file lists as missing inside
+    a chain and termini those at chain ends (both are predictions: "repair"["built_residues"]); flips allows
+    Asn/Gln/His side chains to turn by 180 degrees ("flipped"); structure_pka=False uses reference pKa values.
+    "undetermined" lists the groups whose orientation or tautomer the structure does not decide."""
+    if "\n" not in pdb and pdb.lower().endswith((".pdb", ".ent", ".cif", ".mmcif")):
         with open(pdb) as f:
             pdb = f.read()
-    r = _take_json(_cl_protein(pdb.encode(), pH))
+    flags = (0 if repair else 1) | (0 if loops else 2) | (4 if termini else 0) | (0 if flips else 8) | (0 if structure_pka else 16)
+    r = _take_json(_cl_protein_opts(pdb.encode(), pH, flags))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r

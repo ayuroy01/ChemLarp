@@ -142,7 +142,7 @@ Design rule: build a correct serial kernel first, then parallelize it behind the
 | Sparse LU for large mechanisms (>~300 species) | planned; dense LU is O(S³) per step |
 | MMFF94 and MMFF94s (`include/chemlarp/mmff.hpp`): the 99 MMFF atom types from structure (hypervalent S=O / P=O or dative S+–O− drawings, charges the drawing leaves implicit, MMFF's own aromaticity for 5- and 6-rings including fused, cationic and anionic rings), formal charges shared over resonance groups, bond-charge-increment partial charges, all seven energy terms with Halgren's step-down parameter search and the empirical rules for missing bond, angle, stretch-bend and torsion parameters, analytic gradient (forward-mode automatic differentiation), minimization, MMFF dynamics; `chemlarp mmff` (SMILES, or `--file` for the terms of every record of an SDF), `cl_mmff_json`, Python `mmff()`, force-field choice in `chemlarp md`, `cl_md_json` and `molecular_dynamics()`; web 3D Model view (UFF / MMFF94 / MMFF94s, energy terms, types and charges) and Molecular Dynamics view | **done** (`src/mmff.cpp`); validation in "MMFF94: validation" below. Not covered: OPLS-AA, MMFF's distance-dependent dielectric option, periodic or solvated systems, non-bonded cutoffs (all pairs are summed) |
 | Molecular dynamics (`include/chemlarp/md.hpp`): velocity Verlet (NVE), Bussi stochastic velocity rescaling with its conserved effective energy, and BAOAB Langevin dynamics; Maxwell–Boltzmann start with the centre-of-mass motion and overall rotation removed; platform-independent random numbers; harmonic normal modes (finite-difference Hessian, translations and rotations projected out, linear molecules detected from the moments of inertia); vibrational spectrum from the velocity autocorrelation; UFF molecules from SMILES; periodic Lennard-Jones fluid with block-averaged energy and pressure; `chemlarp md`, `chemlarp lj`, `cl_md_json`, `cl_lj_json`, Python `molecular_dynamics()` and `lennard_jones()`, web Molecular Dynamics panel with an animated trajectory, energy, temperature and spectrum charts and XYZ export | **done** (`src/md.cpp`); validation in "Molecular dynamics: validation" below. Not covered: periodic boxes for molecules, solvent, constraints (SHAKE/RATTLE), barostats (NPT), electrostatics (UFF has none here), neighbour lists for large systems, multiple time steps |
-| Proteins (`include/chemlarp/protein.hpp`): PDB reader for chains and residues (first model, highest-occupancy alternate location, insertion codes, HETATM ligands kept as-is), disulfides from SSBOND records and S–S distances, chain breaks and termini from C–N distances; protonation at a pH from PROPKA 3 model pKa values (Asp, Glu, His, Cys, Tyr, Lys, Arg, termini), disulfide cysteines as CYX, histidine tautomer from the hydrogen bond its ring nitrogens make and from metal binding; all hydrogens rebuilt with PDB version 3 names (prochiral methylene names, Asn/Gln amide and Arg guanidinium cis/trans names, staggered methyl and NH3+, hydroxyl and thiol hydrogens turned toward an acceptor), missing C-terminal OXT added; PDB writer; sequence net charge, isoelectric point (Bjellqvist or PROPKA model pKa set) and average molecular weight; `chemlarp protein`, `cl_protein_json`, Python `protein()`, web Protein panel (PDB ID from RCSB or a file, 3D view with or without hydrogens, sequences, titration curve, residue states, protonated PDB download) | **done** (`src/protein.cpp`); validation in "Proteins: validation" below. Not covered: pKa shifts from the protein environment (PROPKA's desolvation and hydrogen-bond terms), side-chain flips of Asn/Gln/His, hydrogen-bond network optimisation of rotors as in Reduce, missing heavy atoms or loops (reported, not built), nucleic acids, mmCIF input, protonation of ligands |
+| Proteins (`include/chemlarp/protein.hpp`): PDB and mmCIF readers (format detected; first model, highest-occupancy alternate location, insertion codes, chain names of any length, HETATM ligands kept as-is, residues listed as missing), disulfides from SSBOND/`_struct_conn` records and S–S distances, chain breaks and termini from C–N distances; `repair()`: missing side-chain atoms from a rotamer library with a backbone-dependent chi1 factor and overlap scoring, residues with incomplete backbone and missing loops built with ideal geometry and closed by cyclic coordinate descent (marked as predicted), missing chain ends on request; `predict_pka()`: pKa of every Asp, Glu, His, Lys and terminus from burial, hydrogen-bond partners and charge–charge terms, with weights fitted to 1,265 measured values; protonation at a pH from those pKa values, disulfide and metal-bound cysteines without HG; hydrogen-bond network optimisation over Asn/Gln/His flips, His tautomers (metal-bound nitrogens bare), Ser/Thr/Cys/Tyr hydroxyl and thiol rotors, NH3+ groups and protonated carboxyl groups, with the undecided groups reported; all hydrogens rebuilt with PDB version 3 names, missing C-terminal OXT added; PDB writer and mmCIF writer (for more than 99,999 atoms or long chain names); sequence net charge, isoelectric point and average molecular weight; `chemlarp protein`, `cl_protein_json`, `cl_protein_json_opts`, Python `protein()`, web Protein panel (PDB ID from RCSB with mmCIF fallback or a file, 3D view or chain trace for large structures, sequences, titration curves from structure and sequence, pKa and state of each residue, flips and built residues listed, download) | **done** (`src/protein.cpp`, `src/protein_build.cpp`, `src/protein_pka.cpp`, `src/protein_protonate.cpp`); measured accuracy in "Proteins: validation" below. Not covered: nucleic acids and ligands are read and kept but get no hydrogens or pKa; Arg, Tyr and Cys keep reference pKa values |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Docking scoring, FEP/MBAR | planned |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
@@ -384,5 +384,60 @@ The hydrogen counts equal the deposited ones in every model. Differences above 0
 
 tests/test_protein.cpp uses `data/1crn.pdb` (PDB entry 1CRN, ATOM/SSBOND records) and `data/1l2y_model1.pdb` (the first model of 1L2Y); PDB data are CC0.
 
-**Limits.** Protonation states use model pKa values only, so buried or interacting groups whose pKa is shifted by the protein (an active-site Asp or a buried Lys) get the state of a free residue. A structure-based pKa calculation (PROPKA, H++) is needed for those.
+**Hydrogen comparison after the network was added.** The table above is from the first version, in which NH3+ groups were staggered and compared with the methyls. Lys and N-terminal NH3+ groups now rotate in the hydrogen-bond network and are reported with the hydroxyl rotors, and the script switches flips off so that the same atoms are compared. The fixed hydrogens then give 1L2Y 0.048 Å (140 H), 2JOF 0.082 Å (126), 1D3Z 0.118 Å (593), 2K39 0.211 Å (594) and 1VII 0.274 Å (280), with no swapped methylene names.
+
+**mmCIF.** `scripts/validate_protein_build.py formats`: the PDB and mmCIF files of the nine entries give identical chains, residue states, pKa values, disulfides, flips and atom counts. The human ribosome 4V6X (mmCIF only, 237,685 atoms, 84 chains with two-character names) is read, repaired and protonated in 1.5 s, and written back as mmCIF.
+
+**Missing side chains.** `scripts/gen_protein_geometry.py` derives the internal coordinates of every side-chain atom and 189 rotamers from 89 X-ray structures at 2.2 Å or better (10,719 side chains with full occupancy and B below 40 Å²; the PDB entries of the PKAD-2 set). Twenty entries were held out: nine to set the five scoring weights (1CRN, 1UBQ, 1AKI, 2LZT, 1A2P, 4PTI, 3RN3, 1PGA, 2CI2) and ten that were looked at only once, after the weights were frozen (1BPI, 2TRX, 1IGD, 1POH, 2CPL, 1HRC, 4ICB, 1LZ1, 7RSA, 1XNB; 4HHB was also held out). `validate_protein_build.py sidechains` on those ten:
+
+| Test | chi1 within 40° | chi1 and chi2 within 40° | Side-chain rmsd |
+|---|---|---|---|
+| One side chain removed at a time | 704 of 777 (90.6%) | 351 of 395 (88.9%) | 1.11 Å |
+| All side chains removed at once | 659 of 777 (84.8%) | 309 of 395 (78.2%) | 1.35 Å |
+
+On the nine weight-setting entries the figures are 86.5% and 83.4%. The first row is the usual case (a few truncated surface side chains); the second is the harder problem of packing a whole protein, where dedicated programs with backbone-dependent libraries reach a few points more. Some of the ten test proteins have homologues among the 89 (lysozymes, ribonucleases), which affects the library statistics but not the packing. CB atoms placed from the backbone alone are within 0.09 Å rms of crambin's.
+
+**Missing loops.** `validate_protein_build.py loops` deletes stretches of residues from the same ten entries, lists them in REMARK 465 and rebuilds them:
+
+| Loop length | Cases | Not built | Backbone rmsd, median (quartiles) |
+|---|---|---|---|
+| 3 | 230 | 4 | 0.41 Å (0.28–0.72) |
+| 4 | 191 | 2 | 0.71 Å (0.49–1.33) |
+| 6 | 142 | 1 | 1.55 Å (1.07–3.61) |
+| 8 | 113 | 2 | 3.61 Å (2.21–4.58) |
+| 12 | 79 | 0 | 6.44 Å (5.25–8.64) |
+
+The chain is always connected: the closing C–N bonds are 1.33 Å within 0.06 Å, except in the few strained cases that are reported ("built, but the closing peptide bond is off by …", at most 0.25 Å). Loops of up to four residues are determined mostly by their end points and come out close to the crystal. Longer loops are sampled from a handful of starting conformations and scored only for overlaps, so their conformation is a plausible placeholder, not a prediction of the real one; every such residue is flagged (`predicted`, occupancy 0.00 in the PDB output, listed in the report and in the web panel). The ones that are not built are loops that ideal geometry cannot close across a very short gap.
+
+**pKa.** `scripts/fit_protein_pka.py` fits the 3 × 10 weights and six offsets to PKAD-2 (wild-type proteins; 1,265 of 1,351 values matched to a residue in 156 PDB files, 109 distinct proteins) and estimates the error by 10-fold cross-validation with all structures of a protein in the same fold. PROPKA 3.5.1 was run on the same files.
+
+| Group | n | Reference value only | ChemLarp (cross-validated) | PROPKA 3.5.1 |
+|---|---|---|---|---|
+| Asp | 397 | 1.17 | 1.08 | 0.97 |
+| Glu | 415 | 0.84 | 0.73 | 1.02 |
+| His | 228 | 1.06 | 1.02 | 1.24 |
+| Lys | 141 | 0.75 | 0.71 | 0.70 |
+| N-terminus | 22 | 0.62 | 0.61 | 0.85 |
+| C-terminus | 22 | 0.43 | 0.38 | 0.33 |
+| These six | 1,225 | 0.98 | 0.90 | 1.00 |
+| Tyr (not fitted) | 25 | 0.85 | 0.85 | 1.16 |
+| Cys (not fitted) | 15 | 3.67 | 3.67 | 4.83 |
+
+(RMS error in pKa units; mean absolute error over all 1,265 groups: 0.64, PROPKA 0.74.) The model is better than assuming reference values and about as good as PROPKA on this set, which is to say modest: most groups in this set are on the surface and titrate near their reference value. For the 280 groups that are shifted by more than one unit, which are the ones that matter in an active site, the cross-validated error is 1.9 (reference values 2.0, PROPKA 1.8). Tyr and Cys keep their reference values because 25 and 15 measurements are too few, and the measured cysteines are mostly reactive ones (mean pKa 6.5), so fitting to them would deprotonate ordinary cysteines. Arg has no measurements. The pKa of each group is computed with its neighbours at their reference charge states, without iterating coupled groups.
+
+**Hydrogen-bond network.** `validate_protein_build.py neutron` uses twenty neutron or joint neutron/X-ray structures at 1.8 Å or better, in which hydrogen (deuterium) positions are experimental (1L2K, 1VCX, 2ZOI, 2ZWB, 3A1R, 3INS, 3KYY, 3X2P, 4AR3, 4FC1, 4NY6, 5CE4, 5MOQ, 5PTI, 5ZN0, 6EYM, 6F2Q, 6L46, 7AZ9, 7VOS). Hydrogens are removed and rebuilt at pH 7.
+
+| Test | Result |
+|---|---|
+| Histidine tautomer (neutral in both) | 46 of 48 (95.8%) |
+| Asn/Gln/His turned away from the orientation the neutron data show | 6 of 306 (2.0%) |
+| Every amide and ring turned by 180° in the input: reported as undetermined | 97 of 306 |
+| … of the other 209, turned back | 197 (94.3%) |
+| Ser/Thr/Tyr hydroxyl donates to the same acceptor as the neutron hydrogen | 216 of 236 (91.5%) |
+| Ser/Thr hydroxyl hydrogen within 45° of the neutron position | 165 of 259 (63.7%) |
+| Tyr hydroxyl on the same side of the ring | 80 of 99 (80.8%) |
+
+About a third of the amides and rings have no hydrogen-bond partner that distinguishes the two orientations; those are left as read and listed, which is right for a deposited structure (2% wrong) and is the reason only 67% of deliberately turned ones come back. With the 0.5 preference for the deposited orientation removed, 7% of the deposited orientations are changed. The 45° figure for Ser/Thr is low partly because many hydroxyls can choose between waters and because the deposited deuteriums have occupancies down to 0.3. Charged against neutral histidine agrees for 52 of 74, but the pH of the crystals is not the pH 7 assumed here, so that figure says little. The two ubiquitin NMR models protonate His68 on Nδ1 where ChemLarp gives HIE and reports the ring as undetermined: nothing within hydrogen-bond distance decides it.
+
+**Limits.** Loops longer than about six residues and chain ends are built so that the structure is complete, not because their conformation is known. A pKa shifted by several units is predicted with an error near 2 units. A histidine, Asn or Gln with no hydrogen-bond partner cannot be decided from the structure by any method that uses only the structure; it is reported instead of guessed silently. Nucleic acids, ligands and nonstandard residues get no hydrogens.
 

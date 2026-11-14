@@ -14,7 +14,8 @@
 //   chemlarp md <SMILES> [-T K] [--steps N] [--dt fs] [--thermostat bussi|langevin|none] [--modes] [--xyz file]
 //   chemlarp lj [--cells n] [--density r] [-T t] [--steps N] [--thermostat ...]      (Lennard-Jones fluid)
 //   chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   (MMFF94 types, charges, energy)
-//   chemlarp protein <file.pdb|-> [--pH x] [--out file.pdb] [--json]   (protonation, sequences, pI)
+//   chemlarp protein <file.pdb|file.cif|-> [--pH x] [--out file] [--json] [--no-repair] [--no-loops]
+//                    [--termini] [--no-flips] [--reference-pka]   (repair, pKa, protonation, sequences, pI)
 //   chemlarp reaction "<equation>" [-T kelvin] [--json]
 //   chemlarp equilibrate [-T kelvin] [-P bar] [--json] <SMILES> <moles> [<SMILES> <moles> ...]
 
@@ -91,7 +92,8 @@ int usage() {
       "                                                         molecular dynamics\n"
       "  chemlarp mmff <SMILES> [--mmff94s] [--no-min] [--sdf file] [--json]   MMFF94 types, charges, energy\n"
       "  chemlarp mmff --file <file.sdf> [--coords file] [--mmff94s]   MMFF94 terms of each record (JSON)\n"
-      "  chemlarp protein <file.pdb|-> [--pH x] [--out file.pdb] [--json]\n"
+      "  chemlarp protein <file.pdb|file.cif|-> [--pH x] [--out file.pdb|file.cif] [--json]\n"
+      "                   [--no-repair] [--no-loops] [--termini] [--no-flips] [--reference-pka]\n"
       "                                         chains, pI, disulfides, protonation states, hydrogens\n"
       "  chemlarp lj [--cells n] [--density r] [-T t] [--cutoff rc] [--dt t] [--equil N] [--steps N]\n"
       "              [--thermostat bussi|langevin|none] [--seed N]            Lennard-Jones fluid (reduced units)\n"
@@ -800,18 +802,26 @@ int cmd_mmff(const std::vector<std::string>& args) {
   return 0;
 }
 
+static bool canonical_name_is_his(const std::string& n) { return n == "HIS" || n == "HID" || n == "HIE" || n == "HIP"; }
+
 int cmd_protein(const std::vector<std::string>& args) {
   std::string path, out_path;
-  double pH = 7.4;
+  ProteinJsonOptions jo;
   bool json = false;
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string& a = args[i];
     if (a == "--json") json = true;
-    else if ((a == "--pH" || a == "--ph") && i + 1 < args.size()) pH = std::atof(args[++i].c_str());
+    else if ((a == "--pH" || a == "--ph") && i + 1 < args.size()) jo.pH = std::atof(args[++i].c_str());
     else if (a == "--out" && i + 1 < args.size()) out_path = args[++i];
+    else if (a == "--no-repair") jo.repair = false;
+    else if (a == "--no-loops") jo.loops = false;
+    else if (a == "--termini") jo.termini = true;
+    else if (a == "--no-flips") jo.flips = false;
+    else if (a == "--reference-pka") jo.structure_pka = false;
     else if (path.empty()) path = a;
     else return usage();
   }
+  const double pH = jo.pH;
   if (path.empty() || !(pH >= 0.0 && pH <= 14.0)) return usage();
   std::string text;
   if (path == "-") {
@@ -825,18 +835,27 @@ int cmd_protein(const std::vector<std::string>& args) {
     text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
   }
   if (json) {
-    const std::string out = protein_json(text, pH);
+    const std::string out = protein_json(text, jo);
     std::printf("%s\n", out.c_str());
     return out.rfind("{\"ok\":true", 0) == 0 ? 0 : 1;
   }
   Diagnostics d;
-  auto p = read_protein_pdb(text, d);
+  auto p = read_protein(text, d);
   if (!p) {
     print_diagnostics(d, {});
     return 1;
   }
+  RepairReport fix;
+  if (jo.repair) {
+    RepairOptions ro;
+    ro.loops = jo.loops;
+    ro.termini = jo.termini;
+    fix = repair(*p, ro, d);
+  }
   ProtonationOptions opt;
   opt.pH = pH;
+  opt.flips = jo.flips;
+  opt.structure_pka = jo.structure_pka;
   const auto rep = protonate(*p, opt, d);
   if (!p->title.empty()) std::printf("%s\n", p->title.c_str());
   for (const auto& [chain, seq] : chain_sequences(*p))
@@ -845,21 +864,43 @@ int cmd_protein(const std::vector<std::string>& args) {
   for (const auto& [a, b] : p->disulfides)
     std::printf("disulfide %s%d-%s%d\n", p->residues[a].chain.c_str(), p->residues[a].number, p->residues[b].chain.c_str(),
                 p->residues[b].number);
+  if (fix.atoms_added)
+    std::printf("built %zu missing atoms: %zu residue(s) completed, %zu residue(s) built from the sequence (predicted)\n",
+                fix.atoms_added, fix.completed_residues.size(), fix.built_residues.size());
+  for (const auto& s : fix.not_built) std::printf("  not built: %s\n", s.c_str());
   std::printf("pH %.2f: net charge %+d; %zu hydrogens added (%zu removed), %zu atoms\n", pH, rep.net_charge,
               rep.hydrogens_added, rep.hydrogens_removed, p->atom_count());
+  // Groups whose predicted pKa differs from the reference by 1 unit or more, or lies within 1 of the pH.
+  for (const auto& s : rep.pka) {
+    const auto& r = p->residues[s.residue];
+    if (std::fabs(s.pka - s.reference) < 1.0 && std::fabs(s.pka - pH) > 1.0) continue;
+    std::printf("  pKa %s %s%d %-3s %5.2f (reference %.2f)\n", r.name.c_str(), r.chain.c_str(), r.number, s.group.c_str(), s.pka,
+                s.reference);
+  }
   std::map<std::string, int> states;
   for (const auto& r : p->residues)
     if (!r.state.empty() && r.state != r.name) ++states[r.state];
-  for (const auto& r : p->residues)
-    if (r.state == "HIS" || r.state == "HID" || r.state == "HIE" || r.state == "HIP")
-      std::printf("  %s %s%d -> %s\n", r.name.c_str(), r.chain.c_str(), r.number, r.state.c_str());
+  std::size_t nhis = 0;
+  for (const auto& r : p->residues) nhis += canonical_name_is_his(r.name);
+  if (nhis <= 60)
+    for (const auto& r : p->residues)
+      if (r.state == "HID" || r.state == "HIE" || r.state == "HIP" || r.state == "HIM")
+        std::printf("  %s %s%d -> %s\n", r.name.c_str(), r.chain.c_str(), r.number, r.state.c_str());
   for (const auto& [st, n] : states)
-    if (st != "HID" && st != "HIE" && st != "HIP") std::printf("  %d residue(s) as %s\n", n, st.c_str());
+    if (nhis > 60 || (st != "HID" && st != "HIE" && st != "HIP" && st != "HIM")) std::printf("  %d residue(s) as %s\n", n, st.c_str());
+  if (!rep.flipped.empty()) {
+    std::printf("  %zu side chain(s) flipped:", rep.flipped.size());
+    for (std::size_t k = 0; k < rep.flipped.size() && k < 12; ++k) std::printf(" %s;", rep.flipped[k].c_str());
+    std::printf("%s\n", rep.flipped.size() > 12 ? " ..." : "");
+  }
+  if (!rep.undetermined.empty())
+    std::printf("  %zu group(s) not decided by the structure (kept as read; listed in --json)\n", rep.undetermined.size());
   print_diagnostics(d, {});
   if (!out_path.empty()) {
+    const bool cif = (out_path.size() > 4 && out_path.substr(out_path.size() - 4) == ".cif") || !fits_pdb_format(*p);
     std::ofstream out(out_path, std::ios::binary);
-    out << write_protein_pdb(*p);
-    std::printf("wrote %s\n", out_path.c_str());
+    out << (cif ? write_protein_cif(*p) : write_protein_pdb(*p));
+    std::printf("wrote %s%s\n", out_path.c_str(), cif ? " (mmCIF)" : "");
   }
   return 0;
 }

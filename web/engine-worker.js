@@ -26,7 +26,7 @@ const calls = {
     [a.mechanism, a.thermo || '', a.smiles || '', a.model, a.temperature, a.pressure, a.feed, a.tEnd, a.samples, a.rtol || 0]),
   flash: (M, a) => callJson(M, 'cl_flash_text_json', ['string', 'number', 'number', 'string'], [a.mixture, a.temperature, a.pressure, a.eos]),
   md: (M, a) => callJson(M, 'cl_md_json', ['string', 'number', 'number', 'number', 'string', 'number', 'number', 'number', 'number', 'string'], [a.smiles, a.temperature, a.steps, a.dt, a.thermostat, a.tau, a.every, a.seed || 1, a.modes ? 1 : 0, a.forceField || 'uff']),
-  protein: (M, a) => callJson(M, 'cl_protein_json', ['string', 'number'], [a.pdb, a.pH]),
+  protein: (M, a) => callJson(M, 'cl_protein_json_opts', ['string', 'number', 'number'], [a.pdb, a.pH, a.flags || 0]),
   mmff: (M, a) => callJson(M, 'cl_mmff_json', ['string', 'string', 'number'], [a.smiles, a.variant || 'MMFF94', a.minimize ? 1 : 0]),
   solution: (M, a) => callJson(M, 'cl_aqueous_json', ['string'], [a.text]),
   flowsheet: (M, a) => callJson(M, 'cl_flowsheet_json', ['string'], [a.text]),

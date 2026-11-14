@@ -152,12 +152,21 @@ CHEMLARP_API char* cl_md_json(const char* smiles, double temperature_K, unsigned
  * "minimized","converged","iterations","empirical_parameters","sdf","xyz","diagnostics"}. */
 CHEMLARP_API char* cl_mmff_json(const char* smiles, const char* variant, int minimize);
 
-/* Protein from PDB text: chains, sequences, disulfides, protonation states at the pH, hydrogens rebuilt.
+/* Protein from PDB or mmCIF text: chains, sequences, disulfides; missing side-chain atoms and missing loop
+ * residues built; pKa of each titratable group from the structure; protonation states at the pH with the
+ * hydrogen-bond network optimised (Asn/Gln/His flips, His tautomers, OH/SH/NH3 rotors); hydrogens rebuilt.
  * Returns {"ok","title","chains":[{id,sequence,residues,pI,molecular_weight}],"residues":[titratable residues
- * and termini {chain,number,icode,name,state,charge,n_terminal,c_terminal}],"disulfides","chain_breaks",
- * "missing_atoms","unknown_residues","atoms","hydrogens_added","hydrogens_removed","net_charge","pI",
- * "titration":[[pH,charge]],"pdb","diagnostics"}. */
+ * and termini {chain,number,icode,name,state,charge,n_terminal,c_terminal,predicted}],"pka":[{chain,number,
+ * name,group,reference,pKa,desolvation,hydrogen_bonds,charges,buried,features}],"disulfides","chain_breaks",
+ * "missing_atoms","unknown_residues","flipped","undetermined","repair":{atoms_added,completed_residues,
+ * built_residues,not_built,missing_residues_listed,missing_residues_left},"atoms","hydrogens_added",
+ * "hydrogens_removed","net_charge","pI","titration":[[pH,charge]],"titration_structure":[[pH,charge]],
+ * "format":"pdb"|"cif","pdb","cif","diagnostics"}. The structure is in "pdb", or in "cif" when the PDB
+ * format cannot hold it (more than 99,999 atoms or chain names of several characters).
+ * cl_protein_json_opts flags (sum): 1 leave missing atoms, 2 do not build loops, 4 also build missing chain
+ * ends, 8 no flips, 16 reference pKa values instead of structure-based ones. */
 CHEMLARP_API char* cl_protein_json(const char* pdb_text, double pH);
+CHEMLARP_API char* cl_protein_json_opts(const char* text, double pH, int flags);
 
 /* Lennard-Jones fluid in reduced units (4 cells^3 particles, truncated and shifted at `cutoff`), Bussi
  * thermostat unless thermostat is "none" or "langevin". Returns {"ok","particles","box","energy_per_particle",

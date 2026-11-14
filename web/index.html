@@ -363,7 +363,7 @@ CCCCC 0.2</textarea>
       <section class="view" id="protein" hidden>
         <header class="view-head">
           <h1>Protein</h1>
-          <p>Read a PDB structure: chains and sequences, disulfides, isoelectric point, protonation state of every titratable residue at a pH, and all hydrogens rebuilt with PDB names.</p>
+          <p>Read a PDB or mmCIF structure: missing side chains and loops built, pKa of every titratable group from the structure, protonation states at a pH, and all hydrogens placed with the hydrogen-bond network optimised.</p>
         </header>
         <div class="split">
           <form class="panel glass-card" id="pr-form">
@@ -373,12 +373,19 @@ CCCCC 0.2</textarea>
                 <input id="pr-id" class="mono" spellcheck="false" autocapitalize="characters" autocomplete="off" maxlength="4" placeholder="1CRN">
                 <button type="button" class="btn" id="pr-fetch">Fetch</button>
               </div>
-              <span class="hint">Downloads from RCSB, or open a file:</span>
-              <input type="file" id="pr-file" accept=".pdb,.ent,.txt">
+              <span class="hint">Downloads from RCSB, or open a PDB or mmCIF file:</span>
+              <input type="file" id="pr-file" accept=".pdb,.ent,.cif,.mmcif,.txt">
             </div>
             <div class="field">
               <label for="pr-ph">pH</label>
               <input id="pr-ph" type="number" min="0" max="14" step="0.1" value="7.4">
+            </div>
+            <div class="pr-opts">
+              <span class="field-label-block">Build and optimise</span>
+              <label class="check"><input type="checkbox" id="pr-repair" checked> Missing side-chain atoms</label>
+              <label class="check"><input type="checkbox" id="pr-loops" checked> Missing loops (predicted)</label>
+              <label class="check"><input type="checkbox" id="pr-termini"> Missing chain ends (predicted)</label>
+              <label class="check"><input type="checkbox" id="pr-flips" checked> Asn, Gln, His flips</label>
             </div>
             <div class="form-actions"><button type="submit" class="btn btn-primary">Protonate</button></div>
           </form>
@@ -392,7 +399,7 @@ CCCCC 0.2</textarea>
                 <button type="button" role="radio" aria-checked="true" data-h="0">Heavy atoms</button>
                 <button type="button" role="radio" aria-checked="false" data-h="1">With hydrogens</button>
               </div>
-              <button type="button" class="icon-btn" id="pr-save" title="Save protonated PDB" aria-label="Save protonated PDB"><svg><use href="#i-download"/></svg></button>
+              <button type="button" class="icon-btn" id="pr-save" title="Save protonated structure" aria-label="Save protonated structure"><svg><use href="#i-download"/></svg></button>
             </div>
           </div>
           <div class="glass-card card">
@@ -400,11 +407,12 @@ CCCCC 0.2</textarea>
             <div id="pr-chains"></div>
           </div>
           <div class="glass-card chart-card">
-            <div class="card-head"><h2>Net charge with pH</h2><span class="meta">all chains, from the sequence</span></div>
+            <div class="card-head"><h2>Net charge with pH</h2><span class="meta">all chains: from the structure (predicted pKa values) and from the sequence</span></div>
             <canvas class="chart" id="pr-titration" data-height="240"></canvas>
           </div>
           <div class="glass-card card">
-            <div class="card-head"><h2>Titratable residues</h2><span class="meta">state at the pH from PROPKA model pKa values</span></div>
+            <div class="card-head"><h2>Titratable residues</h2><span class="meta">pKa predicted from the structure (cross-validated error about 1 unit); state at the pH</span></div>
+            <div id="pr-notes"></div>
             <div class="table-wrap" id="pr-residues"></div>
           </div>
         </div>

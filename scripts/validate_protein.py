@@ -8,8 +8,9 @@ results in docs/ARCHITECTURE.md used 1L2Y, 2JOF, 1VII, 1D3Z and 2K39 (NMR models
 
 A  Hydrogens: every structure with deposited hydrogens is protonated by `chemlarp protein` (all hydrogens
    removed and rebuilt) and each rebuilt hydrogen is compared with the deposited one of the same name. Methyl
-   and NH3+ groups are compared as a set (their rotation is free); hydroxyl and thiol hydrogens, placed by a
-   hydrogen-bond search, are reported separately. A methylene pair whose names are swapped would show as a
+   groups are compared as a set (their rotation is free); hydroxyl, thiol and NH3+ hydrogens, placed by the
+   hydrogen-bond network, are reported separately (scripts/validate_protein_build.py tests those against
+   neutron structures), and side-chain flips are switched off so that the same atoms are compared. A methylene pair whose names are swapped would show as a
    distance near 1.8 Å and is counted.
 B  Sequences, isoelectric points and net charges against Biopython (PDB parser, IsoelectricPoint, the same
    Bjellqvist pKa set); molecular weights against ProtParam with ChemLarp's residue formulas evaluated at
@@ -47,11 +48,12 @@ def first_model_atoms(text):
 
 
 def protonate(path, pH=7.4):
-    p = subprocess.run([CL, "protein", path, "--pH", str(pH), "--json"], capture_output=True, text=True)
+    p = subprocess.run([CL, "protein", path, "--pH", str(pH), "--json", "--no-flips"], capture_output=True, text=True)
     return json.loads(p.stdout)
 
 
 rotors = {("SER", "HG"), ("THR", "HG1"), ("TYR", "HH"), ("CYS", "HG")}
+amine = lambda resn, g: (resn == "LYS" and g == "HZ") or g == "H"  # NH3+ of Lys and of the N-terminus (H1-H3)
 pdb_dir = sys.argv[1]
 files = sorted(f for f in os.listdir(pdb_dir) if f.lower().endswith(".pdb"))
 
@@ -77,7 +79,9 @@ for f in files:
                 groups[n[:-1] if n[-1].isdigit() else n].append(n)
         for g, ns in groups.items():
             resn = rh[ns[0]][4]
-            if len(ns) >= 3:
+            if len(ns) >= 3 and amine(resn, g):
+                rot += [min(d(rh[a], oh[b]) for b in ns) for a in ns]
+            elif len(ns) >= 3:
                 best = min(itertools.permutations(ns), key=lambda p: sum(d(rh[a], oh[b]) for a, b in zip(ns, p)))
                 fixed += [d(rh[a], oh[b]) for a, b in zip(ns, best)]
             elif len(ns) == 2:
@@ -92,7 +96,7 @@ for f in files:
     check(f"{f}: {len(fixed)} H, rms", rms < 0.35, f"{rms:.3f} Å, {100 * within:.1f}% within 0.3 Å, max {max(fixed):.2f}")
     check(f"{f}: methylene names", swaps == 0, f"{swaps} of {pairs} pairs swapped")
     if rot:
-        print(f"      hydroxyl/thiol rotors: {len(rot)}, mean {sum(rot) / len(rot):.2f} Å (orientation not compared)")
+        print(f"      hydroxyl, thiol and NH3+ rotors: {len(rot)}, mean {sum(rot) / len(rot):.2f} Å (orientation not compared)")
     if tautomer:
         print(f"      different hydrogen sets (histidine tautomer or protonation choice): {', '.join(tautomer)}")
 
@@ -127,16 +131,17 @@ for s in seqs:
         worst = max(worst, abs(q - ip.charge_at_pH(ph)))
 check("net charge, pH 0-14, 4 sequences", worst < 1e-4, f"largest difference {worst:.1e}")
 
-src = open(os.path.join(HERE, "..", "src", "protein.cpp")).read()
+src = open(os.path.join(HERE, "..", "src", "protein_internal.hpp")).read()
 from Bio.Data import IUPACData as I
 w = I.atom_weights
-bad = []
+bad, seen = [], 0
 for m in re.finditer(r"\{\"([A-Z]{3})\", \{'([A-Z])',.*?\{(\d+), (\d+), (\d+), (\d+), (\d+)\}\}\}", src, re.S):
+    seen += 1
     f = list(map(int, m.groups()[2:]))
     ours = sum(n * w[e] for n, e in zip(f, "CHNOS"))
     if abs(ours - (I.protein_weights[m.group(2)] - 2 * w["H"] - w["O"])) > 1e-3:
         bad.append(m.group(2))
-check("residue formulas vs ProtParam weights", not bad, f"20 residues, mismatches: {bad or 'none'}")
+check("residue formulas vs ProtParam weights", not bad and seen == 20, f"20 residues, mismatches: {bad or 'none'}")
 
 print("\nall checks passed" if not failures else f"\n{len(failures)} FAILED: {failures}")
 sys.exit(1 if failures else 0)
