@@ -1,0 +1,6 @@
+# Version manifest (winget-pkgs layout: manifests/a/ayuroy01/ChemLarp/@VERSION@/). Filled by scripts/release_manifests.py.
+PackageIdentifier: ayuroy01.ChemLarp
+PackageVersion: "@VERSION@"
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

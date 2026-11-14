@@ -32,7 +32,8 @@ class ChemLarpError(RuntimeError):
 
 
 def _candidate_libraries() -> list[Path]:
-    build = Path(__file__).resolve().parents[2] / "build"
+    here = Path(__file__).resolve().parent
+    build = here.parents[1] / "build"
     system = platform.system()
     if system == "Windows":
         names = ["chemlarp.dll", "libchemlarp.dll"]
@@ -40,13 +41,14 @@ def _candidate_libraries() -> list[Path]:
         names = ["libchemlarp.dylib"]
     else:
         names = ["libchemlarp.so"]
-    # CMake multi-config generators (Visual Studio, Xcode) add a per-config subfolder.
-    dirs = [build, build / "Release", build / "RelWithDebInfo", build / "Debug"]
+    # Installed from a wheel: the library sits next to this file. From a source checkout: the build output,
+    # where CMake multi-config generators (Visual Studio, Xcode) add a per-config subfolder.
+    dirs = [here, build, build / "Release", build / "RelWithDebInfo", build / "Debug"]
     return [d / n for d in dirs for n in names]
 
 
 def library_path() -> Path:
-    """Shared library to load: $CHEMLARP_LIB, else the first build output that exists."""
+    """Shared library to load: $CHEMLARP_LIB, else the copy in the package (wheel), else a build output."""
     env = os.environ.get("CHEMLARP_LIB")
     if env:
         return Path(env)

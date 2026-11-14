@@ -6,3 +6,5 @@ __pycache__/
 out/
 CMakeUserPresets.json
 .DS_Store
+*.egg-info/
+dist/

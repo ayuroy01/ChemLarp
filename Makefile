@@ -1,5 +1,7 @@
 # ChemLarp — make-based build for macOS, Linux and Windows (MSYS2/MinGW-w64).
 # On Windows with Visual Studio, use CMake instead (scripts/build.ps1).
+# BUILD: output directory (a separate one for builds with other flags, e.g. the Python wheel).
+BUILD    ?= build
 CXX      ?= clang++
 CXXFLAGS ?= -std=c++20 -O2 -Wall -Wextra -Wpedantic -Wshadow
 CPPFLAGS += -Iinclude
@@ -8,58 +10,63 @@ ifeq ($(OS),Windows_NT)
   # MinGW-w64 (MSYS2): self-contained DLL and executables, no libstdc++ DLLs needed.
   CXX         := g++
   EXE         := .exe
-  SHARED      := build/chemlarp.dll
-  SHARED_FLAG := -shared -Wl,--out-implib,build/libchemlarp.dll.a
+  SHARED      := $(BUILD)/chemlarp.dll
+  SHARED_FLAG := -shared -Wl,--out-implib,$(BUILD)/libchemlarp.dll.a
   LDFLAGS     += -static-libgcc -static-libstdc++ -static
 else
   UNAME    := $(shell uname -s)
   CXXFLAGS += -fPIC
   EXE      :=
   ifeq ($(UNAME),Darwin)
-    SHARED      := build/libchemlarp.dylib
+    SHARED      := $(BUILD)/libchemlarp.dylib
     SHARED_FLAG := -dynamiclib -install_name @rpath/libchemlarp.dylib
   else
-    SHARED      := build/libchemlarp.so
+    SHARED      := $(BUILD)/libchemlarp.so
     SHARED_FLAG := -shared
     CXXFLAGS    += -pthread
     LDFLAGS     += -pthread
   endif
 endif
 
+# ARCH_FLAGS (e.g. -arch x86_64 when cross-compiling on macOS) and EXTRA_LDFLAGS (e.g. -static-libstdc++) are
+# added to the platform's flags; the Python wheel build uses them.
+CXXFLAGS += $(ARCH_FLAGS)
+LDFLAGS  += $(ARCH_FLAGS) $(EXTRA_LDFLAGS)
+
 LIB_SRC  := $(wildcard src/*.cpp)
-LIB_OBJ  := $(LIB_SRC:src/%.cpp=build/obj/%.o)
+LIB_OBJ  := $(LIB_SRC:src/%.cpp=$(BUILD)/obj/%.o)
 TEST_SRC := $(wildcard tests/*.cpp)
-TEST_OBJ := $(TEST_SRC:tests/%.cpp=build/obj/tests/%.o)
-CLI      := build/chemlarp$(EXE)
-TESTS    := build/chemlarp_tests$(EXE)
+TEST_OBJ := $(TEST_SRC:tests/%.cpp=$(BUILD)/obj/tests/%.o)
+CLI      := $(BUILD)/chemlarp$(EXE)
+TESTS    := $(BUILD)/chemlarp_tests$(EXE)
 
-.PHONY: all test validate clean
+.PHONY: all test validate install clean
 
-all: build/libchemlarp.a $(SHARED) $(CLI) $(TESTS)
+all: $(BUILD)/libchemlarp.a $(SHARED) $(CLI) $(TESTS)
 
-build/obj/%.o: src/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h src/*.hpp src/*.inc)
+$(BUILD)/obj/%.o: src/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h src/*.hpp src/*.inc)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 # The tests link the static library, so the C API is declared without dllimport (as in CMake).
-build/obj/tests/%.o: tests/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h tests/*.hpp)
+$(BUILD)/obj/tests/%.o: tests/%.cpp $(wildcard include/chemlarp/*.hpp include/chemlarp/*.h tests/*.hpp)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) -DCHEMLARP_STATIC $(CXXFLAGS) -c $< -o $@
 
-build/obj/cli/main.o: src/cli/main.cpp $(wildcard include/chemlarp/*.hpp)
+$(BUILD)/obj/cli/main.o: src/cli/main.cpp $(wildcard include/chemlarp/*.hpp)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-build/libchemlarp.a: $(LIB_OBJ)
+$(BUILD)/libchemlarp.a: $(LIB_OBJ)
 	ar rcs $@ $^
 
 $(SHARED): $(LIB_OBJ)
 	$(CXX) $(SHARED_FLAG) $(LDFLAGS) $^ -o $@
 
-$(CLI): build/obj/cli/main.o build/libchemlarp.a
+$(CLI): $(BUILD)/obj/cli/main.o $(BUILD)/libchemlarp.a
 	$(CXX) $(LDFLAGS) $^ -o $@
 
-$(TESTS): $(TEST_OBJ) build/libchemlarp.a
+$(TESTS): $(TEST_OBJ) $(BUILD)/libchemlarp.a
 	$(CXX) $(LDFLAGS) $^ -o $@
 
 test: $(TESTS)
@@ -69,7 +76,17 @@ test: $(TESTS)
 #   make validate DATA=path/to/reference-data PY=path/to/venv/bin/python
 validate: all
 	python3 scripts/validate.py $(if $(DATA),--data $(DATA),) $(if $(PY),--python $(PY),) \
-	  --report build/validation-report.md --json build/validation-report.json
+	  --report $(BUILD)/validation-report.md --json $(BUILD)/validation-report.json
+
+# make install [PREFIX=/usr/local] [DESTDIR=...]: the CLI, the shared library, the C/C++ headers and the
+# data files (example mechanisms, reference structures) under PREFIX.
+PREFIX ?= /usr/local
+install: $(SHARED) $(CLI)
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib $(DESTDIR)$(PREFIX)/include/chemlarp $(DESTDIR)$(PREFIX)/share/chemlarp
+	install -m 755 $(CLI) $(DESTDIR)$(PREFIX)/bin/
+	install -m 644 $(SHARED) $(DESTDIR)$(PREFIX)/lib/
+	install -m 644 include/chemlarp/*.h include/chemlarp/*.hpp $(DESTDIR)$(PREFIX)/include/chemlarp/
+	cp -R data/. $(DESTDIR)$(PREFIX)/share/chemlarp/
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD)

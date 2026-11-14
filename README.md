@@ -12,6 +12,20 @@ ChemLarp is a terminal-native chemistry engine written in C++20. It covers the p
 
 Build it yourself with the Emscripten SDK: `scripts/build_web.sh`, then serve `build/web` with any static file server.
 
+## Install
+
+Packages are built and tested for every commit (`.github/workflows/packages.yml`); they are not on PyPI,
+npm or Homebrew yet. Until then:
+
+- **Python**: download the wheel for your system from the latest run of the `packages` workflow (or build it:
+  `python3 -m pip wheel . -w dist`), then `pip install chemlarp-*.whl`. It includes the `chemlarp` command.
+- **Node.js**: the npm tarball from the same run, `npm install chemlarp-0.1.0.tgz`; then
+  `const c = await require('chemlarp').load()`.
+- **Homebrew** (macOS, Linux): `brew install --HEAD` with `packaging/homebrew/chemlarp.rb` in a tap.
+- **From source**: `make install PREFIX=$HOME/.local` installs the CLI, the shared library and the headers.
+
+See [docs/PACKAGING.md](docs/PACKAGING.md) for how each package is built and how a release is published.
+
 ## Build
 
 Supported platforms: **Windows** (Visual Studio 2022 / MSVC, clang-cl, or MSYS2 MinGW-w64), **macOS** (Apple clang, Xcode 15+), and **Linux** (GCC 11+ / Clang 15+). The only requirements are a C++20 compiler and CMake 3.20+. There are no other dependencies.

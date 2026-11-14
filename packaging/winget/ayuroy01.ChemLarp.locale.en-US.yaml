@@ -1,0 +1,18 @@
+# Default locale manifest. Filled by scripts/release_manifests.py.
+PackageIdentifier: ayuroy01.ChemLarp
+PackageVersion: "@VERSION@"
+PackageLocale: en-US
+Publisher: ayuroy01
+PublisherUrl: https://github.com/ayuroy01
+PackageName: ChemLarp
+PackageUrl: https://ayuroy01.github.io/ChemLarp/
+License: Apache-2.0
+LicenseUrl: https://github.com/ayuroy01/ChemLarp/blob/main/LICENSE
+ShortDescription: Chemistry engine for the command line (SMILES, InChI, IUPAC names, thermodynamics, kinetics, molecular modelling)
+Tags:
+  - chemistry
+  - cheminformatics
+  - smiles
+  - inchi
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

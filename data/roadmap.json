@@ -209,7 +209,7 @@
         {
           "name": "Packages (pip, Homebrew, winget, Node)",
           "size": "S",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Validation against reference data",

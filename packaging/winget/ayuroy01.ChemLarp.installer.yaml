@@ -1,0 +1,14 @@
+# Installer manifest: the portable command-line program from the release zip. Filled by scripts/release_manifests.py.
+PackageIdentifier: ayuroy01.ChemLarp
+PackageVersion: "@VERSION@"
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: chemlarp.exe
+    PortableCommandAlias: chemlarp
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/ayuroy01/ChemLarp/releases/download/v@VERSION@/chemlarp-@VERSION@-windows-x64.zip
+    InstallerSha256: "@SHA256_WINDOWS_X64@"
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -1,0 +1,159 @@
+name: packages
+
+# Builds and installs every package on each push, so a release only has to attach files that were already
+# tested: Python wheels (Linux x86_64/aarch64, macOS arm64/x86_64, Windows x64), the npm package
+# (WebAssembly), portable command-line archives, and a Homebrew install from the formula. Nothing is
+# published: on a tag v*, a draft GitHub release is made with the files and the filled manifests, and
+# publishing to PyPI, npm, Homebrew and winget stays a manual step (docs/PACKAGING.md).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Same version everywhere
+        run: python3 scripts/check_packages.py
+      - name: Formula syntax and manifest templates
+        run: |
+          ruby -c packaging/homebrew/chemlarp.rb
+          mkdir -p dist && set +e
+          python3 scripts/release_manifests.py --version "$(python3 scripts/check_packages.py --version-only)" --dist dist
+          code=$?; set -e
+          # 1: checksums left for the release job to fill; anything else is an error.
+          test $code -le 1
+
+  wheels:
+    name: wheel ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v2.21.3
+        env:
+          # The wheel is py3-none-<platform> (ctypes, no extension module): one build per platform serves
+          # every Python from 3.10.
+          CIBW_BUILD: "cp312-*"
+          CIBW_SKIP: "*-musllinux_*"
+          CIBW_ARCHS_LINUX: native
+          CIBW_ARCHS_MACOS: "arm64 x86_64"
+          CIBW_ARCHS_WINDOWS: AMD64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
+          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
+          CIBW_TEST_COMMAND: python {project}/scripts/wheel_smoke_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.56
+      - name: Build, test and pack
+        run: scripts/build_npm.sh
+      - name: Install the tarball elsewhere and use it
+        run: |
+          mkdir -p /tmp/npmtest && cd /tmp/npmtest && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/build/npm/chemlarp-*.tgz
+          node -e "require('chemlarp').load().then(c => { const r = c.canonical('C1=CC=CC=C1'); if (r.canonical !== 'c1ccccc1') process.exit(1); console.log('installed package ok', c.version()); })"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm
+          path: build/npm/chemlarp-*.tgz
+
+  cli:
+    name: cli ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x64 }
+          - { os: macos-14, name: macos-arm64 }
+          - { os: windows-latest, name: windows-x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        shell: bash
+        run: echo "V=$(python3 scripts/check_packages.py --version-only)" >> "$GITHUB_ENV"
+      - name: Build (make)
+        if: runner.os != 'Windows'
+        run: |
+          extra=(); [ "$RUNNER_OS" = Linux ] && extra=("EXTRA_LDFLAGS=-static-libstdc++ -static-libgcc")
+          MACOSX_DEPLOYMENT_TARGET=11.0 make -j4 BUILD=build/cli "${extra[@]}" build/cli/chemlarp
+          mkdir -p stage && cp build/cli/chemlarp LICENSE README.md stage/
+          ./stage/chemlarp canon C1=CC=CC=C1 | grep -qx c1ccccc1
+          tar czf "chemlarp-$V-${{ matrix.name }}.tar.gz" -C stage .
+      - name: Build (CMake, static MSVC runtime)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -DCHEMLARP_BUILD_TESTS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build --config Release --target chemlarp_cli --parallel
+          New-Item -ItemType Directory stage | Out-Null
+          Copy-Item build/Release/chemlarp.exe, LICENSE, README.md stage/
+          $out = & ./stage/chemlarp.exe canon C1=CC=CC=C1
+          if ($out.Trim() -ne 'c1ccccc1') { throw "unexpected output: $out" }
+          Compress-Archive -Path stage/* -DestinationPath "chemlarp-$env:V-${{ matrix.name }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.name }}
+          path: chemlarp-*
+
+  homebrew:
+    runs-on: macos-14
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the formula's HEAD build from a local tap and run its test
+        run: |
+          brew tap-new --no-git local/chemlarp
+          tap="$(brew --repository)/Library/Taps/local/homebrew-chemlarp"
+          # The stable url and sha256 are filled at release time; a placeholder version keeps the formula valid.
+          sed -e 's/@VERSION@/0.1.0/' -e "s/@SHA256@/$(printf '0%.0s' {1..64})/" packaging/homebrew/chemlarp.rb > "$tap/Formula/chemlarp.rb"
+          brew install --HEAD local/chemlarp/chemlarp
+          brew test local/chemlarp/chemlarp
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [versions, wheels, npm, cli, homebrew]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Manifests with checksums
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          curl -fsSL -o "dist/ChemLarp-$V.tar.gz" "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz"
+          python3 scripts/release_manifests.py --version "$V" --dist dist --source-tarball "dist/ChemLarp-$V.tar.gz"
+          (cd dist && tar czf manifests.tar.gz manifests && rm -rf manifests && sha256sum * > SHA256SUMS)
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --title "ChemLarp $GITHUB_REF_NAME" --generate-notes

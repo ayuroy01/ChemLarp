@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]  # 77: SPDX license expression (PEP 639)
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chemlarp"
+version = "0.1.0"  # keep equal to project(VERSION) in CMakeLists.txt and cl_version() (checked by scripts/check_packages.py)
+description = "Chemistry engine: structures and identifiers, thermodynamics, kinetics, process simulation, molecular modelling and quantum chemistry"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "ayuroy01" }]
+keywords = ["chemistry", "cheminformatics", "SMILES", "InChI", "thermodynamics", "kinetics", "molecular dynamics", "quantum chemistry"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Chemistry",
+]
+
+[project.urls]
+Homepage = "https://ayuroy01.github.io/ChemLarp/"
+Source = "https://github.com/ayuroy01/ChemLarp"
+Issues = "https://github.com/ayuroy01/ChemLarp/issues"
+
+[project.scripts]
+chemlarp = "chemlarp.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+packages = ["chemlarp"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+chemlarp = ["libchemlarp.dylib", "libchemlarp.so", "chemlarp.dll", "bin/*"]

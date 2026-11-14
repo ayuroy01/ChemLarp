@@ -133,6 +133,22 @@ in the LJ fluid with Widom insertion as a second route. MBAR matches pymbar 4.0.
 | Uncertainties of unsampled states are reported as NaN | `mbar` | Use the full N × N form of Θ restricted to the needed columns (pymbar does). |
 | No web UI | `web/` | A panel that runs `lj_solvation` and plots ∂u/∂λ and the overlap matrix. |
 
+## Packages (`pyproject.toml`, `setup.py`, `packaging/`, `.github/workflows/packages.yml`, docs/PACKAGING.md)
+
+Done 2026-11-14: wheels for five platforms, npm (WebAssembly), Homebrew formula, winget manifests, CLI archives,
+draft release on a tag. All built and installed in CI; macOS wheels also tested locally.
+
+| Gap | Where | To resume |
+|---|---|---|
+| Nothing is published: PyPI, npm, the Homebrew tap and winget-pkgs need the owner's accounts | docs/PACKAGING.md, "Releasing" | Tag a version, publish the draft release, then the four manual steps there (or add a PyPI trusted-publisher job). |
+| The winget manifests and the Homebrew stable URL have never been used: they need a published release (the formula is only tested as `--HEAD`) | `packaging/winget`, `packaging/homebrew` | After the first release: `wingetcreate validate` on the filled manifests, `brew install` (not `--HEAD`) from the tap. |
+| The release job (draft release, checksums) runs only on a tag, so it has not run yet | `.github/workflows/packages.yml`, job `release` | Check it on the first tag; push a throwaway tag such as `v0.0.0-test` and delete the draft if needed. |
+| No code signing: macOS CLI archive not notarized, Windows exe not Authenticode-signed | CI | Needs an Apple Developer ID and a Windows code-signing certificate from the owner. |
+| The Windows exe is linked with the static MSVC runtime so that it needs no redistributable, but this is only exercised on CI runners, which have the runtime installed anyway | `cli` job | Run `dumpbin /dependents chemlarp.exe` in a Developer shell and check that no VCRUNTIME/MSVCP DLL is listed. |
+| No Windows on Arm, musl Linux, 32-bit or Python < 3.10 wheels; no conda-forge recipe | `packages.yml` | Add matrix entries / a feedstock if users ask. |
+| The npm package exposes 16 of the C API's functions (the web worker's set plus MBAR) | `packaging/npm/index.js` | Generate the wrapper from `chemlarp_c.h` instead of listing calls by hand. |
+| Homebrew HEAD builds the main branch, not the commit under test, so a pull request's formula change is tested against main | `homebrew` job | Point `head` at the checkout (`brew install --HEAD` with a local `url`) in CI. |
+
 ## Validation runner (`scripts/validate.py`, `scripts/validate_rdkit.py`)
 
 Done 2026-11-14: one runner for every validation suite, with a Markdown/JSON report that separates
@@ -158,4 +174,3 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | Hydration free energies in explicit water (FreeSolv) | L | Split from the FEP module on 2026-11-14. Needs a water model (TIP3P), periodic molecular MD with neighbour lists, PME electrostatics, SETTLE/SHAKE constraints, a barostat, and decoupling of charges then van der Waals terms of the solute; the estimators (`free_energy.hpp`) are ready. Validate against FreeSolv (Mobley & Guthrie 2014, public, CC-BY) on 20–50 small neutral molecules. |
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |
 | Native installers (.apk, .exe, .dmg) | S | CI packaging; signing needs the user's certificates. |
-| Packages (pip, Homebrew, winget, Node) | S | Publishing needs the user's accounts; prepare manifests only. |
