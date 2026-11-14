@@ -146,6 +146,15 @@ std::string structure_to_json(const ChemicalSystemState& st) {
          ",\"ref_end\":" + std::to_string(d.ref_end) + ",\"cis\":" + (d.cis ? "true" : "false") +
          ",\"cip\":" + json_escape(to_string(cip_label(st, d))) + "}";
   }
+  s += "],\"axial\":[";
+  for (std::size_t i = 0; i < st.axial.size(); ++i) {
+    const auto& ax = st.axial[i];
+    if (i) s += ',';
+    s += "{\"begin\":" + std::to_string(ax.begin) + ",\"end\":" + std::to_string(ax.end) + ",\"centre\":" +
+         (ax.centre == kNoAtom ? std::string("null") : std::to_string(ax.centre)) + ",\"refs\":[" + ref(ax.refs[0]) + "," +
+         ref(ax.refs[1]) + "," + ref(ax.refs[2]) + "," + ref(ax.refs[3]) + "],\"parity\":" +
+         json_escape(ax.parity == Chirality::Clockwise ? "@@" : "@") + ",\"cip\":" + json_escape(to_string(cip_label(st, ax))) + "}";
+  }
   return s + "]}}";
 }
 

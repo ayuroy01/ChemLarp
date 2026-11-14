@@ -507,6 +507,8 @@ const char* to_string(CipLabel l) noexcept {
     case CipLabel::Z: return "Z";
     case CipLabel::r: return "r";
     case CipLabel::s: return "s";
+    case CipLabel::Ra: return "Ra";
+    case CipLabel::Sa: return "Sa";
     default: return "";
   }
 }
@@ -552,6 +554,44 @@ CipLabel cip_label(const ChemicalSystemState& st, const DoubleBondStereo& d, Dia
                                                        : "double bond has equivalent substituents on one end; not stereogenic")
         .on_atom(u);
   return l;
+}
+
+CipLabel cip_label(const ChemicalSystemState& st, const AxialStereo& a, Diagnostics* diag) {
+  if (a.parity == Chirality::None) return CipLabel::None;
+  const int near = cip_compare(st, a.begin, a.refs[0], a.refs[1]);
+  const int far = cip_compare(st, a.end, a.refs[2], a.refs[3]);
+  if (near == 0 || far == 0) {
+    if (diag)
+      diag->warn(DiagCode::CipUndetermined, "two ligands on one end of the chirality axis tie under CIP rules 1-5; not stereogenic")
+          .on_atom(a.centre != kNoAtom ? a.centre : a.begin);
+    return CipLabel::None;
+  }
+  // Priorities 1..4: near pair, then far pair. Read like a tetrahedral centre: the refs reordered as
+  // (4, 1, 2, 3); looking from 4, 1 -> 2 -> 3 counterclockwise is R.
+  std::array<int, 4> prio = {near > 0 ? 1 : 2, near > 0 ? 2 : 1, far > 0 ? 3 : 4, far > 0 ? 4 : 3};
+  std::array<int, 4> order{};  // order[i] = index of the ref with priority target[i]
+  const std::array<int, 4> target = {4, 1, 2, 3};
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 4; ++j)
+      if (prio[static_cast<std::size_t>(j)] == target[static_cast<std::size_t>(i)]) order[static_cast<std::size_t>(i)] = j;
+  int inversions = 0;
+  for (int i = 0; i < 4; ++i)
+    for (int j = i + 1; j < 4; ++j) inversions += order[static_cast<std::size_t>(i)] > order[static_cast<std::size_t>(j)];
+  const bool ccw = (a.parity == Chirality::CounterClockwise) != ((inversions & 1) != 0);
+  return ccw ? CipLabel::Ra : CipLabel::Sa;
+}
+
+std::vector<CipAssignment> cip_axes(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics* diag) {
+  std::vector<CipAssignment> out;
+  for (const auto& a : st.axial) {
+    if (st.atoms.species[a.begin] != sp) continue;
+    std::uint32_t index = a.centre;
+    if (index == kNoAtom)
+      for (std::uint32_t b : st.adjacency.bonds_of(a.begin))
+        if (st.bonds.begin[b] == a.end || st.bonds.end[b] == a.end) index = b;
+    out.push_back({index, cip_label(st, a, diag)});
+  }
+  return out;
 }
 
 std::vector<CipAssignment> cip_centres(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics* diag) {

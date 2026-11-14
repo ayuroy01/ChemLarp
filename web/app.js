@@ -150,7 +150,7 @@
     if (!compound) { body.replaceChildren(h('p', { class: 'muted', text: 'Open a compound to see its properties.' })); return; }
     const c = compound;
     const p = properties(c);
-    const stereoCount = c.cip.centres.length + c.cip.double_bonds.length;
+    const stereoCount = c.cip.centres.length + c.cip.double_bonds.length + (c.cip.axes || []).length;
     body.replaceChildren(
       h('div', { class: 'thumb', id: 'insp-drawing', role: 'img', 'aria-label': 'Structure drawing' }),
       h('div', {}, formulaNode(c.formula, 'formula')),
@@ -263,7 +263,11 @@
         if (!r.ok) { host.replaceChildren(...diagnostics(r.diagnostics)); return; }
         host.innerHTML = r.svg;
         const st = r.stereo;
-        note.textContent = st.centres + st.bonds ? `Stereo shown: ${st.centres_ok}/${st.centres} centres · ${st.bonds_ok}/${st.bonds} double bonds` : 'No stereo elements';
+        const axes = (c.cip && c.cip.axes || []).length;
+        const axisNote = axes ? `${axes} chirality axis${axes === 1 ? '' : 'es'} (labelled, not drawn with wedges)` : '';
+        note.textContent = st.centres + st.bonds
+          ? `Stereo shown: ${st.centres_ok}/${st.centres} centres · ${st.bonds_ok}/${st.bonds} double bonds${axisNote ? ' · ' + axisNote : ''}`
+          : axisNote || 'No stereo elements';
       } catch (err) { host.replaceChildren(h('p', { class: 'muted', text: err.message })); }
     }
     const toggle = (label, key) => h('button', {
@@ -304,6 +308,7 @@
     const stereo = [
       ...cip.centres.map((x) => h('span', { class: 'stereo' }, `Atom ${x.atom + 1}`, h('b', { text: x.label || '?' }))),
       ...cip.double_bonds.map((x) => h('span', { class: 'stereo' }, `Bond ${x.bond + 1}`, h('b', { text: x.label || '?' }))),
+      ...(cip.axes || []).map((x) => h('span', { class: 'stereo' }, x.centre !== null ? `Axis at atom ${x.centre + 1}` : `Axis ${x.begin + 1}–${x.end + 1}`, h('b', { text: x.label || '?' }))),
     ];
     out.replaceChildren(
       status('ok', 'Valid structure', `${c.heavy} heavy atoms · ${c.bonds} bonds`),
@@ -365,7 +370,7 @@
       compound = {
         input, canonical: s.canonical_smiles, formula: s.formula, composition: s.composition, mass: s.molar_mass,
         charge: s.net_charge, heavy: atoms.element.filter((z) => z !== 1).length, bonds: s.bond_count,
-        cip: cn.result.ok ? cn.result.cip : { centres: [], double_bonds: [] }, random: cn.result.ok ? cn.result.random : [],
+        cip: cn.result.ok ? cn.result.cip : { centres: [], double_bonds: [], axes: [] }, random: cn.result.ok ? cn.result.random : [],
         inchi: ik.result.ok ? ik.result.inchi : null, inchiKey: ik.result.ok ? ik.result.key : null,
         iupac: nm.result.ok ? nm.result.name : null,
         iupacWhy: nm.result.ok ? null : namingReason(nm.result.diagnostics),

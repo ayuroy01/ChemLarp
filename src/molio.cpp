@@ -293,6 +293,7 @@ std::int32_t Builder::build(int dims) {
 void Builder::add_stereo(std::uint32_t sp, int dims) {
   const std::size_t tetra_begin = st_.tetrahedral.size();
   const std::size_t db_begin = st_.double_bonds.size();
+  const std::size_t ax_begin = st_.axial.size();
   auto pos = [&](std::uint32_t r) { return Vec3{m_.atoms[r].x, m_.atoms[r].y, m_.atoms[r].z3}; };
 
   // Tetrahedral centres.
@@ -419,6 +420,102 @@ void Builder::add_stereo(std::uint32_t sp, int dims) {
     st_.double_bonds.push_back(d);
   }
 
+  // Axial units, from 3D coordinates only (2D wedges on allenes and biaryls are not read).
+  if (dims == 3) {
+    auto find_bond = [&](std::uint32_t ga, std::uint32_t gb) {
+      const auto nb = st_.adjacency.neighbors(ga);
+      const auto bs = st_.adjacency.bonds_of(ga);
+      for (std::size_t k = 0; k < nb.size(); ++k)
+        if (nb[k] == gb) return bs[k];
+      return UINT32_MAX;
+    };
+    // Two ligands of an axis end (neighbours other than `skip`), with points one unit along each bond; an
+    // implicit hydrogen without coordinates goes opposite the other two bonds, in their plane.
+    auto ligands = [&](std::uint32_t e, std::uint32_t skip, std::array<std::uint32_t, 2>& refs, std::array<Vec3, 2>& pts) {
+      int n = 0;
+      const Vec3 c = pos(e);
+      for (auto [nb, k] : adj_[e]) {
+        if (nb == skip) continue;
+        if (n == 2) return false;
+        refs[static_cast<std::size_t>(n)] = folded_[nb] ? kImplicitHRef : global(nb);
+        pts[static_cast<std::size_t>(n)] = c + unit(pos(nb) - c);
+        ++n;
+      }
+      if (n == 2) return implicit_[e] == 0;
+      if (n == 1 && implicit_[e] == 1) {
+        const Vec3 s = unit(pos(skip) - c) + unit(pts[0] - c);
+        if (norm(s) < 1e-3) return false;
+        refs[1] = kImplicitHRef;
+        pts[1] = c - unit(s);
+        return true;
+      }
+      return false;
+    };
+    auto push_axis = [&](std::uint32_t b, std::uint32_t e, std::uint32_t nb_b, std::uint32_t nb_e, std::uint32_t centre) {
+      std::array<std::uint32_t, 2> rb{}, re{};
+      std::array<Vec3, 2> pb{}, pe{};
+      if (!ligands(b, nb_b, rb, pb) || !ligands(e, nb_e, re, pe)) return;
+      const double v = dot(pb[1] - pb[0], cross(pe[0] - pb[0], pe[1] - pb[0]));
+      if (std::fabs(v) < 0.1) return;  // ligand planes nearly coplanar: no configuration in these coordinates
+      AxialStereo a;
+      a.begin = global(b);
+      a.end = global(e);
+      a.centre = centre == UINT32_MAX ? kNoAtom : global(centre);
+      a.refs = {rb[0], rb[1], re[0], re[1]};
+      a.parity = v < 0 ? Chirality::CounterClockwise : Chirality::Clockwise;
+      st_.axial.push_back(a);
+    };
+    auto order_of = [&](std::uint32_t k) { return m_.bonds[k].order; };
+    auto inner = [&](std::uint32_t x) {
+      if (folded_[x] || implicit_[x] != 0 || adj_[x].size() != 2) return false;
+      return order_of(adj_[x][0].second) == 2 && order_of(adj_[x][1].second) == 2;
+    };
+    // Cumulenes with an even number of double bonds: the middle atom.
+    for (std::uint32_t i = 0; i < m_.atoms.size(); ++i) {
+      if (!inner(i)) continue;
+      std::array<std::uint32_t, 2> term{}, before{};
+      int ndouble = 0, left = 0, right = 0;
+      for (int side = 0; side < 2; ++side) {
+        std::uint32_t prev = i, cur = adj_[i][static_cast<std::size_t>(side)].first;
+        int steps = 1;
+        while (inner(cur)) {
+          const std::uint32_t next = adj_[cur][0].first == prev ? adj_[cur][1].first : adj_[cur][0].first;
+          prev = cur, cur = next, ++steps;
+        }
+        term[static_cast<std::size_t>(side)] = cur;
+        before[static_cast<std::size_t>(side)] = prev;
+        (side ? right : left) = steps;
+        ndouble += steps;
+      }
+      if (left != right || ndouble % 2 != 0 || term[0] == term[1]) continue;  // only the true middle atom
+      push_axis(term[0], term[1], before[0], before[1], i);
+    }
+    // Hindered biaryl bonds: a single bond outside rings between two aromatic ring atoms that carry no
+    // hydrogen, with at least three of the four ortho positions substituted (or fused).
+    for (std::uint32_t k = 0; k < m_.bonds.size(); ++k) {
+      const RBond& rb = m_.bonds[k];
+      if (rb.order != 1 || folded_[rb.a] || folded_[rb.b]) continue;
+      const std::uint32_t ga = global(rb.a), gb = global(rb.b);
+      if (!(st_.atoms.flags[ga] & kAtomAromatic) || !(st_.atoms.flags[gb] & kAtomAromatic)) continue;
+      const std::uint32_t bond = find_bond(ga, gb);
+      if (bond == UINT32_MAX || (st_.bonds.flags[bond] & (kBondInRing | kBondAromatic))) continue;
+      int substituted = 0;
+      bool ok = true;
+      for (std::uint32_t e : {rb.a, rb.b}) {
+        if (adj_[e].size() != 3 || implicit_[e] != 0) ok = false;
+        for (auto [nb, kk] : adj_[e]) {
+          if (nb == rb.a || nb == rb.b) continue;
+          if (folded_[nb]) { ok = false; continue; }
+          int heavy = 0;
+          for (auto [x, k2] : adj_[nb]) heavy += folded_[x] ? 0 : 1;
+          substituted += heavy >= 3;
+        }
+      }
+      if (!ok || substituted < 3) continue;
+      push_axis(rb.a, rb.b, rb.b, rb.a, UINT32_MAX);
+    }
+  }
+
   // Keep only what the CIP rules find stereogenic. Removing one element can
   // change whether another (pseudo-asymmetric) one is, so repeat until stable.
   for (int round = 0; round < 4; ++round) {
@@ -434,8 +531,14 @@ void Builder::add_stereo(std::uint32_t sp, int dims) {
       if (cip_label(st_, st_.double_bonds[k]) != CipLabel::None) keep_d.push_back(st_.double_bonds[k]);
       else changed = true;
     }
+    std::vector<AxialStereo> keep_a(st_.axial.begin(), st_.axial.begin() + static_cast<std::ptrdiff_t>(ax_begin));
+    for (std::size_t k = ax_begin; k < st_.axial.size(); ++k) {
+      if (cip_label(st_, st_.axial[k]) != CipLabel::None) keep_a.push_back(st_.axial[k]);
+      else changed = true;
+    }
     st_.tetrahedral = std::move(keep_t);
     st_.double_bonds = std::move(keep_d);
+    st_.axial = std::move(keep_a);
     if (!changed) break;
   }
   for (std::size_t k = tetra_begin; k < st_.tetrahedral.size(); ++k)

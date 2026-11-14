@@ -1142,6 +1142,12 @@ InchiResult inchi(const ChemicalSystemState& state, std::uint32_t species, Diagn
   bool metal_cut = false;
   Mol m = build(state, state.species[species], metal_cut);
   if (metal_cut && diag) diag->warn(DiagCode::InchiMetalDisconnected, "bonds to metal atoms were disconnected (standard InChI)");
+  if (diag)
+    for (const auto& ax : state.axial)
+      if (state.atoms.species[ax.begin] == species) {
+        diag->warn(DiagCode::StereoIgnored, "axial chirality (allene or atropisomer) is not encoded in this InChI").on_atom(ax.begin);
+        break;
+      }
   find_components(m);
   int ncomp = 0;
   for (int x : m.comp) ncomp = std::max(ncomp, x + 1);

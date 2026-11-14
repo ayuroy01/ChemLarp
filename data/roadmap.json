@@ -1,6 +1,6 @@
 {
   "title": "ChemLarp roadmap",
-  "updated": "2026-11-13",
+  "updated": "2026-11-14",
   "weights": {
     "S": 1,
     "M": 2.5,
@@ -58,7 +58,12 @@
           "status": "done"
         },
         {
-          "name": "Axial and planar chirality (allenes, atropisomers)",
+          "name": "Axial chirality (allenes, atropisomers)",
+          "size": "S",
+          "status": "done"
+        },
+        {
+          "name": "Planar and helical chirality (cyclophanes, metallocenes, helicenes)",
           "size": "S",
           "status": "planned"
         },

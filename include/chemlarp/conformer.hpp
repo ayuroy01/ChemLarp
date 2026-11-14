@@ -57,6 +57,7 @@ std::int32_t embed_smiles(ChemicalSystemState& state, std::string_view smiles, D
 // Stereo read back from coordinates.
 Chirality parity_from_coordinates(const ChemicalSystemState& state, const TetrahedralStereo& centre);
 bool cis_from_coordinates(const ChemicalSystemState& state, const DoubleBondStereo& bond);
+Chirality axial_parity_from_coordinates(const ChemicalSystemState& state, const AxialStereo& axis);
 // Dihedral angle a-b-c-d in degrees (-180, 180].
 double dihedral_degrees(const ChemicalSystemState& state, std::uint32_t a, std::uint32_t b, std::uint32_t c,
                         std::uint32_t d);

@@ -313,6 +313,47 @@ std::optional<UffForceField> UffForceField::build(const ChemicalSystemState& st,
     }
   }
 
+  // Cumulenes: UFF has no torsion through a linear atom, so nothing keeps the end groups of an allene
+  // perpendicular (or those of a butatriene coplanar). One torsion per pair of end substituents, about
+  // the virtual bond between the two terminal atoms: minima at ±90° for an even number of double bonds,
+  // 0°/180° for an odd number; barrier as for a C=C bond. This term is not part of published UFF (RDKit's
+  // UFF lacks it as well and flattens allenes the same way).
+  {
+    auto is_double = [&](std::uint32_t x, std::uint32_t y) { return std::fabs(bond_order(x, y) - 2.0) < 1e-9; };
+    auto inner = [&](std::uint32_t x) { return adj[x].size() == 2 && is_double(x, adj[x][0].first) && is_double(x, adj[x][1].first); };
+    std::vector<char> seen(ff.n_, 0);
+    for (std::uint32_t c = 0; c < ff.n_; ++c) {
+      if (seen[c] || !inner(c)) continue;
+      std::array<std::uint32_t, 2> term{}, before{};
+      int ndouble = 0;
+      for (int side = 0; side < 2; ++side) {
+        std::uint32_t prev = c, cur = adj[c][static_cast<std::size_t>(side)].first;
+        ++ndouble;
+        seen[c] = 1;
+        while (inner(cur) && !seen[cur]) {
+          seen[cur] = 1;
+          const std::uint32_t next = adj[cur][0].first == prev ? adj[cur][1].first : adj[cur][0].first;
+          prev = cur, cur = next, ++ndouble;
+        }
+        term[static_cast<std::size_t>(side)] = cur;
+        before[static_cast<std::size_t>(side)] = prev;
+      }
+      const std::uint32_t t1 = term[0], t2 = term[1];
+      if (t1 == t2 || adj[t1].size() < 2 || adj[t2].size() < 2) continue;
+      if (hybridisation(T[t1]) != Hyb::Sp2 || hybridisation(T[t2]) != Hyb::Sp2) continue;
+      const double V = 5.0 * std::sqrt(kTable[T[t1]].Uj * kTable[T[t2]].Uj) * (1.0 + 4.18 * std::log(2.0));
+      const double share = static_cast<double>((adj[t1].size() - 1) * (adj[t2].size() - 1));
+      const double phi0 = ndouble % 2 == 0 ? 90.0 : 180.0;
+      for (auto [a, o1] : adj[t1]) {
+        if (a == before[0]) continue;
+        for (auto [b, o2] : adj[t2]) {
+          if (b == before[1]) continue;
+          ff.torsions_.push_back({a, t1, t2, b, V / share, std::cos(2 * phi0 * kDeg), 2});
+        }
+      }
+    }
+  }
+
   // Inversion at sp2 C and N with three neighbours.
   for (std::uint32_t c = 0; c < ff.n_; ++c) {
     if (adj[c].size() != 3) continue;

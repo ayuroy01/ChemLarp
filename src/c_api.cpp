@@ -269,6 +269,15 @@ char* cl_canonical_smiles_json(const char* smiles, unsigned n_random, uint64_t s
         out += std::string(first ? "" : ",") + "{\"bond\":" + std::to_string(c.index) + ",\"label\":" + json_escape(to_string(c.label)) + "}";
         first = false;
       }
+      out += "],\"axes\":[";
+      first = true;
+      for (const auto& a : st.axial) {
+        if (st.atoms.species[a.begin] != s) continue;
+        out += std::string(first ? "" : ",") + "{\"begin\":" + std::to_string(a.begin) + ",\"end\":" + std::to_string(a.end) +
+               ",\"centre\":" + (a.centre == kNoAtom ? std::string("null") : std::to_string(a.centre)) + ",\"label\":" +
+               json_escape(to_string(cip_label(st, a))) + "}";
+        first = false;
+      }
       out += "]}";
     }
     return out + ",\"diagnostics\":" + diagnostics_to_json(d) + "}";

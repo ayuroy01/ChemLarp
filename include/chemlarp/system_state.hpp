@@ -134,6 +134,19 @@ struct DoubleBondStereo {
   bool cis = false;             // ref_begin and ref_end on the same side
 };
 
+// Axial chirality: an allene or longer cumulene with an even number of double bonds (`centre` is its middle
+// atom; `begin` and `end` are the terminal atoms), or a hindered single bond between two ring atoms
+// (atropisomer; `centre` is kNoAtom and begin–end is the axis bond). refs[0] and refs[1] are bonded to
+// `begin`, refs[2] and refs[3] to `end` (kImplicitHRef for an implicit hydrogen of that end). The parity
+// uses the tetrahedral convention for the four refs: looking from refs[0], refs[1..3] counterclockwise (@)
+// or clockwise (@@).
+inline constexpr std::uint32_t kNoAtom = 0xFFFFFFFDu;
+struct AxialStereo {
+  std::uint32_t begin = 0, end = 0, centre = kNoAtom;
+  std::array<std::uint32_t, 4> refs{};
+  Chirality parity = Chirality::None;
+};
+
 struct Species {
   std::string smiles;
   std::string canonical_smiles;  // unique per structure incl. stereo (see canonical.hpp)
@@ -158,6 +171,7 @@ struct ChemicalSystemState {
   std::vector<Species> species;
   std::vector<TetrahedralStereo> tetrahedral;  // all species; filter by atoms.species[atom]
   std::vector<DoubleBondStereo> double_bonds;  // all species; filter by bonds.species[bond]
+  std::vector<AxialStereo> axial;              // all species; filter by atoms.species[begin]
 
   ThermoConditions conditions;
   AlignedVector<double> moles;  // per species, mol

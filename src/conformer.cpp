@@ -492,6 +492,18 @@ std::int32_t add_explicit_hydrogens(ChemicalSystemState& st, std::uint32_t sp, D
     for (auto& r : n2.refs) r = remap(r, c);
     st.tetrahedral.push_back(n2);
   }
+  const std::size_t nax = st.axial.size();
+  for (std::size_t t = 0; t < nax; ++t) {
+    const AxialStereo a = st.axial[t];
+    if (st.atoms.species[a.begin] != sp) continue;
+    AxialStereo n2 = a;
+    const std::uint32_t b0 = a.begin - old.atom_begin, e0 = a.end - old.atom_begin;
+    n2.begin = atom_base + b0;
+    n2.end = atom_base + e0;
+    if (a.centre != kNoAtom) n2.centre = atom_base + (a.centre - old.atom_begin);
+    for (std::size_t q = 0; q < 4; ++q) n2.refs[q] = remap(a.refs[q], q < 2 ? b0 : e0);
+    st.axial.push_back(n2);
+  }
   const std::size_t ndb = st.double_bonds.size();
   for (std::size_t t = 0; t < ndb; ++t) {
     const DoubleBondStereo d = st.double_bonds[t];
@@ -569,6 +581,15 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
     else { ct.lo = vmin; ct.up = 100.0; }
     chiral.push_back(ct);
   }
+  // Axial units: the same signed volume over the four ligands of the elongated tetrahedron.
+  for (const auto& a : st.axial) {
+    if (st.atoms.species[a.begin] != sp) continue;
+    ChiralTerm ct;
+    for (std::size_t k = 0; k < 4; ++k) ct.idx[k] = a.refs[k] - s.atom_begin;
+    if (a.parity == Chirality::CounterClockwise) { ct.lo = -100.0; ct.up = -1.0; }
+    else { ct.lo = 1.0; ct.up = 100.0; }
+    chiral.push_back(ct);
+  }
   std::vector<PlanarTerm> planar;
   for (std::uint32_t i = 0; i < n; ++i) {
     if (topo.adj[i].size() != 3) continue;
@@ -587,6 +608,11 @@ EmbedResult embed_species(ChemicalSystemState& st, std::uint32_t sp, Diagnostics
       if (st.atoms.species[t.atom] != sp) continue;
       ++r.stereo_centres;
       r.stereo_centres_ok += parity_from_coordinates(st, t) == t.parity;
+    }
+    for (const auto& a : st.axial) {
+      if (st.atoms.species[a.begin] != sp) continue;
+      ++r.stereo_centres;
+      r.stereo_centres_ok += axial_parity_from_coordinates(st, a) == a.parity;
     }
     for (const auto& d : st.double_bonds) {
       if (st.bonds.species[d.bond] != sp) continue;
@@ -689,6 +715,13 @@ Chirality parity_from_coordinates(const ChemicalSystemState& st, const Tetrahedr
   const double V = volume(p.data(), 3, {0, 1, 2, 3}, nullptr);
   if (std::fabs(V) < 1e-6) return Chirality::None;
   return V < 0 ? Chirality::CounterClockwise : Chirality::Clockwise;
+}
+
+Chirality axial_parity_from_coordinates(const ChemicalSystemState& st, const AxialStereo& a) {
+  TetrahedralStereo t;
+  t.atom = a.begin;
+  t.refs = a.refs;
+  return parity_from_coordinates(st, t);
 }
 
 double dihedral_degrees(const ChemicalSystemState& st, std::uint32_t a, std::uint32_t b, std::uint32_t c, std::uint32_t d) {

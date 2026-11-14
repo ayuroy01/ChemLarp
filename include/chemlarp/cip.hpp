@@ -16,8 +16,13 @@
 // Rules 3-5 use auxiliary descriptors, computed for every stereogenic unit of
 // the digraph from the outermost sphere inwards.
 //
-// Limits: only tetrahedral centres and double bonds recorded in the state take
-// part (no axial, planar or helical units, so no M/P); a double bond separated
+// Axial units (allenes, cumulenes with an even number of double bonds, atropisomeric biaryls) get Ra or Sa
+// (P-93.5.1.1): the two ligands of each end are ranked by the rules above with that end as the root, the
+// near pair precedes the far pair, and the four are then read like a tetrahedral centre (Ra ≡ M, Sa ≡ P);
+// either end may be taken as near. Planar and helical units are not handled.
+//
+// Limits: axial units give no auxiliary descriptors to other units (rules 4-5 see only tetrahedral centres
+// and double bonds); a double bond separated
 // only by Rule 5 is reported as E/Z rather than seqTrans/seqCis; undefined
 // stereo units contribute no auxiliary descriptor. A unit that still ties gets
 // None and a CipUndetermined warning.
@@ -36,7 +41,7 @@
 
 namespace chemlarp {
 
-enum class CipLabel : std::uint8_t { None = 0, R, S, E, Z, r, s };
+enum class CipLabel : std::uint8_t { None = 0, R, S, E, Z, r, s, Ra, Sa };
 
 const char* to_string(CipLabel l) noexcept;
 
@@ -46,6 +51,7 @@ int cip_compare(const ChemicalSystemState& state, std::uint32_t root, std::uint3
 
 CipLabel cip_label(const ChemicalSystemState& state, const TetrahedralStereo& centre, Diagnostics* diag = nullptr);
 CipLabel cip_label(const ChemicalSystemState& state, const DoubleBondStereo& bond, Diagnostics* diag = nullptr);
+CipLabel cip_label(const ChemicalSystemState& state, const AxialStereo& axis, Diagnostics* diag = nullptr);
 
 struct CipAssignment {
   std::uint32_t index;  // atom for centres, bond for double bonds
@@ -56,5 +62,7 @@ struct CipAssignment {
 std::vector<CipAssignment> cip_centres(const ChemicalSystemState& state, std::uint32_t species, Diagnostics* diag = nullptr);
 std::vector<CipAssignment> cip_double_bonds(const ChemicalSystemState& state, std::uint32_t species,
                                             Diagnostics* diag = nullptr);
+// index: the centre atom of an allene, or the axis bond of an atropisomer.
+std::vector<CipAssignment> cip_axes(const ChemicalSystemState& state, std::uint32_t species, Diagnostics* diag = nullptr);
 
 }  // namespace chemlarp

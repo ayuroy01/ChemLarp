@@ -1175,6 +1175,13 @@ Depiction depict(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics& d
       }
     for (const auto& c : cip_double_bonds(st, sp))
       if (c.label != CipLabel::None) ez_notes.push_back({c.index, c.label});
+    for (const auto& a : st.axial) {  // Ra/Sa on the allene centre, or on the first atom of a biaryl axis
+      if (st.atoms.species[a.begin] != sp) continue;
+      const CipLabel l = cip_label(st, a);
+      if (l == CipLabel::None) continue;
+      auto& t = note[(a.centre != kNoAtom ? a.centre : a.begin) - g.begin];
+      t += std::string(t.empty() ? "" : " ") + "(" + to_string(l) + ")";
+    }
   }
   const double nfs = 0.42 * L;
   auto note_box = [&](V2 c, const std::string& t) {

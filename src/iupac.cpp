@@ -842,6 +842,8 @@ bool Namer::load() {
     if (a < 0) return fail("stereocentre on hydrogen");
     stereo_[atom_key(a)] = c.label;
   }
+  for (const auto& c : cip_axes(st_, sp_))  // no axial descriptors in names yet: refuse rather than drop them
+    if (c.label != CipLabel::None) return fail("axial chirality (Ra/Sa) is not part of the names produced");
   for (const auto& c : cip_double_bonds(st_, sp_)) {
     if (c.label == CipLabel::None || !mine(st_.bonds.begin[c.index])) continue;
     const int a = local(st_.bonds.begin[c.index]), b = local(st_.bonds.end[c.index]);

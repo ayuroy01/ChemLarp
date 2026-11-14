@@ -287,10 +287,17 @@ class Writer {
 
     plan_double_bonds();
     digit_.assign(sp_.bond_count, -1);
+    ring_order_.assign(n, {});
     std::string out;
     for (std::size_t i = 0; i < starts.size(); ++i) {
       if (i) out += '.';
       write(starts[i], out);
+    }
+    // Allene marks, now that the ring-closure order at every terminal is known. Fill from the end so the
+    // recorded offsets stay valid when "@@" shrinks to "@".
+    for (auto it = pending_axial_.rbegin(); it != pending_axial_.rend(); ++it) {
+      const std::string mark = chirality_text(it->first, {});
+      out.replace(it->second + isotope_len(it->first) + symbol_len(it->first), 2, mark);
     }
     return out;
   }
@@ -340,6 +347,18 @@ class Writer {
       const bool cw = t.parity == Chirality::Clockwise;
       out[static_cast<std::size_t>(t.loc)] = ((inversions & 1) != 0) != cw ? 2 : 1;
     }
+    for (const Axial& a : axial_) {
+      // Parity relative to ranks: which ligand of each end ranks higher (swapping the ends is an even
+      // permutation of the four, so the order of the ends does not matter).
+      std::array<long long, 4> k{};
+      for (std::size_t i = 0; i < 4; ++i) k[i] = key(a.refs[i]);
+      if (k[0] == k[1] || k[2] == k[3]) {
+        if (undecided) *undecided = true;
+        continue;
+      }
+      const bool cw = (a.parity == Chirality::Clockwise) != (k[0] > k[1]) != (k[2] > k[3]);
+      out[static_cast<std::size_t>(a.centre)] += cw ? 32 : 16;
+    }
     for (const ActiveDb& d : dbs_) {
       // Is the stored reference the lowest-ranked substituent on its end? (-1 if undecided)
       auto ref_is_lowest = [&](int end, int partner, int ref) -> int {
@@ -383,7 +402,7 @@ class Writer {
   // of the tied class is tried and the one whose stereo parities, read in rank
   // order, are largest is kept. This depends only on the molecule.
   std::vector<long long> stereo_ranks(const std::vector<int>& cip_inv) const {
-    if (tetra_.empty() && dbs_.empty()) return compute_ranks(st_, v_, cip_inv);
+    if (tetra_.empty() && dbs_.empty() && axial_.empty()) return compute_ranks(st_, v_, cip_inv);
     auto rank = initial_ranks(st_, v_, cip_inv);
     settle(rank);
     std::size_t budget = 4096;  // candidate evaluations before falling back to index order
@@ -443,6 +462,24 @@ class Writer {
       std::array<int, 4> refs{};
       for (std::size_t q = 0; q < 4; ++q) refs[q] = to_token(t.refs[q]);
       tetra_.push_back({loc, refs, t.parity});
+    }
+    for (const auto& a : st_.axial) {
+      if (st_.atoms.species[a.begin] != species_index) continue;
+      const CipLabel l = cip_label(st_, a, opt_.canonical ? diag_ : nullptr);
+      if (l == CipLabel::None) continue;
+      if (a.centre == kNoAtom) {  // atropisomer: no SMILES notation
+        if (diag_ && opt_.canonical)
+          diag_->warn(DiagCode::StereoIgnored, "axial chirality of a hindered single bond has no SMILES notation; not written")
+              .on_atom(a.begin);
+        continue;
+      }
+      Axial x;
+      x.centre = v_.local[a.centre - v_.base];
+      x.ends = {v_.local[a.begin - v_.base], v_.local[a.end - v_.base]};
+      for (std::size_t q = 0; q < 4; ++q) x.refs[q] = to_token(a.refs[q]);
+      x.parity = a.parity;
+      centre_label_.push_back({x.centre, l});
+      axial_.push_back(x);
     }
     for (const auto& d : st_.double_bonds) {
       if (st_.bonds.species[d.bond] != species_index) continue;
@@ -619,6 +656,31 @@ class Writer {
   }
 
   std::string chirality_text(int x, const std::vector<int>& out_tokens) const {
+    for (const auto& a : axial_) {
+      if (a.centre != x) continue;
+      // Ligands in order of appearance in the output (as the parser reads them): atoms by DFS preorder,
+      // an implicit hydrogen right after its terminal atom, a ring-closure partner at its digit.
+      std::array<long long, 4> key{};
+      for (std::size_t q = 0; q < 4; ++q) {
+        const int t = a.refs[q];
+        const int end = a.ends[q < 2 ? 0 : 1];
+        const auto pe = static_cast<std::size_t>(end);
+        if (t == kTokH) {
+          key[q] = 64LL * pre_[pe] + 16;
+        } else if (parent_[pe] == t || parent_[static_cast<std::size_t>(t)] == end) {
+          key[q] = 64LL * pre_[static_cast<std::size_t>(t)];
+        } else {  // ring closure: digits follow the atom, closings (by digit) before openings
+          const auto& order = ring_order_[pe];
+          const auto slot = std::find(order.begin(), order.end(), t) - order.begin();
+          key[q] = 64LL * pre_[pe] + 32 + slot;
+        }
+      }
+      int inv = 0;
+      for (std::size_t i = 0; i < 4; ++i)
+        for (std::size_t j = i + 1; j < 4; ++j) inv += key[i] > key[j];
+      const bool ccw = (a.parity == Chirality::CounterClockwise) != ((inv & 1) != 0);
+      return ccw ? "@" : "@@";
+    }
     for (const auto& t : tetra_) {
       if (t.loc != x) continue;
       if (out_tokens.size() != 4) return "";
@@ -639,6 +701,17 @@ class Writer {
     }
     return "";
   }
+
+  bool is_axial_centre(int x) const {
+    for (const auto& a : axial_)
+      if (a.centre == x) return true;
+    return false;
+  }
+  std::size_t isotope_len(int x) const {
+    const auto iso = st_.atoms.isotope[v_.atoms[static_cast<std::size_t>(x)]];
+    return iso ? std::to_string(iso).size() : 0;
+  }
+  std::size_t symbol_len(int x) const { return std::string(element_symbol(st_.atoms.element[v_.atoms[static_cast<std::size_t>(x)]])).size(); }
 
   bool has_lone_pair_ref(int x) const {
     for (const auto& t : tetra_)
@@ -669,7 +742,19 @@ class Writer {
     for (std::uint32_t b : opens) tokens.push_back(other(b, x));
     for (int c : children_[xi]) tokens.push_back(c);
 
-    out += atom_text(x, chirality_text(x, tokens));
+    {
+      auto& ro = ring_order_[xi];
+      ro.clear();
+      for (std::uint32_t b : closes) ro.push_back(other(b, x));
+      for (std::uint32_t b : opens) ro.push_back(other(b, x));
+    }
+    // An allene centre written before its terminals gets its mark once they are placed (see run()).
+    std::string chir = chirality_text(x, tokens);
+    if (!chir.empty() && is_axial_centre(x)) {
+      pending_axial_.push_back({x, out.size() + 1});  // after '['
+      chir = "@@";                                     // placeholder of the longest form
+    }
+    out += atom_text(x, chir);
     for (std::uint32_t b : closes) out += digit_text(digit_[b - sp_.bond_begin]);
     for (std::uint32_t b : opens) {
       int d = 1;
@@ -697,6 +782,12 @@ class Writer {
     std::array<int, 4> refs;
     Chirality parity;
   };
+  struct Axial {
+    int centre = -1;
+    std::array<int, 2> ends{};
+    std::array<int, 4> refs{};
+    Chirality parity = Chirality::None;
+  };
 
   const ChemicalSystemState& st_;
   const Species& sp_;
@@ -713,6 +804,9 @@ class Writer {
   int counter_ = 0;
   std::vector<std::pair<int, CipLabel>> centre_label_;
   std::vector<Tetra> tetra_;
+  std::vector<Axial> axial_;
+  std::vector<std::vector<int>> ring_order_;               // ring-closure partners of each atom, as written
+  std::vector<std::pair<int, std::size_t>> pending_axial_;  // allene centre, offset of its '[' + 1
   std::vector<ActiveDb> dbs_;
   std::map<std::uint32_t, CipLabel> db_label_;
 };

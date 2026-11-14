@@ -65,6 +65,12 @@ struct LocalTetra {
   Chirality parity;
 };
 
+struct LocalAxial {
+  std::uint32_t begin, end, centre;
+  std::array<std::int64_t, 4> refs;  // refs[0..1] on begin, refs[2..3] on end; kRefH for an implicit H
+  Chirality parity;
+};
+
 struct LocalDoubleBond {
   std::uint32_t bond, ref_a, ref_b;
   bool cis;
@@ -91,6 +97,7 @@ class Parser {
 
   std::vector<LocalTetra> tetra;
   std::vector<LocalDoubleBond> dbstereo;
+  std::vector<LocalAxial> axial;
 
   bool parse();     // syntax; returns true when no syntax error was found
   bool finalize();  // aromaticity, implicit H, kekulization, valence, stereo
@@ -669,9 +676,88 @@ int Parser::ring_size_through(std::uint32_t bond_index) const {
 // opposite sides iff their t differ; neighbours a (of u) and b (of v) are cis
 // iff t(u,a) == t(v,b). Atom index order equals order of appearance.
 void Parser::derive_stereo() {
+  // Neighbours by bond, for cumulene centres.
+  std::vector<std::vector<std::pair<std::uint32_t, std::uint32_t>>> nbr(atoms.size());  // (atom, bond)
+  for (std::uint32_t k = 0; k < bonds.size(); ++k) {
+    nbr[bonds[k].a].push_back({bonds[k].b, k});
+    nbr[bonds[k].b].push_back({bonds[k].a, k});
+  }
+  auto is_double = [&](std::uint32_t k) { return bonds[k].order == 2 && !(bonds[k].flags & kBondAromatic); };
+  auto cumulene_inner = [&](std::uint32_t x) {
+    return nbr[x].size() == 2 && atoms[x].hcount == 0 && is_double(nbr[x][0].second) && is_double(nbr[x][1].second);
+  };
   for (std::uint32_t i = 0; i < atoms.size(); ++i) {
     PAtom& a = atoms[i];
     if (a.chiral == Chirality::None) continue;
+    // Extended tetrahedral (OpenSMILES): '@' on the middle atom of a cumulene with an even number of double
+    // bonds; the four ligands are the substituents of the two terminal atoms, in order of appearance, read
+    // as for a tetrahedral centre: an implicit hydrogen right after its terminal atom, a ring-closure
+    // partner at the position of the digit (after the terminal and its hydrogen), any other atom where it
+    // is written.
+    if (cumulene_inner(i)) {
+      std::array<std::uint32_t, 2> term{};
+      int ndouble = 0;
+      for (int side = 0; side < 2; ++side) {
+        std::uint32_t prev = i, cur = nbr[i][static_cast<std::size_t>(side)].first;
+        ++ndouble;
+        while (cumulene_inner(cur)) {
+          const std::uint32_t next = nbr[cur][0].first == prev ? nbr[cur][1].first : nbr[cur][0].first;
+          prev = cur, cur = next, ++ndouble;
+        }
+        term[static_cast<std::size_t>(side)] = cur;
+      }
+      if (ndouble % 2 != 0 || term[0] == term[1]) {
+        d_.warn(DiagCode::StereoIgnored, "chirality on the middle of a cumulene with an odd number of double bonds; ignored")
+            .at(base_ + a.pos)
+            .on_atom(i);
+        a.chiral = Chirality::None;
+        continue;
+      }
+      // Ligands of each terminal: neighbours other than the chain atom, plus implicit hydrogens.
+      std::vector<std::pair<std::int64_t, std::int64_t>> lig;  // (appearance key, ref)
+      std::array<int, 2> count{};
+      bool ok = true;
+      for (int side = 0; side < 2; ++side) {
+        const std::uint32_t t = term[static_cast<std::size_t>(side)];
+        for (const auto& [x, k] : nbr[t]) {
+          if (is_double(k) && (cumulene_inner(x) || x == i)) continue;
+          std::int64_t key = 64 * static_cast<std::int64_t>(x);
+          if (bonds[k].flags & kBondRingClosure) {
+            const auto& r = atoms[t].refs;
+            const auto slot = std::find(r.begin(), r.end(), static_cast<std::int64_t>(x)) - r.begin();
+            key = 64 * static_cast<std::int64_t>(t) + 32 + slot;
+          }
+          lig.push_back({key, x});
+          ++count[static_cast<std::size_t>(side)];
+        }
+        for (int h = 0; h < atoms[t].hcount; ++h) {
+          lig.push_back({64 * static_cast<std::int64_t>(t) + 16, kRefH});
+          ++count[static_cast<std::size_t>(side)];
+        }
+        ok = ok && count[static_cast<std::size_t>(side)] == 2;
+      }
+      if (!ok) {
+        d_.warn(DiagCode::StereoIgnored, "cumulene terminal without exactly two substituents; chirality ignored")
+            .at(base_ + a.pos)
+            .on_atom(i);
+        a.chiral = Chirality::None;
+        continue;
+      }
+      // In appearance order the parity is a.chiral; reorder to (begin pair, end pair) and track the sign.
+      std::vector<std::size_t> ord(4);
+      for (std::size_t q = 0; q < 4; ++q) ord[q] = q;
+      std::sort(ord.begin(), ord.end(), [&](std::size_t x, std::size_t y) { return lig[x].first < lig[y].first; });
+      // lig[0..1] belong to term[0], lig[2..3] to term[1] (pushed in that order). Position of each in `ord`:
+      std::array<std::size_t, 4> where{};
+      for (std::size_t q = 0; q < 4; ++q) where[ord[q]] = q;
+      int inv = 0;
+      for (std::size_t x = 0; x < 4; ++x)
+        for (std::size_t y = x + 1; y < 4; ++y) inv += where[x] > where[y];
+      Chirality par = a.chiral;
+      if (inv & 1) par = par == Chirality::Clockwise ? Chirality::CounterClockwise : Chirality::Clockwise;
+      axial.push_back({term[0], term[1], i, {lig[0].second, lig[1].second, lig[2].second, lig[3].second}, par});
+      continue;
+    }
     auto refs = a.refs;
     if (refs.size() == 3 && a.hcount == 0) refs.insert(refs.begin() + (a.has_prev ? 1 : 0), kRefLP);
     if (refs.size() != 4) {
@@ -812,6 +898,9 @@ std::int32_t parse_smiles(ChemicalSystemState& state, std::string_view smiles, D
     g.parity = t.parity;
     state.tetrahedral.push_back(g);
   }
+  for (const LocalAxial& x : p.axial)
+    state.axial.push_back({atom_base + x.begin, atom_base + x.end, atom_base + x.centre,
+                           {global_ref(x.refs[0]), global_ref(x.refs[1]), global_ref(x.refs[2]), global_ref(x.refs[3])}, x.parity});
   for (const LocalDoubleBond& d : p.dbstereo)
     state.double_bonds.push_back({bond_base + d.bond, atom_base + d.ref_a, atom_base + d.ref_b, d.cis});
 
