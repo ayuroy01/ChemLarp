@@ -633,6 +633,32 @@ char* cl_read_molecules_json(const char* text, const char* format, int keep_hydr
         const Species& s = st.species[static_cast<std::size_t>(r.species)];
         recs += ",\"smiles\":" + json_escape(s.canonical_smiles) + ",\"formula\":" + json_escape(s.formula) +
                 ",\"molar_mass\":" + jnum(s.molar_mass) + ",\"atoms\":" + std::to_string(s.atom_count);
+        // Stereo read from 3D only (no SMILES notation for planar or helical units, nor for atropisomers).
+        // Atom numbers count from 0 within the record.
+        const auto sp = static_cast<std::uint32_t>(r.species);
+        auto local = [&](std::uint32_t a) { return std::to_string(a - s.atom_begin); };
+        recs += ",\"axes\":[";
+        bool first = true;
+        for (const auto& a : st.axial) {
+          if (st.atoms.species[a.begin] != sp) continue;
+          recs += std::string(first ? "" : ",") + "{\"begin\":" + local(a.begin) + ",\"end\":" + local(a.end) +
+                  ",\"centre\":" + (a.centre == kNoAtom ? std::string("null") : local(a.centre)) +
+                  ",\"label\":" + json_escape(to_string(cip_label(st, a))) + "}";
+          first = false;
+        }
+        recs += "],\"planes\":[";
+        first = true;
+        for (const auto& c : cip_planes(st, sp)) {
+          const auto& u = st.planar[c.index];
+          const char* kind = u.kind == PlanarKind::Helicene ? "helicene" : u.kind == PlanarKind::Metallocene ? "metallocene" : "cyclophane";
+          std::string at;
+          for (std::uint32_t a : u.atoms) at += (at.empty() ? "" : ",") + local(a);
+          recs += std::string(first ? "" : ",") + "{\"kind\":" + json_escape(kind) + ",\"atoms\":[" + at + "]" +
+                  (u.kind == PlanarKind::Helicene ? ",\"rings\":" + std::to_string(u.rings) : std::string()) +
+                  ",\"label\":" + json_escape(to_string(c.label)) + "}";
+          first = false;
+        }
+        recs += "]";
       }
       recs += ",\"properties\":[";
       for (std::size_t k = 0; k < r.properties.size(); ++k)

@@ -504,6 +504,15 @@ std::int32_t add_explicit_hydrogens(ChemicalSystemState& st, std::uint32_t sp, D
     for (std::size_t q = 0; q < 4; ++q) n2.refs[q] = remap(a.refs[q], q < 2 ? b0 : e0);
     st.axial.push_back(n2);
   }
+  const std::size_t npl = st.planar.size();
+  for (std::size_t t = 0; t < npl; ++t) {
+    const PlanarStereo u = st.planar[t];
+    if (u.atoms.empty() || st.atoms.species[u.atoms[0]] != sp) continue;
+    PlanarStereo n2 = u;
+    for (auto& a : n2.atoms) a = atom_base + (a - old.atom_begin);
+    for (auto& a : n2.pilots) a = atom_base + (a - old.atom_begin);
+    st.planar.push_back(n2);
+  }
   const std::size_t ndb = st.double_bonds.size();
   for (std::size_t t = 0; t < ndb; ++t) {
     const DoubleBondStereo d = st.double_bonds[t];

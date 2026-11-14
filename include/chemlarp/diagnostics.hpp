@@ -106,6 +106,7 @@ enum class DiagCode : std::uint16_t {
   UnsupportedFileFeature,   // query atoms/bonds, atom lists, R-groups, ...
   BondOrdersGuessed,        // warning: the file has no bond orders for some atoms (PDB)
   FileContentIgnored,       // warning: content read but not used (S-groups, extra models, alternate locations)
+  HaptoBondsDisconnected,   // warning: metal bonds to a pi-bonded ring or chain (eta-n) were cut; charges moved
 
   // 10xx — queries (SMARTS)
   SmartsSyntax = 1000,      // malformed SMARTS

@@ -36,11 +36,28 @@ Reference data (re-download into a scratch folder; never into the repo):
 
 | Gap | Where | To resume |
 |---|---|---|
-| Planar and helical chirality (cyclophanes, metallocenes, helicenes) | roadmap module | See roadmap list below. |
 | CIP: `[P@H]` phosphines and quinoid `c(=C)` input not parsed; rule-5 double bonds print E/Z, not seqCis/seqTrans | `src/cip*.cpp`, SMILES parser | 47/6312 enumerated stereoisomers differ from RDKit; list them with the CIP validation script and fix one class at a time. |
 | InChI: isotopic stereo, allene stereo, /f and /r layers, polymers, some charge-migration/salt rules (diazonium, N-oxides, macrocycle metal complexes) | `src/inchi*.cpp` | Compare against the reference InChI on PubChem subsets that contain these features. |
 | 2D layout: bridged polycycles legible but not template-quality | `src/depict*.cpp` | Add cage templates (adamantane, morphinan, bicyclo[2.2.2]). |
 | Readers: query features, R-groups, S-group expansion, enhanced stereo not read | MOL/SDF reader | Add on demand. |
+
+## Planar and helical chirality (`PlanarStereo`; `src/planar.cpp`, `src/cip.cpp`, `src/molio.cpp`)
+
+Done 2026-11-14: cyclophanes (pilot-atom Rp/Sp), metallocenes (Schlögl Rp/Sp), helicenes (P/M) from 3D files; checked against 3 COD crystal structures and mirror images (docs/ARCHITECTURE.md, "Planar and helical chirality: validation").
+
+| Gap | Where | To resume |
+|---|---|---|
+| Validation covers 3 compounds ([2.2]paracyclophane, two ferrocenes); helicenes only against the torsion definition | `tests/test_planar.cpp`, `data/planar_chirality_cod.sdf` | More COD entries with descriptors in their names (download permission needed): ferrocenes 4073056-4073059 (pR), 2220286 (Sp), 2220288 (Rp), 7000979 (Sp,Sp), 7020919 (Sp), 2015329 (SFc); search `https://www.crystallography.net/cod/result?format=json&text=ferrocen&year=YYYY` and filter names for Rp/Sp/pR/SFc. Convert with `scripts/validate_planar/cif2sdf.py` (caps each Cp ring with an H away from the metal, RDKit DetermineBondOrders charge 0, removes the cap as C−). Need helicene and arene-Cr(CO)3 entries with stated P/M or Rp/Sp. |
+| No notation: SMILES, InChI and IUPAC names cannot carry the units (warning StereoIgnored / NamingUnsupported); both enantiomers have the same canonical SMILES | `src/canonical.cpp`, `src/inchi.cpp`, `src/iupac.cpp` | None exists in SMILES or standard InChI; names would need Rp/Sp or P/M with locants (P-93.5.1.4). |
+| Embedding from SMILES gives a random enantiomer of a planar or helical unit; units carried into a new species are not enforced as constraints | `src/conformer.cpp` | Add a chirality-plane constraint (sign of a pilot–ring volume) to the distance-geometry refinement, and an API to request a descriptor. |
+| A plane counts only if it carries a substituent or ring heteroatom: an unsubstituted deck in a chiral molecule (e.g. the second deck of 4-bromo[2.2]paracyclophane) is not labelled, as in usual practice, but CIP would distinguish it | `perceive_planar_stereo` | Decide from the full CIP digraph plus a symmetry test of the deck. |
+| Configurational stability not judged: large ansa rings that let the ring rotate through the loop, long-bridged [n]paracyclophanes, low-barrier helicenes are all labelled; [4]helicene is excluded by the five-ring minimum | `src/planar.cpp` | Use bridge length / ring size thresholds from the literature (e.g. [n]paracyclophane racemisation barriers). |
+| Cyclophane bridges must start with a non-aromatic atom at least 0.25 Å off the ring plane; only aromatic 5/6-rings are planes | `perceive_planar_stereo` | Extend when a real case needs it (biphenylophanes, heteroaromatic decks larger than 6). |
+| Metallocenes: Schlögl's convention only (the IUPAC 2013 alternative treats each ring carbon as a centre and can differ); substituents ranked on the ionic form (metal bonds cut); arene complexes use the same rule without a reference check | `src/cip.cpp` (`metallocene_rp`) | Add the P-93.5.1.4.2 per-atom description as an option; check against an arene-Cr(CO)3 crystal structure. |
+| Hapto bonds cut on reading: a carbon left with three bonds and no multiple bond becomes C− and the metal gains +1 (Cp− / Fe2+). Other organometallic bonding patterns (allyl, η4-dienes, carbonyl clusters) get that rule too and may not give the intended charge split | `build_species` in `src/molio.cpp` | Compare against InChI's metal disconnection on a set of organometallic SDFs. |
+| `cip_compare_atoms` copies the whole state per comparison (adds a dummy root) | `src/cip.cpp` | Give the Digraph a two-root mode. |
+| Helicenes: aromatic 5/6-rings only; a double helicene is reported as separate chains; the unit is not tied to helicene numbering | `perceive_planar_stereo` | |
+| Output: the CLI `read` command does not print the units; the web app lists them without atom numbers (it re-parses the SMILES, whose atom order differs) and the drawing has no Rp/Sp/P/M notes there | `src/cli/main.cpp`, `web/app.js` | Map file atom order to the re-parsed SMILES, or draw from the file's state. |
 
 ## Axial chirality (`AxialStereo`; `src/cip.cpp`, `src/smiles.cpp`, `src/canonical.cpp`, `src/molio.cpp`, `src/conformer.cpp`, `src/uff.cpp`)
 
@@ -102,7 +119,6 @@ Reference data (re-download): CDK 2.13 jar (`gh release download cdk-2.13 -R cdk
 
 | Module | Size | Notes for starting |
 |---|---|---|
-| Planar and helical chirality (cyclophanes, metallocenes, helicenes) | S | Split from the axial module on 2026-11-14. Rp/Sp with a pilot atom (P-93.5.1.2) and M/P helicity; from 3D only (no SMILES notation). centres 1.5 labels neither, so the reference has to be literature descriptors of known compounds ([2.2]paracyclophanes, planar-chiral ferrocenes, hexahelicene). The AxialStereo machinery (3D parity, 3D perception in `Builder::add_stereo`) can be reused. |
 | Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
 | Free-energy perturbation (FEP/MBAR) | M | Needs MD with solvent, periodic boxes and electrostatics (see MD gaps). Validate MBAR on analytic harmonic oscillators, then hydration free energies vs FreeSolv. |
 | Interactive lab simulations and safety rules | M | Web feature on top of kinetics/thermo; GHS hazard rules need a data source (public PubChem GHS). |

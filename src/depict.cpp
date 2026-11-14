@@ -1182,6 +1182,13 @@ Depiction depict(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics& d
       auto& t = note[(a.centre != kNoAtom ? a.centre : a.begin) - g.begin];
       t += std::string(t.empty() ? "" : " ") + "(" + to_string(l) + ")";
     }
+    for (const auto& c : cip_planes(st, sp)) {  // Rp/Sp on the first ring atom, P/M on the middle of the inner rim
+      if (c.label == CipLabel::None) continue;
+      const auto& u = st.planar[c.index];
+      const std::uint32_t at = u.kind == PlanarKind::Helicene ? u.atoms[u.atoms.size() / 2] : u.atoms[0];
+      auto& t = note[at - g.begin];
+      t += std::string(t.empty() ? "" : " ") + "(" + to_string(c.label) + ")";
+    }
   }
   const double nfs = 0.42 * L;
   auto note_box = [&](V2 c, const std::string& t) {

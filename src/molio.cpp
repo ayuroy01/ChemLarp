@@ -13,6 +13,7 @@
 
 #include "chemlarp/canonical.hpp"
 #include "chemlarp/cip.hpp"
+#include "chemlarp/planar.hpp"
 #include "chemlarp/elements.hpp"
 #include "chemlarp/smiles.hpp"
 
@@ -55,6 +56,11 @@ struct RawMol {
 };
 
 std::string at_line(std::size_t line) { return "line " + std::to_string(line) + ": "; }
+
+bool is_transition_or_main_metal(std::uint8_t z) {
+  if (z <= 2 || (z >= 5 && z <= 10) || (z >= 14 && z <= 18) || (z >= 32 && z <= 36)) return false;
+  return !(z == 33 || z == 34 || z == 51 || z == 52 || z == 53 || z == 54 || z == 85 || z == 86);
+}
 
 bool organic(std::uint8_t z) {
   switch (z) {
@@ -514,6 +520,13 @@ void Builder::add_stereo(std::uint32_t sp, int dims) {
       if (!ok || substituted < 3) continue;
       push_axis(rb.a, rb.b, rb.b, rb.a, UINT32_MAX);
     }
+    // Planar (cyclophane, metallocene) and helical units; kept when CIP labels them.
+    const std::size_t pl_begin = st_.planar.size();
+    perceive_planar_stereo(st_, sp);
+    std::vector<PlanarStereo> keep_p(st_.planar.begin(), st_.planar.begin() + static_cast<std::ptrdiff_t>(pl_begin));
+    for (std::size_t k = pl_begin; k < st_.planar.size(); ++k)
+      if (cip_label(st_, st_.planar[k]) != CipLabel::None) keep_p.push_back(st_.planar[k]);
+    st_.planar = std::move(keep_p);
   }
 
   // Keep only what the CIP rules find stereogenic. Removing one element can
@@ -556,7 +569,63 @@ std::int32_t build_species(ChemicalSystemState& st, const RawMol& m, bool keep_h
     if (std::fabs(a.z3) > 1e-4) { dims = 3; break; }
     if (std::fabs(a.x) > 1e-4 || std::fabs(a.y) > 1e-4) dims = 2;
   }
-  Builder b(st, m, keep_h, diag);
+  // Hapto (eta-n) bonds: a metal bonded to two or more mutually bonded carbons (Cp rings, arenes, alkenes).
+  // Those bonds are not two-electron bonds and would exceed carbon's valence, so they are cut, as standard
+  // InChI does; a carbon left with three bonds and no double bond becomes a carbanion and the metal takes
+  // the matching positive charge (Cp- / Fe2+). Metallocenes are then recognised from the geometry.
+  RawMol cut = m;
+  std::vector<char> drop(m.bonds.size(), 0);
+  std::vector<std::vector<std::uint32_t>> nbr(m.atoms.size());
+  for (std::uint32_t k = 0; k < m.bonds.size(); ++k) {
+    nbr[m.bonds[k].a].push_back(k);
+    nbr[m.bonds[k].b].push_back(k);
+  }
+  auto other = [&](std::uint32_t k, std::uint32_t i) { return m.bonds[k].a == i ? m.bonds[k].b : m.bonds[k].a; };
+  int ndrop = 0;
+  for (std::uint32_t mi = 0; mi < m.atoms.size(); ++mi) {
+    if (!is_transition_or_main_metal(m.atoms[mi].z)) continue;
+    std::vector<std::uint32_t> carbons;
+    for (std::uint32_t k : nbr[mi])
+      if (m.atoms[other(k, mi)].z == 6) carbons.push_back(other(k, mi));
+    for (std::uint32_t k : nbr[mi]) {
+      const std::uint32_t c = other(k, mi);
+      if (m.atoms[c].z != 6) continue;
+      bool hapto = false;
+      for (std::uint32_t k2 : nbr[c])
+        hapto = hapto || (k2 != k && std::find(carbons.begin(), carbons.end(), other(k2, c)) != carbons.end());
+      if (hapto && !drop[k]) drop[k] = 1, ++ndrop;
+    }
+  }
+  if (ndrop) {
+    cut.bonds.clear();
+    for (std::uint32_t k = 0; k < m.bonds.size(); ++k)
+      if (!drop[k]) cut.bonds.push_back(m.bonds[k]);
+    std::vector<int> sum(m.atoms.size(), 0);
+    std::vector<char> multiple(m.atoms.size(), 0);
+    for (const RBond& b : cut.bonds) {
+      const int o = b.order == 4 ? 1 : b.order;
+      sum[b.a] += o, sum[b.b] += o;
+      if (b.order >= 2) multiple[b.a] = multiple[b.b] = 1;
+    }
+    std::vector<char> was_hapto(m.atoms.size(), 0);
+    for (std::uint32_t k = 0; k < m.bonds.size(); ++k)
+      if (drop[k]) was_hapto[m.bonds[k].a] = was_hapto[m.bonds[k].b] = 1;
+    for (std::uint32_t k = 0; k < m.bonds.size(); ++k) {
+      if (!drop[k]) continue;
+      const std::uint32_t c = m.atoms[m.bonds[k].a].z == 6 ? m.bonds[k].a : m.bonds[k].b;
+      const std::uint32_t metal = other(k, c);
+      RAtom& ca = cut.atoms[c];
+      if (ca.valence > 0) --ca.valence;  // a stated valence counted the bond just cut
+      if (cut.atoms[metal].valence > 0) --cut.atoms[metal].valence;
+      if (ca.charge == 0 && ca.radical == 0 && ca.hcount < 0 && !multiple[c] && sum[c] == 3) {
+        ca.charge = -1;
+        cut.atoms[metal].charge += 1;
+      }
+    }
+    diag.warn(DiagCode::HaptoBondsDisconnected,
+              std::to_string(ndrop) + " metal–carbon bonds of a pi-bonded ring or chain were cut (ionic form, as in standard InChI)");
+  }
+  Builder b(st, cut, keep_h, diag);
   return b.build(dims);
 }
 

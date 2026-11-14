@@ -147,6 +147,25 @@ struct AxialStereo {
   Chirality parity = Chirality::None;
 };
 
+// Planar and helical chirality, perceived from 3D coordinates only (SMILES has no notation for either).
+//  Cyclophane:  an aromatic ring held by a bridge (ansa) that returns to a non-adjacent ring atom. `atoms` is
+//               the ring in order; `pilots` are the out-of-plane bridge atoms bonded to the ring that rank
+//               highest by CIP (ties kept); pilot_ccw[k] is 1 when atoms[] runs counterclockwise seen from
+//               pilots[k].
+//  Metallocene: a 5- or 6-membered ring with one atom (the metal) bonded to every ring atom; pilots = {metal},
+//               pilot_ccw[0] is 1 when atoms[] runs counterclockwise seen from the side away from the metal.
+//  Helicene:    five or more ortho-fused rings turning the same way; `atoms` is the inner rim from end to
+//               end, `plus` is a positive sum of the inner-rim torsion angles (right-handed helix, P).
+enum class PlanarKind : std::uint8_t { Cyclophane, Metallocene, Helicene };
+struct PlanarStereo {
+  PlanarKind kind = PlanarKind::Cyclophane;
+  std::vector<std::uint32_t> atoms;
+  std::vector<std::uint32_t> pilots;
+  std::vector<char> pilot_ccw;
+  bool plus = false;
+  std::uint32_t rings = 0;
+};
+
 struct Species {
   std::string smiles;
   std::string canonical_smiles;  // unique per structure incl. stereo (see canonical.hpp)
@@ -172,6 +191,7 @@ struct ChemicalSystemState {
   std::vector<TetrahedralStereo> tetrahedral;  // all species; filter by atoms.species[atom]
   std::vector<DoubleBondStereo> double_bonds;  // all species; filter by bonds.species[bond]
   std::vector<AxialStereo> axial;              // all species; filter by atoms.species[begin]
+  std::vector<PlanarStereo> planar;            // all species; filter by atoms.species[atoms[0]]
 
   ThermoConditions conditions;
   AlignedVector<double> moles;  // per species, mol

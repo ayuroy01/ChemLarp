@@ -463,6 +463,12 @@ class Writer {
       for (std::size_t q = 0; q < 4; ++q) refs[q] = to_token(t.refs[q]);
       tetra_.push_back({loc, refs, t.parity});
     }
+    if (diag_ && opt_.canonical)
+      for (const auto& u : st_.planar)
+        if (!u.atoms.empty() && st_.atoms.species[u.atoms[0]] == species_index && cip_label(st_, u) != CipLabel::None) {
+          diag_->warn(DiagCode::StereoIgnored, "planar or helical chirality has no SMILES notation; not written").on_atom(u.atoms[0]);
+          break;
+        }
     for (const auto& a : st_.axial) {
       if (st_.atoms.species[a.begin] != species_index) continue;
       const CipLabel l = cip_label(st_, a, opt_.canonical ? diag_ : nullptr);

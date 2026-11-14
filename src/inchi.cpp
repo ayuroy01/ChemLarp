@@ -1148,6 +1148,12 @@ InchiResult inchi(const ChemicalSystemState& state, std::uint32_t species, Diagn
         diag->warn(DiagCode::StereoIgnored, "axial chirality (allene or atropisomer) is not encoded in this InChI").on_atom(ax.begin);
         break;
       }
+  if (diag)
+    for (const auto& u : state.planar)
+      if (!u.atoms.empty() && state.atoms.species[u.atoms[0]] == species) {
+        diag->warn(DiagCode::StereoIgnored, "planar or helical chirality is not encoded in InChI").on_atom(u.atoms[0]);
+        break;
+      }
   find_components(m);
   int ncomp = 0;
   for (int x : m.comp) ncomp = std::max(ncomp, x + 1);

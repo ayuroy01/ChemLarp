@@ -844,6 +844,8 @@ bool Namer::load() {
   }
   for (const auto& c : cip_axes(st_, sp_))  // no axial descriptors in names yet: refuse rather than drop them
     if (c.label != CipLabel::None) return fail("axial chirality (Ra/Sa) is not part of the names produced");
+  for (const auto& c : cip_planes(st_, sp_))
+    if (c.label != CipLabel::None) return fail("planar or helical chirality (Rp/Sp, P/M) is not part of the names produced");
   for (const auto& c : cip_double_bonds(st_, sp_)) {
     if (c.label == CipLabel::None || !mine(st_.bonds.begin[c.index])) continue;
     const int a = local(st_.bonds.begin[c.index]), b = local(st_.bonds.end[c.index]);

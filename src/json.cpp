@@ -155,6 +155,16 @@ std::string structure_to_json(const ChemicalSystemState& st) {
          ref(ax.refs[1]) + "," + ref(ax.refs[2]) + "," + ref(ax.refs[3]) + "],\"parity\":" +
          json_escape(ax.parity == Chirality::Clockwise ? "@@" : "@") + ",\"cip\":" + json_escape(to_string(cip_label(st, ax))) + "}";
   }
+  s += "],\"planar\":[";
+  for (std::size_t i = 0; i < st.planar.size(); ++i) {
+    const auto& u = st.planar[i];
+    if (i) s += ',';
+    const char* kind = u.kind == PlanarKind::Helicene ? "helicene" : u.kind == PlanarKind::Metallocene ? "metallocene" : "cyclophane";
+    s += "{\"kind\":" + json_escape(kind) + ",\"atoms\":" + json_array(u.atoms, [](std::uint32_t a) { return std::to_string(a); }) +
+         ",\"pilots\":" + json_array(u.pilots, [](std::uint32_t a) { return std::to_string(a); }) +
+         (u.kind == PlanarKind::Helicene ? ",\"rings\":" + std::to_string(u.rings) : std::string()) +
+         ",\"cip\":" + json_escape(to_string(cip_label(st, u))) + "}";
+  }
   return s + "]}}";
 }
 

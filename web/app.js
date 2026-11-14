@@ -150,7 +150,9 @@
     if (!compound) { body.replaceChildren(h('p', { class: 'muted', text: 'Open a compound to see its properties.' })); return; }
     const c = compound;
     const p = properties(c);
-    const stereoCount = c.cip.centres.length + c.cip.double_bonds.length + (c.cip.axes || []).length;
+    const fs = c.fileStereo || {};
+    const stereoCount = c.cip.centres.length + c.cip.double_bonds.length + (c.cip.axes || []).length +
+      (fs.axes || []).filter((x) => x.centre === null).length + (fs.planes || []).length;
     body.replaceChildren(
       h('div', { class: 'thumb', id: 'insp-drawing', role: 'img', 'aria-label': 'Structure drawing' }),
       h('div', {}, formulaNode(c.formula, 'formula')),
@@ -264,7 +266,10 @@
         host.innerHTML = r.svg;
         const st = r.stereo;
         const axes = (c.cip && c.cip.axes || []).length;
-        const axisNote = axes ? `${axes} chirality axis${axes === 1 ? '' : 'es'} (labelled, not drawn with wedges)` : '';
+        const fs = c.fileStereo || {};
+        const fileUnits = (fs.axes || []).filter((x) => x.centre === null).length + (fs.planes || []).length;
+        const fileNote = fileUnits ? `${fileUnits} axial, planar or helical unit${fileUnits === 1 ? '' : 's'} in the 3D file (listed below; not in the drawing)` : '';
+        const axisNote = [axes ? `${axes} chirality axis${axes === 1 ? '' : 'es'} (labelled, not drawn with wedges)` : '', fileNote].filter(Boolean).join(' · ');
         note.textContent = st.centres + st.bonds
           ? `Stereo shown: ${st.centres_ok}/${st.centres} centres · ${st.bonds_ok}/${st.bonds} double bonds${axisNote ? ' · ' + axisNote : ''}`
           : axisNote || 'No stereo elements';
@@ -309,6 +314,10 @@
       ...cip.centres.map((x) => h('span', { class: 'stereo' }, `Atom ${x.atom + 1}`, h('b', { text: x.label || '?' }))),
       ...cip.double_bonds.map((x) => h('span', { class: 'stereo' }, `Bond ${x.bond + 1}`, h('b', { text: x.label || '?' }))),
       ...(cip.axes || []).map((x) => h('span', { class: 'stereo' }, x.centre !== null ? `Axis at atom ${x.centre + 1}` : `Axis ${x.begin + 1}–${x.end + 1}`, h('b', { text: x.label || '?' }))),
+      // From the file's 3D coordinates only; SMILES cannot carry these, so they are listed without atom numbers.
+      ...(c.fileStereo ? (c.fileStereo.axes || []).filter((x) => x.centre === null) : []).map((x) => h('span', { class: 'stereo', title: 'From the 3D coordinates of the file' }, 'Biaryl axis (3D file)', h('b', { text: x.label || '?' }))),
+      ...(c.fileStereo ? c.fileStereo.planes || [] : []).map((x) => h('span', { class: 'stereo', title: 'From the 3D coordinates of the file' },
+        x.kind === 'helicene' ? `Helix, ${x.rings} rings (3D file)` : `${x.kind === 'metallocene' ? 'Metallocene' : 'Cyclophane'} plane (3D file)`, h('b', { text: x.label || '?' }))),
     ];
     out.replaceChildren(
       status('ok', 'Valid structure', `${c.heavy} heavy atoms · ${c.bonds} bonds`),
@@ -348,7 +357,7 @@
     return `Not named: ${m.length > 90 ? m.slice(0, 87) + '…' : m}`;
   }
 
-  async function openCompound(input, { remember = true } = {}) {
+  async function openCompound(input, { remember = true, fileStereo = null } = {}) {
     input = (input || '').trim();
     if (!input) return;
     $('compound').value = input;
@@ -374,6 +383,7 @@
         inchi: ik.result.ok ? ik.result.inchi : null, inchiKey: ik.result.ok ? ik.result.key : null,
         iupac: nm.result.ok ? nm.result.name : null,
         iupacWhy: nm.result.ok ? null : namingReason(nm.result.diagnostics),
+        fileStereo,  // 3D-only stereo of the file record: atropisomer axes, planes, helices (no SMILES notation)
       };
       renderInspector();
       renderStructure(r, input);
@@ -398,7 +408,7 @@
       lastFile = good.length ? { name: file.name, records: good } : lastFile;
       const warnings = r.diagnostics.filter((d) => d.severity === 'warning').length;
       if (good.length === 1 && r.records.length === 1) {
-        await openCompound(good[0].smiles);
+        await openCompound(good[0].smiles, { fileStereo: good[0] });
         if (warnings) toast(`${file.name}: ${warnings} warning(s) — see the file's notes below`);
         if (warnings) out.append(...diagnostics(r.diagnostics));
         return;
@@ -414,7 +424,7 @@
         h('div', { class: 'glass-card card' },
           h('div', { class: 'card-head' }, h('h2', { text: 'Records' }), h('span', { class: 'meta', text: r.records.length >= 500 ? 'First 500 shown' : r.format.toUpperCase() })),
           h('div', { class: 'record-list' }, r.records.map((x, i) => x.ok
-            ? h('button', { type: 'button', class: 'record', onclick: () => openCompound(x.smiles), title: x.smiles },
+            ? h('button', { type: 'button', class: 'record', onclick: () => openCompound(x.smiles, { fileStereo: x }), title: x.smiles },
               h('span', { class: 'r-title', text: x.title || `Record ${i + 1}` }), h('span', { class: 'r-formula' }, formulaNode(x.formula)),
               h('span', { class: 'r-smiles', text: x.smiles }))
             : h('div', { class: 'record bad' }, h('span', { class: 'r-title', text: x.title || `Record ${i + 1}` }), h('span', { class: 'muted', text: `line ${x.line}: could not be read` }))))),

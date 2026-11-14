@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "chemlarp/elements.hpp"
+#include "chemlarp/planar.hpp"
 
 namespace chemlarp {
 namespace {
@@ -509,6 +510,10 @@ const char* to_string(CipLabel l) noexcept {
     case CipLabel::s: return "s";
     case CipLabel::Ra: return "Ra";
     case CipLabel::Sa: return "Sa";
+    case CipLabel::Rp: return "Rp";
+    case CipLabel::Sp: return "Sp";
+    case CipLabel::M: return "M";
+    case CipLabel::P: return "P";
     default: return "";
   }
 }
@@ -579,6 +584,137 @@ CipLabel cip_label(const ChemicalSystemState& st, const AxialStereo& a, Diagnost
     for (int j = i + 1; j < 4; ++j) inversions += order[static_cast<std::size_t>(i)] > order[static_cast<std::size_t>(j)];
   const bool ccw = (a.parity == Chirality::CounterClockwise) != ((inversions & 1) != 0);
   return ccw ? CipLabel::Ra : CipLabel::Sa;
+}
+
+int cip_compare_atoms(const ChemicalSystemState& st, std::uint32_t a, std::uint32_t b) {
+  if (a == b) return 0;
+  // A dummy root bonded to both: each digraph is then the one rooted at that atom, with the dummy as its
+  // parent, so ranking the two as ligands of the dummy compares the atoms themselves.
+  ChemicalSystemState t = st;
+  Atom dummy;
+  dummy.element = 0;
+  dummy.species = st.atoms.species[a];
+  const auto root = static_cast<std::uint32_t>(t.atoms.size());
+  t.atoms.push(dummy);
+  for (std::uint32_t x : {a, b}) {
+    Bond bd;
+    bd.begin = root;
+    bd.end = x;
+    bd.species = dummy.species;
+    t.bonds.push(bd);
+  }
+  t.rebuild_adjacency();
+  return cip_compare(t, root, a, b);
+}
+
+namespace {
+
+bool bonded(const ChemicalSystemState& st, std::uint32_t a, std::uint32_t b) {
+  for (std::uint32_t x : st.adjacency.neighbors(a))
+    if (x == b) return true;
+  return false;
+}
+
+// Highest of the candidate refs by CIP on `root`; kNoAtom when the top two tie.
+std::uint32_t best_ligand(const ChemicalSystemState& st, std::uint32_t root, const std::vector<std::uint32_t>& cand) {
+  if (cand.empty()) return kNoAtom;
+  std::uint32_t best = cand[0];
+  bool tie = false;
+  for (std::size_t i = 1; i < cand.size(); ++i) {
+    const int c = cip_compare(st, root, cand[i], best);
+    if (c > 0) best = cand[i], tie = false;
+    else if (c == 0) tie = true;
+  }
+  return tie ? kNoAtom : best;
+}
+
+// Cyclophane descriptor seen from pilots[k]: 1 Rp, 0 Sp, -1 undetermined.
+int cyclophane_rp(const ChemicalSystemState& st, const PlanarStereo& u, std::size_t k) {
+  const auto& ring = u.atoms;
+  const std::size_t n = ring.size();
+  const std::uint32_t pilot = u.pilots[k];
+  std::size_t ia = n;
+  for (std::size_t i = 0; i < n; ++i)
+    if (bonded(st, ring[i], pilot)) {
+      if (ia != n) return -1;  // the pilot bridges two ring atoms directly
+      ia = i;
+    }
+  if (ia == n) return -1;
+  const std::uint32_t a = ring[ia], f = ring[(ia + 1) % n], r = ring[(ia + n - 1) % n];
+  const int c = cip_compare(st, a, f, r);
+  if (c == 0) return -1;
+  const bool forward = c > 0;
+  const std::size_t ib = forward ? (ia + 1) % n : (ia + n - 1) % n;
+  const std::uint32_t b = ring[ib];
+  const std::uint32_t ring_next = ring[forward ? (ib + 1) % n : (ib + n - 1) % n];
+  std::vector<std::uint32_t> cand = {ring_next};
+  for (std::uint32_t x : st.adjacency.neighbors(b)) {
+    if (std::find(ring.begin(), ring.end(), x) != ring.end()) continue;
+    if (bridges_ring(st, ring, ib, x)) continue;  // out of plane
+    cand.push_back(x);
+  }
+  if (st.atoms.implicit_h[b] > 0) cand.push_back(kImplicitHRef);
+  const std::uint32_t cbest = best_ligand(st, b, cand);
+  if (cbest == kNoAtom) return -1;
+  // a -> b -> ring_next turns the way the ring runs; a substituent on b turns the other way.
+  const bool ccw_ring = (u.pilot_ccw[k] != 0) == forward;
+  const bool ccw = cbest == ring_next ? ccw_ring : !ccw_ring;
+  return ccw ? 0 : 1;
+}
+
+int metallocene_rp(const ChemicalSystemState& st, const PlanarStereo& u) {
+  const auto& ring = u.atoms;
+  const std::size_t n = ring.size();
+  const std::uint32_t metal = u.pilots[0];
+  std::vector<std::pair<std::size_t, std::uint32_t>> subs;  // (ring position, substituent atom)
+  for (std::size_t i = 0; i < n; ++i)
+    for (std::uint32_t x : st.adjacency.neighbors(ring[i]))
+      if (x != metal && std::find(ring.begin(), ring.end(), x) == ring.end()) subs.push_back({i, x});
+  if (subs.size() < 2) return -1;
+  std::sort(subs.begin(), subs.end(), [&](const auto& p, const auto& q) { return cip_compare_atoms(st, p.second, q.second) > 0; });
+  if (cip_compare_atoms(st, subs[0].second, subs[1].second) == 0) return -1;
+  if (subs.size() > 2 && cip_compare_atoms(st, subs[1].second, subs[2].second) == 0) return -1;
+  if (subs[0].first == subs[1].first) return -1;
+  const std::size_t d = (subs[1].first + n - subs[0].first) % n;
+  if (2 * d == n) return -1;
+  const bool forward = 2 * d < n;
+  const bool ccw = (u.pilot_ccw[0] != 0) == forward;
+  return ccw ? 0 : 1;
+}
+
+}  // namespace
+
+CipLabel cip_label(const ChemicalSystemState& st, const PlanarStereo& u, Diagnostics* diag) {
+  if (u.kind == PlanarKind::Helicene) return u.plus ? CipLabel::P : CipLabel::M;
+  int rp = -1;
+  if (u.kind == PlanarKind::Metallocene) {
+    if (!u.pilots.empty()) rp = metallocene_rp(st, u);
+  } else {
+    // Equally ranked pilots must agree.
+    for (std::size_t k = 0; k < u.pilots.size(); ++k) {
+      const int v = cyclophane_rp(st, u, k);
+      if (v < 0 || (k && v != rp)) {
+        rp = -1;
+        break;
+      }
+      rp = v;
+    }
+  }
+  if (rp < 0) {
+    if (diag && !u.atoms.empty())
+      diag->warn(DiagCode::CipUndetermined, "ligands of the chirality plane tie under CIP rules 1-5; not stereogenic")
+          .on_atom(u.atoms[0]);
+    return CipLabel::None;
+  }
+  return rp ? CipLabel::Rp : CipLabel::Sp;
+}
+
+std::vector<CipAssignment> cip_planes(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics* diag) {
+  std::vector<CipAssignment> out;
+  for (std::size_t i = 0; i < st.planar.size(); ++i)
+    if (!st.planar[i].atoms.empty() && st.atoms.species[st.planar[i].atoms[0]] == sp)
+      out.push_back({static_cast<std::uint32_t>(i), cip_label(st, st.planar[i], diag)});
+  return out;
 }
 
 std::vector<CipAssignment> cip_axes(const ChemicalSystemState& st, std::uint32_t sp, Diagnostics* diag) {
