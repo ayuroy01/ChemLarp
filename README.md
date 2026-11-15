@@ -1,180 +1,226 @@
+<div align="center">
+
 # ChemLarp
 
-ChemLarp is a terminal-native chemistry engine written in C++20. It covers the path from SMILES to molecular graph to thermochemistry to Gibbs-minimized equilibrium. Every stage shares one zero-copy structure-of-arrays state, and every error is collected into a single vector.
+**A free, open-source chemistry workbench: draw a molecule, then name it, see it in 3D, run quantum chemistry and molecular dynamics, simulate reactions, mixtures, proteins and whole chemical plants, all in one program.**
 
-## Use it in your browser (any OS, installable)
+[**Open ChemLarp in your browser →**](https://ayuroy01.github.io/ChemLarp/) &nbsp;·&nbsp; [**Install it (step-by-step guide)**](INSTALL.md) &nbsp;·&nbsp; [What it can do](#what-it-can-do) &nbsp;·&nbsp; [How accurate is it?](#how-accurate-is-it)
 
-**https://ayuroy01.github.io/ChemLarp/**: the full engine compiled to WebAssembly with a point-and-click interface (molecule analysis with IUPAC names, a structure editor, Hartree-Fock and DFT calculations, opening MOL/SDF/PDB/CML files, substructure and similarity search, 2D structure drawings, 3D models, reactions, equilibrium, kinetics, progress). It runs entirely on your device and works offline after the first visit.
+[![CI](https://github.com/ayuroy01/ChemLarp/actions/workflows/ci.yml/badge.svg)](https://github.com/ayuroy01/ChemLarp/actions/workflows/ci.yml)
+[![Web app](https://github.com/ayuroy01/ChemLarp/actions/workflows/web.yml/badge.svg)](https://ayuroy01.github.io/ChemLarp/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/runs%20on-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iPhone%20(web)-informational)
 
-- **Windows / macOS / Linux (Chrome, Edge):** click **Install app** in the page header or the install icon in the address bar.
-- **Android (Chrome):** menu ⋮ → **Install app** / **Add to Home screen**.
-- **iPhone / iPad (Safari):** Share → **Add to Home Screen**.
+<img src="docs/images/structure.jpg" alt="ChemLarp showing testosterone: 2D structure with all six stereocentres labelled R/S, the full IUPAC name, InChI and InChIKey, and the properties panel" width="100%">
 
-Build it yourself with the Emscripten SDK: `scripts/build_web.sh`, then serve `build/web` with any static file server.
+<sub>Testosterone typed as a SMILES string: ChemLarp works out all six stereocentres, writes the full IUPAC name, the InChI and InChIKey, and the properties on the right. Nothing is looked up online.</sub>
 
-## Install
+</div>
 
-Packages are built and tested for every commit (`.github/workflows/packages.yml`); they are not on PyPI,
-npm or Homebrew yet. Until then:
+---
 
-- **Python**: download the wheel for your system from the latest run of the `packages` workflow (or build it:
-  `python3 -m pip wheel . -w dist`), then `pip install chemlarp-*.whl`. It includes the `chemlarp` command.
-- **Node.js**: the npm tarball from the same run, `npm install chemlarp-0.1.0.tgz`; then
-  `const c = await require('chemlarp').load()`.
-- **Homebrew** (macOS, Linux): `brew install --HEAD` with `release/homebrew/chemlarp.rb` in a tap.
-- **From source**: `make install PREFIX=$HOME/.local` installs the CLI, the shared library and the headers.
-- **Desktop and Android apps**: `ChemLarp-*-macos.dmg`, `ChemLarp-*-windows-x64-setup.exe` and
-  `ChemLarp-*-android.apk` from the same workflow run: the web app in a native window, offline. They are not
-  code-signed yet, so macOS asks before the first launch (right-click > Open) and Windows SmartScreen may warn.
+## What is ChemLarp?
 
-See [docs/PACKAGING.md](docs/PACKAGING.md) for how each package is built and how a release is published.
+ChemLarp is one program that does the jobs chemists usually need several separate, often expensive tools for:
+drawing and naming structures, 3D models, quantum chemistry, force fields and molecular dynamics, reaction
+thermodynamics and equilibrium, combustion kinetics, phase equilibrium, water chemistry, protein preparation,
+process flowsheets and a virtual lab with safety checks.
 
-## Build
+- **No installation needed.** The whole engine runs inside your web browser. Nothing is uploaded: every calculation happens on your own computer or phone, and it keeps working offline after the first visit.
+- **Free and open source** under the Apache 2.0 licence, for students, teachers, researchers and companies alike. No licence server, no account, no subscription.
+- **Written from scratch.** Every part, from the SMILES reader to the DFT code and the stiff ODE solver, is ChemLarp's own C++20 code, with no third-party libraries. The same engine runs in the browser (WebAssembly), as a desktop and phone app, on the command line, and from Python, C and JavaScript.
+- **Checked against the reference tools.** Results are compared with established programs and published data (RDKit, PySCF, PHREEQC, OPSIN, PubChem, the official MMFF94 suite, NIST/JANAF). The numbers are [below](#how-accurate-is-it), and every known shortfall is listed openly in [docs/GAPS.md](docs/GAPS.md).
 
-Supported platforms: **Windows** (Visual Studio 2022 / MSVC, clang-cl, or MSYS2 MinGW-w64), **macOS** (Apple clang, Xcode 15+), and **Linux** (GCC 11+ / Clang 15+). The only requirements are a C++20 compiler and CMake 3.20+. There are no other dependencies.
+<div align="center">
+<img src="docs/images/rotate-3d.gif" alt="Rotating 3D ball-and-stick model of testosterone generated by ChemLarp" width="49%">
+<img src="docs/images/molecular-dynamics.gif" alt="Molecular dynamics trajectory of ibuprofen at 300 K computed in the browser" width="49%">
+<br>
+<sub>Left: a 3D model built from the SMILES by distance geometry and a force field, keeping every stereocentre. Right: ibuprofen moving at 300 K, simulated with MMFF94 in the browser.</sub>
+</div>
 
-**macOS / Linux**
+---
+
+## What it can do
+
+### Molecules: structure, names, identifiers
+
+| | |
+|---|---|
+| <img src="docs/images/structure-editor.jpg" alt="Structure editor"> | **Draw or type a structure.** The editor checks valence as you draw, reads stereochemistry from wedges, and opens the result in every tool. Open MOL/SDF, PDB and CML files or drop them on the window. <br><br>**Names and identifiers.** Systematic IUPAC names (2013 recommendations), standard InChI and InChIKey, canonical SMILES, R/S and E/Z by the full CIP rules, including axial and planar chirality. <br><br>**Search.** SMARTS substructure search and fingerprint similarity, across a whole SD file. |
+| <img src="docs/images/3d-model.jpg" alt="3D model view"> | **3D models** from any structure, refined with UFF, MMFF94 or MMFF94s, with the stereochemistry checked in 3D. Export SDF. |
+
+### Quantum chemistry and molecular dynamics
+
+| | |
+|---|---|
+| <img src="docs/images/quantum-chemistry.jpg" alt="Quantum chemistry: B3LYP/6-31G* on benzoquinone"> | **Hartree–Fock and DFT** (SVWN, PBE, B3LYP) with STO-3G to 6-31G* basis sets: total energy, HOMO/LUMO, orbital energies, Mulliken charges, dipole. Shown: B3LYP/6-31G* on p-benzoquinone, 128 basis functions, computed in the browser. |
+| <img src="docs/images/molecular-dynamics.jpg" alt="Molecular dynamics energies, temperature and spectrum"> | **Molecular dynamics** with MMFF94 or UFF: constant energy or temperature (Bussi, Langevin), energy and temperature traces, vibrational spectrum and normal modes, animated trajectory with XYZ export. |
+
+### Proteins
+
+| | |
+|---|---|
+| <img src="docs/images/protein.jpg" alt="Protein view: ubiquitin with titration curve"> | **Prepare a protein for simulation.** Type a PDB ID (or open a file): missing side chains and loops are rebuilt, the pKa of every titratable group is predicted from the structure, protonation states are set for your pH, and all hydrogens are placed with the hydrogen-bond network optimised. Shown: ubiquitin (1UBQ), 629 hydrogens added in 24 ms. |
+
+### Reactions, equilibrium and kinetics
+
+| | |
+|---|---|
+| <img src="docs/images/equilibrium.jpg" alt="Gibbs equilibrium of combustion products"> | **Reaction thermodynamics and equilibrium.** Balance an equation and get ΔH°, ΔS°, ΔG° and K; find the equilibrium composition of a gas mixture by Gibbs energy minimisation (shown: methane combustion products at 2500 K). |
+| <img src="docs/images/batch-reactor.jpg" alt="Hydrogen-oxygen ignition in a batch reactor"> | **Chemical kinetics.** Stiff reaction mechanisms in CHEMKIN, Cantera YAML or ChemLarp's own format, in constant-volume or constant-pressure reactors; ignition delay, temperature and every species over time (shown: hydrogen–oxygen ignition at 1000 K). |
+
+### Mixtures, water chemistry and process simulation
+
+| | |
+|---|---|
+| <img src="docs/images/phase-behaviour.jpg" alt="Vapour-liquid flash"> | **Phase behaviour.** Vapour–liquid flash with Peng–Robinson or SRK, bubble and dew points with UNIFAC or NRTL, and a database of 365 pure compounds. |
+| <img src="docs/images/aqueous-chemistry.jpg" alt="Aqueous speciation of hard water"> | **Water chemistry.** pH, speciation, saturation indices and dissolving or precipitating minerals and gases from 0 to 100 °C, with the USGS PHREEQC database. |
+| <img src="docs/images/flowsheet.jpg" alt="Flowsheet with recycle loop"> | **Process flowsheets.** Mixers, heaters, flash drums, splitters, reactors and rigorous distillation columns joined by streams, including recycle loops (shown: a benzene/toluene flash with liquid recycle, converged in 5 iterations). |
+
+### Virtual lab with safety checks
+
+| | |
+|---|---|
+| <img src="docs/images/virtual-lab-safety.jpg" alt="Virtual lab warning about bleach and ammonia"> | **Mix solutions before you do it for real.** ChemLarp predicts pH, heat released, temperature change, precipitates and gases. It also flags dangerous combinations, with the source cited: incompatibility rules from the US National Research Council's *Prudent Practices in the Laboratory*, and GHS hazard classifications from PubChem for 207 laboratory chemicals. Shown: bleach with ammonia. |
+| <img src="docs/images/titration.jpg" alt="Titration curve of phosphoric acid"> | **Titrations** with equivalence points, here phosphoric acid with sodium hydroxide. These are teaching aids, not a risk assessment. |
+
+### On your phone too
+
+<div align="center">
+<img src="docs/images/phone.jpg" alt="ChemLarp on a phone: structure, 3D model and virtual lab" width="80%">
+</div>
+
+---
+
+## Why ChemLarp is different
+
+| You usually need… | Typical tools | In ChemLarp |
+|---|---|---|
+| Structure drawing, naming, identifiers | ChemDraw, ACD/Name, MarvinSketch | Editor, IUPAC names, InChI, CIP R/S and E/Z, SMARTS search |
+| Quantum chemistry | Gaussian, ORCA, PySCF | HF and DFT single points, in the browser |
+| Force fields and molecular dynamics | Schrödinger, OpenMM, RDKit | MMFF94/94s, UFF, NVE/NVT dynamics, normal modes |
+| Protein preparation | Schrödinger Protein Preparation, PDB2PQR, PROPKA | Repair, pKa, protonation and hydrogen placement |
+| Combustion kinetics and equilibrium | Cantera, CHEMKIN | Stiff kinetics, CHEMKIN/YAML import, Gibbs minimisation |
+| Process simulation | Aspen Plus, HYSYS, DWSIM | Flash, unit operations, flowsheets with recycle, distillation |
+| Aqueous chemistry | PHREEQC, Visual MINTEQ | Speciation, saturation, minerals and gases |
+| Virtual laboratory | Labster and similar | Mixing, titration, calorimetry, safety rules |
+
+**Honest positioning.** Commercial packages are larger and more mature in each of these areas, and ChemLarp does
+not replace them for production work at scale: its quantum chemistry stops at 6-31G* single points, its process
+models cover common unit operations, and its explicit-water engine is slow. What it offers is breadth in one
+place, at no cost, on any device, with source code you can read and change. Each tool also tells you what it does
+not cover ([docs/GAPS.md](docs/GAPS.md)). It suits teaching, learning, quick checks, and anyone without access to
+expensive licences.
+
+---
+
+## How accurate is it?
+
+Building these from scratch and getting them to agree with established programs was the hard part. Some of the checks:
+
+| What | Compared with | Result |
+|---|---|---|
+| MMFF94 force field | Merck's official MMFF94 validation suite (761 molecules) | 17,231 of 17,231 atom types identical; 752 of 759 energies within 0.0001 kcal/mol |
+| Hartree–Fock and DFT | PySCF on the same geometries | HF within 2×10⁻⁷ hartree (19 molecules × 4 basis sets); DFT within 2×10⁻⁶ |
+| IUPAC names | OPSIN (independent name-to-structure parser) | 14,188 of 14,193 names parse back to exactly the input structure, stereochemistry included |
+| InChI | PubChem | 1,483 of 1,500 identical on a random sample never used for tuning |
+| CIP R/S labels | RDKit's CIP labeller | 816 of 816 PubChem stereo structures |
+| SMARTS substructure search | RDKit | 187,338 of 187,375 pattern–molecule pairs identical (99.98 %) |
+| Structure files | RDKit reading the same files | 999 of 999 PubChem 2D, 865 of 866 PubChem 3D |
+| Thermochemistry | JANAF tables | within 0.6 kJ/mol |
+| Water chemistry and virtual lab | PHREEQC on the same solutions | pH within 0.002; precipitates and gases within 0.3 % |
+| Vapour pressures | NIST | 0.1–0.7 % for non-polar compounds |
+| Protein hydrogens | Deposited NMR structures | 0.06–0.14 Å RMS |
+| Free-energy estimators | pymbar | within 5×10⁻¹⁰ kT |
+
+Details, methods and every exception are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The validation scripts
+are in [`scripts/`](scripts) and run with one command (`make validate`). The C++ test suite (more than 230 tests) runs on
+Windows, macOS and Linux for every change.
+
+---
+
+## Get it
+
+**Easiest: no installation.** Open **https://ayuroy01.github.io/ChemLarp/** in Chrome, Edge, Safari or Firefox.
+To keep it as an app, use **Install app** (Chrome/Edge) or **Share → Add to Home Screen** (iPhone/iPad).
+
+**Never installed software from GitHub before?** Follow the plain-language, step-by-step
+[**installation guide**](INSTALL.md). It covers Windows, Mac, Android, iPhone, and Python for people who want to
+write scripts.
+
+| Platform | What to download | Guide |
+|---|---|---|
+| Any device | Nothing: use the web app | [INSTALL.md § Browser](INSTALL.md#option-1-use-it-in-your-web-browser-no-installation) |
+| Windows 10/11 | `ChemLarp-…-windows-x64-setup.exe` | [INSTALL.md § Windows](INSTALL.md#windows) |
+| macOS 12+ (Apple silicon and Intel) | `ChemLarp-…-macos.dmg` | [INSTALL.md § Mac](INSTALL.md#mac) |
+| Android 8+ | `ChemLarp-…-android.apk` | [INSTALL.md § Android](INSTALL.md#android) |
+| Python 3.10+ | `chemlarp-…whl` | [INSTALL.md § Python](INSTALL.md#option-3-python-for-scripts-and-notebooks) |
+
+Downloads are on the [Releases page](https://github.com/ayuroy01/ChemLarp/releases/latest).
+
+---
+
+## For developers
+
+The engine is a C++20 library with a C ABI, a command-line program, Python bindings (ctypes) and a WebAssembly
+build. The only requirement is a C++20 compiler; there are no other dependencies.
 
 ```bash
-scripts/build.sh            # CMake if installed, otherwise the Makefile; runs the tests
+git clone https://github.com/ayuroy01/ChemLarp.git
+cd ChemLarp
+make -j8                 # or: scripts/build.sh (CMake if installed); Windows: scripts\build.ps1
+./build/chemlarp_tests   # the test suite
 ```
 
-**Windows (PowerShell, from a "Developer PowerShell for VS 2022" or with CMake on PATH)**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build.ps1
-```
-
-**Any platform, by hand**
+<details>
+<summary><b>Command-line examples</b></summary>
 
 ```bash
-cmake -S . -B build
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-```
-
-| Output | Windows | macOS | Linux |
-|---|---|---|---|
-| CLI | `build\Release\chemlarp.exe` (VS) / `build\chemlarp.exe` (Ninja, MinGW) | `build/chemlarp` | `build/chemlarp` |
-| C ABI shared library | `chemlarp.dll` + `chemlarp.lib` | `libchemlarp.dylib` | `libchemlarp.so` |
-
-The Python binding finds the library automatically in any of these locations. Set `CHEMLARP_LIB` to point it elsewhere.
-
-**Quoting SMILES on the command line:** use single quotes in bash, zsh and PowerShell (`'[C-]#[O+]'`), and double quotes in `cmd.exe`. In zsh, unquoted `[...]` is treated as a glob.
-
-CI (`.github/workflows/ci.yml`) builds and tests on Windows (MSVC and MinGW), macOS and Linux, including CLI and Python smoke tests.
-
-## Try it
-
-```bash
-./build/chemlarp parse 'c1ccncc1'
-```
-
-```bash
-./build/chemlarp parse 'C(C)(C)(C)(C)C.c1ccnc1'      # shows the error vector
-```
-
-```bash
-./build/chemlarp canon 'C1=CC=C(C=C1)/C=C/C(=O)O' --random 3   # canonical + equivalent random forms
-```
-
-```bash
-./build/chemlarp kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7
-```
-
-The same mechanism in CHEMKIN-II and Cantera YAML form (detected from content):
-
-```bash
-./build/chemlarp kinetics data/mechanisms/h2o2/chem.inp --thermo data/mechanisms/h2o2/therm.dat --smiles data/mechanisms/h2o2/species.smi -T 1000 -t 1e-3 H2=2 O2=1 AR=7
-```
-
-```bash
-./build/chemlarp kinetics data/mechanisms/h2o2.yaml -T 1000 -t 1e-3 H2=2 O2=1 AR=7
-```
-
-```bash
-./build/chemlarp inchi 'C[C@@H](C(=O)O)N'                                              # InChI and InChIKey
-./build/chemlarp name 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O'   # (2S)-2-[4-(2-methylpropyl)phenyl]propanoic acid
-./build/chemlarp read compounds.sdf --inchi             # MOL/SDF, PDB, CML -> canonical SMILES, title, InChIKey
-./build/chemlarp match 'CC(=O)Oc1ccccc1C(=O)O' '[CX3](=O)[OX2H1]'                     # SMARTS matches
-./build/chemlarp qc 'C=O' --method b3lyp --basis 6-31G*        # HF / DFT energy, orbitals, charges, dipole
-./build/chemlarp search compounds.sdf --smarts 'c1ccccc1C(=O)O' --like 'OC(=O)c1ccccc1O' --min 0.3   # screen a file
-./build/chemlarp depict 'C[C@@H](C(=O)O)N' -o alanine.svg --mol alanine.mol --cip   # 2D drawing with wedges
-```
-
-```bash
-./build/chemlarp embed 'C[C@@H](C(=O)O)N' --sdf alanine.sdf    # 3D: distance geometry + UFF, stereo checked
-```
-
-```bash
+./build/chemlarp name 'CC(C)Cc1ccc(cc1)[C@H](C)C(=O)O'    # (2S)-2-[4-(2-methylpropyl)phenyl]propanoic acid
+./build/chemlarp inchi 'C[C@@H](C(=O)O)N'                   # InChI and InChIKey
+./build/chemlarp qc 'C=O' --method b3lyp --basis 6-31G*     # HF / DFT energy, orbitals, charges, dipole
+./build/chemlarp embed 'C[C@@H](C(=O)O)N' --sdf alanine.sdf # 3D structure with stereo checked
+./build/chemlarp depict 'C[C@@H](C(=O)O)N' -o alanine.svg --cip
 ./build/chemlarp reaction '1 C + 2 O=O -> 1 O=C=O + 2 O' -T 298.15
+./build/chemlarp equilibrate -T 2500 C 1 O=O 2 O=C=O 0 O 0 '[C-]#[O+]' 0
+./build/chemlarp kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7
+./build/chemlarp protein 1crn.pdb --pH 7.4
+./build/chemlarp                                             # lists every command
 ```
 
-```bash
-./build/chemlarp equilibrate -T 2500 C 1 O=O 2 O=C=O 0 O 0 '[C-]#[O+]' 0 '[H][H]' 0 '[OH]' 0 '[H]' 0 '[O]' 0
-```
+Quote SMILES with single quotes in bash, zsh and PowerShell, and double quotes in `cmd.exe`.
+</details>
 
-```bash
-./build/chemlarp parse CCO --json | scripts/clx_pack.py pack ethanol.clx -
-```
-
-Python (no compiled extension, just ctypes):
+<details>
+<summary><b>Python examples</b></summary>
 
 ```python
-import sys; sys.path.insert(0, "python")
 import chemlarp
+chemlarp.iupac_name("CC(=O)Oc1ccccc1C(=O)O")         # '2-(acetyloxy)benzoic acid'
+chemlarp.inchi("N[C@@H](C)C(=O)O")["key"]            # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
+chemlarp.qc("O", "b3lyp", "6-31G*")["energy"]        # hartree
+chemlarp.embed("N[C@@H](C)C(=O)O")["sdf"]            # 3D molfile
 chemlarp.equilibrate({"[C-]#[O+]": 1, "O": 1, "O=C=O": 0, "[H][H]": 0}, temperature_K=1000)
-with chemlarp.System() as s:
-    s.add("c1ccccc1O")
-    xyz = s.atom_x()        # numpy view straight into the C++ SoA column
 chemlarp.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
-chemlarp.inchi("N[C@@H](C)C(=O)O")["key"]   # 'QNAYBMKLOCPYGJ-REOHCLBHSA-N'
-chemlarp.iupac_name("CC(=O)Oc1ccccc1C(=O)O")   # '2-(acetyloxy)benzoic acid'
-chemlarp.read_molecules("compounds.sdf")     # [{'title', 'smiles', 'formula', 'properties': {...}}, ...]
-chemlarp.smarts_match("CC(=O)Oc1ccccc1C(=O)O", "[CX3](=O)[OX2H1]")   # [(10, 11, 12)]
-chemlarp.similarity("CC(=O)Oc1ccccc1C(=O)O", "OC(=O)c1ccccc1O")["tanimoto"]   # ECFP4 Tanimoto
-chemlarp.qc("O", "b3lyp", "6-31G*")["energy"]   # about -76.408 hartree at the embedded geometry
-chemlarp.depict("N[C@@H](C)C(=O)O")["svg"]  # 2D drawing (SVG + molfile with wedges)
-chemlarp.embed("N[C@@H](C)C(=O)O")["sdf"]   # 3D molfile with explicit hydrogens
-chemlarp.canonical("N[C@@H](C)C(=O)O")   # {'canonical': 'C[C@H](N)C(=O)O', 'cip': {... 'S' ...}}
+chemlarp.protein("1crn.pdb", pH=7.4)
 ```
+</details>
 
-## Layout
+| Document | What is in it |
+|---|---|
+| [INSTALL.md](INSTALL.md) | Beginner installation guide |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Every module, what is built, how it was validated |
+| [docs/GAPS.md](docs/GAPS.md) | Everything that is not finished, and how to pick it up |
+| [docs/MATH.md](docs/MATH.md) | The mathematics from SMILES to Gibbs equilibrium |
+| [docs/PACKAGING.md](docs/PACKAGING.md) | How the apps and packages are built and released |
+| [Roadmap](https://ayuroy01.github.io/ChemLarp/#roadmap) | Progress by module, live in the web app |
 
-```
-include/chemlarp/   public headers (C++ API + chemlarp_c.h C ABI)
-  system_state.hpp    ChemicalSystemState, SoA Atom/Bond tables, CSR adjacency
-  diagnostics.hpp     error-vector codes (1xx syntax, 2xx valence, 3xx stoichiometry, 4xx thermo)
-  smiles.hpp          OpenSMILES parser, kekulizer, valence validator, stereo references
-  rings.hpp           SSSR and Hückel aromaticity perception
-  canonical.hpp       canonical and randomised SMILES writer
-  cip.hpp             CIP priorities (rules 1a-5), R/S, r/s, E/Z
-  inchi.hpp           standard InChI and InChIKey
-  molio.hpp           readers for MOL V2000/V3000, SDF, PDB, CML
-  smarts.hpp          SMARTS parser and substructure matcher
-  fingerprint.hpp     Morgan (ECFP) fingerprints, Tanimoto and Dice
-  qc.hpp              Hartree-Fock and Kohn-Sham DFT single points
-  iupac.hpp           systematic IUPAC names (2013 Recommendations)
-  reaction.hpp        equation parser, element/charge balance, ΔrG°, K
-  thermo.hpp          NASA-7 polynomials, built-in GRI-Mech data, thermo binding
-  joback.hpp          group-additivity ΔfH°/ΔfG° from the graph
-  gibbs.hpp           element-potential Gibbs minimiser
-  kinetics.hpp        mechanisms (.ocm / CHEMKIN-II / Cantera YAML), fall-off, PLOG, batch reactors
-  ode.hpp             variable-order BDF stiff integrator, LU
-  depict.hpp          2D layout, wedges, SVG drawing, 2D molfile
-  conformer.hpp       explicit H, distance-geometry 3D embedding, stereo from 3D, SDF/XYZ
-  uff.hpp             Universal Force Field (energy, analytic gradient, minimiser)
-  optimize.hpp        L-BFGS
-src/                implementations; src/cli/main.cpp is the `chemlarp` terminal tool
-tests/              dependency-free test suite (93 tests: random-SMILES round trips, Robertson, Troe, cross-format kinetics, 2D drawing, 3D/UFF)
-data/mechanisms/    example H2/O2 mechanism in .ocm, CHEMKIN-II and YAML form (illustrative parameters; regenerate with scripts/gen_h2o2_mechanism.py)
-python/chemlarp/    ctypes binding
-scripts/            build.sh, clx_pack.py
-docs/               ARCHITECTURE.md (design, provenance, status), MATH.md (SMILES→Gibbs math), CLX_SPEC.md
-```
+## Contributing
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for what is built versus planned, and [docs/MATH.md](docs/MATH.md) for the full SMILES → Gibbs matrix derivation.
+Bug reports, chemistry corrections and test cases are welcome: open an
+[issue](https://github.com/ayuroy01/ChemLarp/issues). When a result looks wrong, please include the input (a SMILES
+string or file) and what you expected, with a reference if you have one.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0; see [LICENSE](LICENSE). Free for personal, academic and commercial use.
