@@ -42,47 +42,72 @@ process flowsheets and a virtual lab with safety checks.
 
 ## What it can do
 
-### Molecules: structure, names, identifiers
+### Molecules: drawing, names, identifiers, 3D
 
-| | |
-|---|---|
-| <img src="docs/images/structure-editor.jpg" alt="Structure editor"> | **Draw or type a structure.** The editor checks valence as you draw, reads stereochemistry from wedges, and opens the result in every tool. Open MOL/SDF, PDB and CML files or drop them on the window. <br><br>**Names and identifiers.** Systematic IUPAC names (2013 recommendations), standard InChI and InChIKey, canonical SMILES, R/S and E/Z by the full CIP rules, including axial and planar chirality. <br><br>**Search.** SMARTS substructure search and fingerprint similarity, across a whole SD file. |
-| <img src="docs/images/3d-model.jpg" alt="3D model view"> | **3D models** from any structure, refined with UFF, MMFF94 or MMFF94s, with the stereochemistry checked in 3D. Export SDF. |
+Draw a structure or type it as SMILES, or open MOL/SDF, PDB and CML files. ChemLarp checks valence as you draw,
+reads stereochemistry from wedges, and gives systematic **IUPAC names**, **InChI/InChIKey**, canonical SMILES and
+**R/S, E/Z** by the full CIP rules (axial and planar chirality included). **SMARTS substructure search** and
+fingerprint **similarity** work across whole SD files. **3D models** are built with UFF, MMFF94 or MMFF94s, and the
+stereochemistry is checked in 3D.
+
+<p align="center">
+<img src="docs/images/structure-editor.jpg" alt="Structure editor with aspirin" width="49%">
+<img src="docs/images/3d-model.jpg" alt="3D model of testosterone" width="49%">
+</p>
 
 ### Quantum chemistry and molecular dynamics
 
-| | |
-|---|---|
-| <img src="docs/images/quantum-chemistry.jpg" alt="Quantum chemistry: B3LYP/6-31G* on benzoquinone"> | **Hartree–Fock and DFT** (SVWN, PBE, B3LYP) with STO-3G to 6-31G* basis sets: total energy, HOMO/LUMO, orbital energies, Mulliken charges, dipole. Shown: B3LYP/6-31G* on p-benzoquinone, 128 basis functions, computed in the browser. |
-| <img src="docs/images/molecular-dynamics.jpg" alt="Molecular dynamics energies, temperature and spectrum"> | **Molecular dynamics** with MMFF94 or UFF: constant energy or temperature (Bussi, Langevin), energy and temperature traces, vibrational spectrum and normal modes, animated trajectory with XYZ export. |
+**Hartree–Fock and DFT** (SVWN, PBE, B3LYP) with STO-3G to 6-31G* basis sets: energy, HOMO/LUMO, orbital
+energies, Mulliken charges, dipole. Left: B3LYP/6-31G* on p-benzoquinone, 128 basis functions, run in the
+browser. **Molecular dynamics** with MMFF94 or UFF at constant energy or temperature, with energy and temperature
+traces, vibrational spectrum, normal modes and an animated trajectory.
 
-### Proteins
+<p align="center">
+<img src="docs/images/quantum-chemistry.jpg" alt="Quantum chemistry results for benzoquinone" width="49%">
+<img src="docs/images/molecular-dynamics.jpg" alt="Molecular dynamics energies over time" width="49%">
+</p>
 
-| | |
-|---|---|
-| <img src="docs/images/protein.jpg" alt="Protein view: ubiquitin with titration curve"> | **Prepare a protein for simulation.** Type a PDB ID (or open a file): missing side chains and loops are rebuilt, the pKa of every titratable group is predicted from the structure, protonation states are set for your pH, and all hydrogens are placed with the hydrogen-bond network optimised. Shown: ubiquitin (1UBQ), 629 hydrogens added in 24 ms. |
+### Proteins and reactions
 
-### Reactions, equilibrium and kinetics
+**Protein preparation** from a PDB ID or file: missing side chains and loops rebuilt, the pKa of every
+titratable group predicted from the structure, protonation states set for your pH, all hydrogens placed with the
+hydrogen-bond network optimised (left: ubiquitin, 629 hydrogens in 24 ms). **Chemical kinetics** with stiff
+mechanisms in CHEMKIN, Cantera YAML or ChemLarp's own format (right: hydrogen–oxygen ignition at 1000 K), plus
+reaction thermodynamics (ΔH°, ΔS°, ΔG°, K) and **Gibbs-minimisation equilibrium**.
 
-| | |
-|---|---|
-| <img src="docs/images/equilibrium.jpg" alt="Gibbs equilibrium of combustion products"> | **Reaction thermodynamics and equilibrium.** Balance an equation and get ΔH°, ΔS°, ΔG° and K; find the equilibrium composition of a gas mixture by Gibbs energy minimisation (shown: methane combustion products at 2500 K). |
-| <img src="docs/images/batch-reactor.jpg" alt="Hydrogen-oxygen ignition in a batch reactor"> | **Chemical kinetics.** Stiff reaction mechanisms in CHEMKIN, Cantera YAML or ChemLarp's own format, in constant-volume or constant-pressure reactors; ignition delay, temperature and every species over time (shown: hydrogen–oxygen ignition at 1000 K). |
+<p align="center">
+<img src="docs/images/protein.jpg" alt="Protein view with ubiquitin" width="49%">
+<img src="docs/images/batch-reactor.jpg" alt="Ignition temperature and mole fractions" width="49%">
+</p>
 
 ### Mixtures, water chemistry and process simulation
 
-| | |
-|---|---|
-| <img src="docs/images/phase-behaviour.jpg" alt="Vapour-liquid flash"> | **Phase behaviour.** Vapour–liquid flash with Peng–Robinson or SRK, bubble and dew points with UNIFAC or NRTL, and a database of 365 pure compounds. |
-| <img src="docs/images/aqueous-chemistry.jpg" alt="Aqueous speciation of hard water"> | **Water chemistry.** pH, speciation, saturation indices and dissolving or precipitating minerals and gases from 0 to 100 °C, with the USGS PHREEQC database. |
-| <img src="docs/images/flowsheet.jpg" alt="Flowsheet with recycle loop"> | **Process flowsheets.** Mixers, heaters, flash drums, splitters, reactors and rigorous distillation columns joined by streams, including recycle loops (shown: a benzene/toluene flash with liquid recycle, converged in 5 iterations). |
+**Phase behaviour**: vapour–liquid flash with Peng–Robinson or SRK, and bubble and dew points with UNIFAC or
+NRTL, over a database of 365 pure compounds. **Water chemistry**: pH, speciation, saturation indices and
+minerals and gases from 0 to 100 °C, with the USGS PHREEQC database. **Process flowsheets**: mixers, heaters,
+flash drums, splitters, reactors and rigorous distillation columns joined by streams, with recycle loops.
+
+<p align="center">
+<img src="docs/images/phase-behaviour.jpg" alt="Vapour-liquid flash of a gas condensate" width="49%">
+<img src="docs/images/aqueous-chemistry.jpg" alt="Speciation of hard water" width="49%">
+</p>
+<p align="center">
+<img src="docs/images/flowsheet.jpg" alt="Process flow diagram with a recycle loop and stream table" width="49%">
+<img src="docs/images/equilibrium.jpg" alt="Equilibrium composition of combustion products" width="49%">
+</p>
 
 ### Virtual lab with safety checks
 
-| | |
-|---|---|
-| <img src="docs/images/virtual-lab-safety.jpg" alt="Virtual lab warning about bleach and ammonia"> | **Mix solutions before you do it for real.** ChemLarp predicts pH, heat released, temperature change, precipitates and gases. It also flags dangerous combinations, with the source cited: incompatibility rules from the US National Research Council's *Prudent Practices in the Laboratory*, and GHS hazard classifications from PubChem for 207 laboratory chemicals. Shown: bleach with ammonia. |
-| <img src="docs/images/titration.jpg" alt="Titration curve of phosphoric acid"> | **Titrations** with equivalence points, here phosphoric acid with sodium hydroxide. These are teaching aids, not a risk assessment. |
+Mix solutions or run a titration before doing it for real. ChemLarp predicts pH, heat released, temperature
+change, precipitates and gases. It also flags dangerous combinations, with the source cited: incompatibility rules
+from the US National Research Council's *Prudent Practices in the Laboratory*, and GHS hazard classifications from
+PubChem for 207 laboratory chemicals. Below: bleach with ammonia, and phosphoric acid titrated with sodium
+hydroxide. These are teaching aids, not a risk assessment.
+
+<p align="center">
+<img src="docs/images/virtual-lab-safety.jpg" alt="Safety warnings for bleach and ammonia" width="49%">
+<img src="docs/images/titration.jpg" alt="Titration curve with two equivalence points" width="49%">
+</p>
 
 ### On your phone too
 
