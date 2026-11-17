@@ -3515,9 +3515,9 @@ bool Namer::fusion_bicycle(RingSys& R) {
     att = A.benzene ? &A : &B;
   } else {
     if (seniority(B) > seniority(A)) std::swap(base, att);
-    if (seniority(*base) == seniority(*att) && base->carbocycle == att->carbocycle && !base->carbocycle && base->size == att->size &&
-        base->het_locs == att->het_locs)
-      ;  // identical components: either may be the base
+    // When the two components are identical (same seniority, both heterocyclic, same size and heteroatom
+    // positions) either may be the base, so there is nothing to choose here. `seniority` is pure, so the
+    // comparison was a no-op; it is left as this note instead (MSVC warns C4390 on an empty statement).
     // fusion descriptor: earliest base letter, then lowest attached locants (FR-4.5, FR-4.6)
     std::string bestdesc;
     int bestletter = 1 << 20;

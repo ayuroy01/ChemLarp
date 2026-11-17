@@ -159,7 +159,7 @@ Building these from scratch and getting them to agree with established programs 
 | Free-energy estimators | pymbar | within 5×10⁻¹⁰ kT |
 
 Details, methods and every exception are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The validation scripts
-are in [`scripts/`](scripts) and run with one command (`make validate`). The C++ test suite (more than 230 tests) runs on
+are in [`scripts/`](scripts) and run with one command (`make validate`). The C++ test suite (251 tests) runs on
 Windows, macOS and Linux for every change.
 
 ---
@@ -236,6 +236,10 @@ chemlarp.protein("1crn.pdb", pH=7.4)
 | [INSTALL.md](INSTALL.md) | Beginner installation guide |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Every module, what is built, how it was validated |
 | [docs/GAPS.md](docs/GAPS.md) | Everything that is not finished, and how to pick it up |
+| [docs/AUDITS.md](docs/AUDITS.md) | The correctness, security, integrity, git and licensing audits, and what each found |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, and the licence terms for contributions |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each version |
 | [docs/MATH.md](docs/MATH.md) | The mathematics from SMILES to Gibbs equilibrium |
 | [docs/PACKAGING.md](docs/PACKAGING.md) | How the apps and packages are built and released |
 | [Roadmap](https://ayuroy01.github.io/ChemLarp/#roadmap) | Progress by module, live in the web app |

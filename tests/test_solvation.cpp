@@ -7,6 +7,7 @@
 // short smoke runs; scripts/validate_hydration.py has the long runs against published TIP3P results.
 #include <cmath>
 #include <complex>
+#include <numbers>
 #include <random>
 #include <string>
 #include <vector>
@@ -30,7 +31,7 @@ TEST(fft_matches_direct_dft) {
       double err = 0;
       for (std::size_t k = 0; k < n; ++k) {
         std::complex<double> s = 0;
-        for (std::size_t j = 0; j < n; ++j) s += a[j] * std::polar(1.0, sign * 2.0 * M_PI * double(j * k % n) / double(n));
+        for (std::size_t j = 0; j < n; ++j) s += a[j] * std::polar(1.0, sign * 2.0 * std::numbers::pi * double(j * k % n) / double(n));
         err = std::max(err, std::abs(s - b[k]));
       }
       CHECK(err < 1e-12 * double(n));
