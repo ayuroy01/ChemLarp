@@ -506,19 +506,40 @@ class Writer {
     }
   }
 
-  void dfs(int x) {
-    pre_[static_cast<std::size_t>(x)] = counter_++;
-    std::vector<Edge> nb = v_.adj[static_cast<std::size_t>(x)];
-    std::sort(nb.begin(), nb.end(), [&](const Edge& a, const Edge& b) {
-      return rank_[static_cast<std::size_t>(a.to)] < rank_[static_cast<std::size_t>(b.to)];
-    });
-    for (const Edge& e : nb) {
+  // Builds the spanning tree, visiting each atom's neighbours in rank order. Held on an explicit stack
+  // rather than the call stack: one frame per atom would overflow on a large molecule, which crashed the
+  // process on a long chain (docs/AUDITS.md, audit 1.3). The traversal order is exactly what the recursive
+  // form produced, which matters because it decides the canonical SMILES.
+  void dfs(int root) {
+    struct Frame {
+      int x;
+      std::vector<Edge> nb;
+      std::size_t i = 0;
+    };
+    auto enter = [this](int x) {
+      pre_[static_cast<std::size_t>(x)] = counter_++;
+      std::vector<Edge> nb = v_.adj[static_cast<std::size_t>(x)];
+      std::sort(nb.begin(), nb.end(), [this](const Edge& a, const Edge& b) {
+        return rank_[static_cast<std::size_t>(a.to)] < rank_[static_cast<std::size_t>(b.to)];
+      });
+      return Frame{x, std::move(nb), 0};
+    };
+    std::vector<Frame> stack;
+    stack.push_back(enter(root));
+    while (!stack.empty()) {
+      Frame& f = stack.back();
+      if (f.i >= f.nb.size()) {
+        stack.pop_back();
+        continue;
+      }
+      const int x = f.x;
+      const Edge e = f.nb[f.i++];
       if (parent_[static_cast<std::size_t>(x)] >= 0 && e.bond == parent_bond_[static_cast<std::size_t>(x)]) continue;
       if (pre_[static_cast<std::size_t>(e.to)] < 0) {
         parent_[static_cast<std::size_t>(e.to)] = x;
         parent_bond_[static_cast<std::size_t>(e.to)] = e.bond;
         children_[static_cast<std::size_t>(x)].push_back(e.to);
-        dfs(e.to);
+        stack.push_back(enter(e.to));  // `f` is dangling from here on: the loop re-reads stack.back()
       } else if (!is_ring_[e.bond - sp_.bond_begin]) {
         is_ring_[e.bond - sp_.bond_begin] = 1;
         ring_at_[static_cast<std::size_t>(x)].push_back(e.bond);
@@ -739,7 +760,7 @@ class Writer {
   // molecule (AddressSanitizer found this on a 20,000-atom chain; docs/AUDITS.md, audit 1.3). Branches still
   // recurse, so a structure whose branches nest more than kMaxBranchDepth deep is refused rather than
   // crashing the process; no real molecule comes close, but a crafted SMILES can.
-  static constexpr int kMaxBranchDepth = 4000;
+  static constexpr int kMaxBranchDepth = 500;
   void write(int x, std::string& out) {
    for (;;) {
     if (too_deep_) return;

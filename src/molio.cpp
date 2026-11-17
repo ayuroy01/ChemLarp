@@ -1240,8 +1240,21 @@ RawMol read_pdb(const std::vector<std::string_view>& L, std::string& title, Diag
   {
     const double cell = 2.6;
     std::unordered_map<long long, std::vector<std::uint32_t>> grid;
-    auto key = [&](long long gx, long long gy, long long gz) { return (gx * 73856093LL) ^ (gy * 19349663LL) ^ (gz * 83492791LL); };
-    auto gc = [&](double v) { return static_cast<long long>(std::floor(v / cell)); };
+    // The products are meant to wrap, so they are done unsigned: signed overflow is undefined, and a
+    // malformed file reaches it easily (a fuzzed PDB with a 2e8 coordinate did; docs/AUDITS.md, audit 1.5).
+    auto key = [](long long gx, long long gy, long long gz) {
+      const auto u = [](long long v) { return static_cast<std::uint64_t>(v); };
+      return static_cast<long long>((u(gx) * 73856093ULL) ^ (u(gy) * 19349663ULL) ^ (u(gz) * 83492791ULL));
+    };
+    // Converting a double that does not fit in long long is undefined too, so clamp; this also catches NaN
+    // and infinity, which fail both comparisons.
+    auto gc = [&](double v) {
+      const double g = std::floor(v / cell);
+      constexpr double kLimit = 1e15;
+      if (!(g > -kLimit)) return -static_cast<long long>(kLimit);
+      if (!(g < kLimit)) return static_cast<long long>(kLimit);
+      return static_cast<long long>(g);
+    };
     // Distance bonds inside a residue, plus the standard links between residues;
     // other links between residues come from CONECT and LINK only.
     auto linkable = [&](std::uint32_t x, std::uint32_t y) {
