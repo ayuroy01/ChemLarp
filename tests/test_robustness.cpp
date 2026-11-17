@@ -225,3 +225,19 @@ TEST(long_chains_and_deep_branches_do_not_overflow_the_stack) {
   for (std::size_t i = 0; i < deep; ++i) nested += ")C";
   take(cl_parse_smiles_json(nested.c_str()));  // parses or is rejected; either way it must not crash
 }
+
+// A PDB coordinate far outside the usual range used to be converted to int when hashing atoms into cells,
+// which is undefined behaviour for a value that does not fit. The fuzzer found it with 2.16e8 in a mangled
+// ATOM record (docs/AUDITS.md, audit 1.5); the index is now clamped, which also covers NaN and infinity.
+TEST(protein_reader_survives_absurd_coordinates) {
+  const char* fmt =
+      "ATOM      1  N   ASN A   1    %8s%8s%8s  1.00  0.00           N\n"
+      "ATOM      2  CA  ASN A   1       1.000   2.000   3.000  1.00  0.00           C\n"
+      "END\n";
+  for (const char* v : {"2.16e+08", "-2.16e+08", "1e+300", "-1e+300", "     nan", "     inf", "    -inf",
+                        "99999999", "      ##"}) {
+    char pdb[512];
+    std::snprintf(pdb, sizeof pdb, fmt, v, v, v);
+    take(cl_protein_json(pdb, 7.4));
+  }
+}

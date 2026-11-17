@@ -174,8 +174,13 @@ class Grid {
   // Calls f(id, position, distance squared) for every stored point within r of x.
   template <class F>
   void query(Vec x, double r, F&& f) const {
-    const int n = int(std::ceil(r / cell_));
-    const std::array<int, 3> c = {int(std::floor(x[0] / cell_)), int(std::floor(x[1] / cell_)), int(std::floor(x[2] / cell_))};
+    // n is a loop bound in three dimensions, so it must stay small: every caller here searches a few
+    // angstroms, and 32 cells is already 128 A with the default cell size. A larger or non-finite radius
+    // comes from malformed input, not from a real query.
+    const double cells = std::ceil(r / cell_);
+    const int n = (cells > 0 && cells < 32) ? static_cast<int>(cells) : (cells > 0 ? 32 : 0);
+    const std::array<int, 3> c = {cell_index(std::floor(x[0] / cell_)), cell_index(std::floor(x[1] / cell_)),
+                                  cell_index(std::floor(x[2] / cell_))};
     const double r2 = r * r;
     for (int dx = -n; dx <= n; ++dx)
       for (int dy = -n; dy <= n; ++dy)
@@ -199,7 +204,19 @@ class Grid {
     return (std::uint64_t(std::uint32_t(a) & 0x1FFFFF) << 42) | (std::uint64_t(std::uint32_t(b) & 0x1FFFFF) << 21) |
            std::uint64_t(std::uint32_t(c) & 0x1FFFFF);
   }
-  std::uint64_t key(Vec x) const { return pack(int(std::floor(x[0] / cell_)), int(std::floor(x[1] / cell_)), int(std::floor(x[2] / cell_))); }
+  // A malformed file can carry an enormous or non-finite coordinate, and converting one of those to int is
+  // undefined behaviour (UndefinedBehaviorSanitizer caught 1e10 from a fuzzed PDB; docs/AUDITS.md, audit 1.5).
+  // pack() keeps 21 bits per axis, so values this far out already alias; clamping them costs nothing real.
+  static int cell_index(double v) {
+    constexpr double kLimit = 1 << 20;
+    if (!(v > -kLimit)) return -(1 << 20);  // also catches NaN, which fails both comparisons
+    if (!(v < kLimit)) return (1 << 20) - 1;
+    return static_cast<int>(v);
+  }
+  std::uint64_t key(Vec x) const {
+    return pack(cell_index(std::floor(x[0] / cell_)), cell_index(std::floor(x[1] / cell_)),
+                cell_index(std::floor(x[2] / cell_)));
+  }
   double cell_;
   std::unordered_map<std::uint64_t, std::vector<Entry>> cells_;
 };
