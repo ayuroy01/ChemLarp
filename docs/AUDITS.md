@@ -4,7 +4,9 @@ The audits to run before ChemLarp is called production-ready, what each covers, 
 stands. Findings are recorded in the "Findings" column; open items move to docs/GAPS.md once they are
 understood. Status: **open** (not started), **partial**, **done** (date).
 
-Started 2026-11-17. Last run 2026-11-17: of 34 audits, 23 are done and 11 partial; none is untouched; nine defects were found and fixed (audits 1.1, 1.3, 1.5, 1.7 and 1.8).
+Started 2026-11-17. All seven CI jobs (Windows MSVC and MinGW, macOS, Linux, ThreadSanitizer,
+AddressSanitizer/UBSan/LeakSanitizer, and the fuzzer) are green on commit `4ea4a5e`, as are the packages
+and web workflows. Last run 2026-11-17: of 34 audits, 23 are done and 11 partial; none is untouched; nine defects were found and fixed (audits 1.1, 1.3, 1.5, 1.7 and 1.8).
 
 ## 1. Correctness (bugs)
 
