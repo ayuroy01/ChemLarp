@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """MMFF94 validation (run after building build/chemlarp).
 
 1. The official MMFF94 validation suite (Halgren / Merck, CCL archive www.ccl.net/cca/data/MMFF94/,

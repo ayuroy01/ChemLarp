@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Universal Force Field (UFF): A. K. Rappé, C. J. Casewit, K. S. Colwell,
 // W. A. Goddard III, W. M. Skiff, J. Am. Chem. Soc. 114 (1992) 10024.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Molecular dynamics, thermostats, normal modes and the Lennard-Jones fluid.
 //
 // Independent references: the Lennard-Jones values come from a Metropolis Monte Carlo simulation of the

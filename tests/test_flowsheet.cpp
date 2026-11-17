@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Flowsheet parsing and the sequential-modular solver with recycle.
 //
 // Reference solutions are independent of the solver: closed-form balances for the propane dehydrogenation

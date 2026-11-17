@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Virtual laboratory against PHREEQC and reference data (needs phreeqpython; build first).
 
     python3 scripts/validate_lab.py

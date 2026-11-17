@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Regenerates src/transport_data.inc, transport-property correlations for the compounds of the
 pure-component table (src/property_data.inc), from published compilations as distributed with the
 `chemicals` Python package (MIT licence):

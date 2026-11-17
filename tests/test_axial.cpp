@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Axial chirality: allenes from SMILES and 3D coordinates, hindered biaryls from 3D coordinates.
 //
 // The Ra/Sa descriptors are checked against the helicity definition (IUPAC 2013, P-93.5.1.1): viewed along

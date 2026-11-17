@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Aqueous speciation, pH and solubility.
 //
 // Reference values are from PHREEQC 3 (IPhreeqc through phreeqpython, phreeqc.dat, solutions defined with the

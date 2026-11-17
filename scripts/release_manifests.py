@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Fills the Homebrew formula and winget manifests for a release.
 
     python3 scripts/release_manifests.py --version 0.1.0 --dist DIR [--source-tarball FILE] [--out DIR]

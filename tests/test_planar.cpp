@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Planar (cyclophane, metallocene) and helical (helicene) chirality from 3D coordinates.
 //
 // Reference: three crystal structures of known absolute configuration from the Crystallography Open

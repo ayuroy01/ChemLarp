@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // 3D structure generation: explicit hydrogens, distance-geometry embedding,
 // UFF refinement, stereo read-back from coordinates, SDF / XYZ output.

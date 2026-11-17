@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // IUPAC International Chemical Identifier (standard InChI, version 1) and
 // InChIKey, generated from scratch.

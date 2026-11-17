@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Protein handling validation (needs Biopython; run after building build/chemlarp).
 
     python3 scripts/validate_protein.py <dir with PDB files>

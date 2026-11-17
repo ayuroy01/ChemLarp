@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // SMARTS matching and Morgan fingerprints. Every expected count below is
 // RDKit 2026.09's answer for the same SMILES and SMARTS (unique matches;
 // GetSparseCountFingerprint totals and distinct identifiers).

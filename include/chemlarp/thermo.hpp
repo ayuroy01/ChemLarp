@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Standard-state thermochemistry. Convention (NASA / JANAF / Cantera):
 //   H°(T) referenced so that elements in their standard state have H = 0 at 298.15 K

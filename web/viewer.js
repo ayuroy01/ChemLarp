@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Minimal ball-and-stick viewer on a 2D canvas: orthographic projection,
 // painter's-algorithm depth sort, drag to rotate, wheel/pinch to zoom.
 (function () {

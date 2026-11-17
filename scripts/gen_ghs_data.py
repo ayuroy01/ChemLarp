@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """GHS hazard classifications of common laboratory chemicals from PubChem -> src/ghs_data.inc.
 
     python3 scripts/gen_ghs_data.py [--cache DIR] [--names FILE]

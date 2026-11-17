@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Molecular dynamics validation (needs numpy; run after building build/chemlarp: python3 scripts/validate_md.py).
 
 A  Lennard-Jones fluid: ChemLarp's MD (Bussi and Langevin thermostats) against an independent Metropolis Monte

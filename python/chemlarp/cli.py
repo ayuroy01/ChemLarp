@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """`chemlarp` command for a pip installation: runs the native CLI bundled in the package."""
 import os
 import platform

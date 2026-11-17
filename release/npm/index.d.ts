@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Every call returns the JSON object of the C API (include/chemlarp/chemlarp_c.h): {ok, ..., diagnostics}.
 export interface Diagnostic { code: string; severity: 'error' | 'warning'; message: string; position?: number | null }
 export interface Result { ok: boolean; diagnostics: Diagnostic[]; [key: string]: unknown }

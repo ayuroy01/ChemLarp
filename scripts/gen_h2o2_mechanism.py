@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Generate the example H2/O2 mechanism in every supported format from one source.
 
     python3 scripts/gen_h2o2_mechanism.py

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Kohn-Sham exchange-correlation: molecular grid, functionals, and the XC potential.
 //
 // Functionals are written once as energy densities e(ra, rb, saa, sab, sbb) on

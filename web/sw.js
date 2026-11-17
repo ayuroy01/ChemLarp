@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Offline support: cache the app shell, the WebAssembly engine and example data.
 // The build stamps a new cache name on every deploy, so updates replace old files.
 const CACHE = 'chemlarp-__BUILD_ID__';

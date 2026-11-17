@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // ChemLarp structure editor: draw and edit a molecule on an SVG canvas.
 //
 // Model: atoms {id, el, x, y, charge, iso} and bonds {id, a, b, order 1-3,

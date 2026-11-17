@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Missing heavy atoms: side chains from a rotamer library, missing residues by loop closure.
 #include <cstdio>
 #include <cstring>

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Free-energy estimators against exact results, and the alchemical Lennard-Jones particle.
 //
 // Harmonic oscillators u_k(x) = K_k (x - x0_k)^2 / 2 (kT units) have f_k = ln(K_k / 2 pi) / 2 exactly.

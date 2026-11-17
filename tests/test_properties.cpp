@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Pure-component property database and correlations.
 //
 // Reference values come from sources other than the ones the table was built from:

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // The error vector. Every stage (parser, valence validator, stoichiometry checker,
 // thermo binder, equilibrium solver) appends structured diagnostics here instead

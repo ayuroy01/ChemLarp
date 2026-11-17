@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Proteins: PDB and mmCIF reading, disulfides, missing atoms and loops, pKa, protonation, hydrogen-bond
 // network, hydrogen placement, sequence properties.
 //

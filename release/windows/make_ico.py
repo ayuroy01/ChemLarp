@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Writes a Windows .ico from PNG files (each stored as a PNG entry, which Windows Vista and later read).
 
     python3 make_ico.py out.ico in1.png [in2.png ...]   (each PNG at most 256 x 256)

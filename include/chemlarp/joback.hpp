@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Joback group-contribution estimate of ideal-gas ΔfH°(298) and ΔfG°(298),
 // derived directly from the molecular graph. Reference: K. G. Joback & R. C. Reid,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 package io.github.ayuroy01.chemlarp;
 
 import android.content.res.AssetManager;

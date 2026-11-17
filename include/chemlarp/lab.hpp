@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Virtual laboratory: mixing aqueous solutions, titrations, and the safety checks that go with them.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Aqueous solution chemistry: speciation, pH, ionic strength, saturation indices and equilibrium with
 // minerals and gases, for dilute to moderately concentrated water (ionic strength up to about 0.5–1 mol/kg).

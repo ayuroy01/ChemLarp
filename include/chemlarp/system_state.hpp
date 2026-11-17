@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // ChemicalSystemState: the single in-memory representation shared by every stage
 // of the pipeline (topology -> thermodynamics -> force field -> process).

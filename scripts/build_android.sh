@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 # Android app (APK): release/android around the built web app.
 #
 #   scripts/build_android.sh <web dir> [out dir]

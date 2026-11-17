@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Weights of the structure-based pKa model in src/protein_pka.inc (needs numpy; run after building).
 
     python3 scripts/fit_protein_pka.py <pkad.json> <dir with PDB files> [--write] [--propka propka3] [--cache dir]

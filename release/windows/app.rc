@@ -19,7 +19,7 @@ BEGIN
       VALUE "FileVersion", CHEMLARP_VERSION_STR
       VALUE "ProductName", "ChemLarp"
       VALUE "ProductVersion", CHEMLARP_VERSION_STR
-      VALUE "LegalCopyright", "Apache License 2.0"
+      VALUE "LegalCopyright", "Copyright (C) 2026 ayuroy01. GNU AGPL-3.0-only"
       VALUE "OriginalFilename", "ChemLarp.exe"
     END
   END

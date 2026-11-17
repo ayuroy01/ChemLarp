@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 # Build the ChemLarp web app: the C++ engine compiled to WebAssembly plus the
 # static UI in web/. Output: build/web (serve it with any static file server).
 # Requires the Emscripten SDK (em++ on PATH).

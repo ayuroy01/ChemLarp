@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Structure-file readers (MOL V2000/V3000, SDF, PDB, CML).
 // Expected SMILES for the PDB fixtures were checked against RDKit 2026.09 reading
 // the same text (same canonical SMILES and InChIKey).

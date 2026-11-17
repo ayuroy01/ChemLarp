@@ -19,4 +19,4 @@ diagnostics say what was wrong and where. The fields of each result are document
 
 The browser app with the same engine: https://ayuroy01.github.io/ChemLarp/
 
-Licence: Apache-2.0.
+Licence: AGPL-3.0-only (commercial licences available; see LICENSING.md in the repository).

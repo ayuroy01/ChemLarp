@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 # Build library, CLI and tests, then run the test suite (macOS, Linux, MSYS2).
 # Uses CMake when available, otherwise the Makefile.
 set -euo pipefail

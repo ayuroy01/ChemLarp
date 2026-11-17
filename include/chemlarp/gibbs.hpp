@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Multi-species chemical equilibrium by Gibbs free-energy minimisation
 // (ideal-gas phase), solved in the element-potential (dual) formulation.

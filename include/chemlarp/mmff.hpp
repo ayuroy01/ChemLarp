@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Merck Molecular Force Field, MMFF94 and MMFF94s (T. A. Halgren, J. Comput. Chem. 17 (1996) 490, 520, 553,
 // 587, 616; 20 (1999) 720, 730).

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 # Installs the APK on a running emulator or device, starts the app with the "smoke" extra and waits for its
 # engine call to report in logcat (tag ChemLarpSmoke). Exit 0 on "smoke passed".
 set -euo pipefail

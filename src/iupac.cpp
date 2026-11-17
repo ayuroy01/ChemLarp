@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Structure -> IUPAC name (2013 Recommendations, P-rules cited inline).
 //
 // Outline: a heavy-atom view of the species is perceived into characteristic

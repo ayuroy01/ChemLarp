@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Thread pool determinism and the sparse LU (against the dense LU and in the BDF integrator).
 #include <atomic>
 #include <cmath>

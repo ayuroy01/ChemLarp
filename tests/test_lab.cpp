@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Virtual lab: mixing, titrations, safety rules and GHS data. scripts/validate_lab.py compares the chemistry with
 // PHREEQC; these tests pin the behaviour.
 #include <cmath>

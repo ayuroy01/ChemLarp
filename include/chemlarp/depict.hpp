@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // 2D structure depiction: coordinates, wedge/hash stereo bonds, SVG and a 2D
 // MDL molfile.

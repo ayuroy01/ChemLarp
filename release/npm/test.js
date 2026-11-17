@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 'use strict';
 // Smoke test of the packed npm module (run from an installation of the tarball, or from build/npm).
 const assert = require('assert');

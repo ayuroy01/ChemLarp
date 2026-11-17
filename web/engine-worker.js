@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Runs the WebAssembly engine off the main thread so long calculations
 // (kinetics, 3D embedding) never freeze the interface.
 importScripts('chemlarp.js');

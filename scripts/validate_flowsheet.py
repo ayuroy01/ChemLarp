@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Flowsheet solver validation against independent solutions (needs numpy, scipy and thermo; run after building
 build/chemlarp: python3 scripts/validate_flowsheet.py).
 

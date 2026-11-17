@@ -1,0 +1,25 @@
+ChemLarp
+Copyright (C) 2026 ayuroy01 (https://github.com/ayuroy01). All rights reserved except as granted below.
+
+ChemLarp is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License, version 3 only (AGPL-3.0-only), as published by the Free Software Foundation. See LICENSE.
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for details.
+
+Commercial licences that do not carry the AGPL's obligations are available from the copyright holder; see
+LICENSING.md.
+
+"ChemLarp" and the ChemLarp logo are trademarks of the copyright holder. The licence does not grant permission to
+use them; see LICENSING.md.
+
+Earlier releases: version 0.1.0 and the commits before the licence change (git history up to and including commit
+c9b698d) were published under the Apache License, Version 2.0, and remain available under those terms.
+
+Third-party data bundled with ChemLarp keeps its own terms and credits; see docs/AUDITS.md ("Bundled data
+provenance"). In particular:
+  - MMFF94 parameters: Copyright (c) Merck and Co., Inc., 1994, 1995, 1996; T. A. Halgren, J. Comput. Chem. 17
+    (1996) 490-641, supplementary material.
+  - Aqueous thermodynamic data from PHREEQC's phreeqc.dat (U.S. Geological Survey, public domain).
+  - GHS hazard classifications from PubChem (NCBI), mostly from the ECHA C&L Inventory.
+  - Thermochemistry from GRI-Mech 3.0 (Smith et al., http://combustion.berkeley.edu/gri-mech/).

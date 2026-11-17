@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Material streams and unit operations.
 //
 // Water reference values are from the IAPWS-95 formulation (Wagner & Pruß, J. Phys. Chem. Ref. Data 31

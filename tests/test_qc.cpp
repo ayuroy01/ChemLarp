@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Hartree-Fock and DFT single points against PySCF 2.15 on the same geometries
 // (cart=True, so 6-31G* has six Cartesian d functions; DFT reference grid level 9).
 #include <cmath>

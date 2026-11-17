@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 # macOS app and disk image: release/macos/main.swift around the built web app.
 #
 #   scripts/build_macos_app.sh <web dir> [out dir]
@@ -49,7 +51,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Apache License 2.0</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 ayuroy01. GNU AGPL-3.0-only</string>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Checks an installed chemlarp wheel (run outside the source tree, e.g. by cibuildwheel's test step): the
 library is the one inside the installed package, the main entry points work, and the `chemlarp` command runs."""
 import os

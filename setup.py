@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Builds the native library and CLI and puts them inside the Python package (see pyproject.toml).
 
 The wheel holds the shared library (loaded with ctypes) and the `chemlarp` command-line program. It does not

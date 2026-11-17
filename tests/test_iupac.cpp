@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // IUPAC names (2013 Recommendations). Every expected name was checked by parsing it back with
 // OPSIN 2.8 (py2opsin) and comparing the InChIKey with the input structure (RDKit); the corpus
 // harness does the same on 15,000 PubChem structures, including salts and zwitterions (see ARCHITECTURE.md).

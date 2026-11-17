@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Cahn-Ingold-Prelog descriptors (IUPAC 2013 recommendations, P-92).
 //

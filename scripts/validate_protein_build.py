@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Validation of protein repair and the hydrogen-bond network (needs Biopython and numpy; build first).
 
     python3 scripts/validate_protein_build.py sidechains <PDB files...>

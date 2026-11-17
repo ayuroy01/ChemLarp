@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // 64-byte aligned storage so SoA columns start on cache-line / AVX-512 boundaries
 // and the compiler can emit aligned vector loads in hot loops.

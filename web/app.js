@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // ChemLarp web app: workspace around one open compound, backed by the
 // WebAssembly engine running in engine-worker.js.
 (function () {

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Structure identity, CIP labels, SMARTS counts and fingerprints against RDKit (needs rdkit; build first).
 
     python3 scripts/validate_rdkit.py <smiles file> [--limit N] [--examples N]

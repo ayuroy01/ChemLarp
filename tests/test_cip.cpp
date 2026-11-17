@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // CIP rules beyond constitution (1b, 3, 4a-c, 5). Every expected descriptor
 // here was cross-checked against RDKit's rdCIPLabeler (the "centres" algorithm
 // of Hanson et al., J. Chem. Inf. Model. 58:1755, 2018).

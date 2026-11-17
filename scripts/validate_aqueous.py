@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Aqueous speciation validation against PHREEQC (needs phreeqpython, which bundles IPhreeqc and the same
 phreeqc.dat; run after building build/chemlarp: python3 scripts/validate_aqueous.py).
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Unconstrained minimisation: limited-memory BFGS with a backtracking
 // (Armijo) line search and a per-coordinate step cap. Used by the UFF force

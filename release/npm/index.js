@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 'use strict';
 // ChemLarp for Node.js: the C++ engine compiled to WebAssembly (no native build, any OS).
 //

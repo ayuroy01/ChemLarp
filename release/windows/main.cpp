@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // ChemLarp for Windows: the web app (WebAssembly engine and UI, in the "web" folder next to this program) in a
 // native window through WebView2. The folder is mapped to https://chemlarp.local, so nothing is fetched from
 // the network. WebView2 is part of Windows 11 and of current Windows 10; without it the program says where to

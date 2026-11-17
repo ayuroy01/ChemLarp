@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Small canvas line and bar charts that follow the page's colour tokens.
 (function () {
   const PALETTE = ['#14837a', '#d1495b', '#3d6fd8', '#e0a100', '#7b52c4', '#2a9d3f', '#c45a1a', '#4b8fb3', '#a03f8f'];

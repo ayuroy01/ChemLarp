@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Regenerates src/antoine_data.inc, Antoine vapour-pressure coefficients from Poling, Prausnitz &
 O'Connell, The Properties of Gases and Liquids, 5th ed. (McGraw-Hill 2001), as tabulated in the `chemicals`
 Python package (MIT licence): log10(P/Pa) = A - B/(T/K + C), valid for Tmin <= T <= Tmax.

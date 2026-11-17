@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Side-chain geometry and rotamer library for src/protein_geometry.inc (needs numpy).
 
     python3 scripts/gen_protein_geometry.py <dir with PDB files> [--exclude ID,ID,...] > src/protein_geometry.inc

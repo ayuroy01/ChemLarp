@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Standard InChI / InChIKey against reference strings.
 //   inchi_curated.inc  hand-picked structures (reference: NCI CACTUS, InChI 1.0x)
 //   inchi_pubchem.inc  500 random PubChem compounds that were never used to

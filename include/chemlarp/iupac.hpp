@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Systematic IUPAC names (structure -> name), after the 2013 Recommendations
 // (Favre & Powell, Nomenclature of Organic Chemistry, RSC 2014; rule numbers P-*).

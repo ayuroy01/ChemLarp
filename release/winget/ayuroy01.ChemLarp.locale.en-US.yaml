@@ -6,7 +6,7 @@ Publisher: ayuroy01
 PublisherUrl: https://github.com/ayuroy01
 PackageName: ChemLarp
 PackageUrl: https://ayuroy01.github.io/ChemLarp/
-License: Apache-2.0
+License: AGPL-3.0-only
 LicenseUrl: https://github.com/ayuroy01/ChemLarp/blob/main/LICENSE
 ShortDescription: Chemistry engine for the command line (SMILES, InChI, IUPAC names, thermodynamics, kinetics, molecular modelling)
 Tags:

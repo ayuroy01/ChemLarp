@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Distillation column validation against an independent solver (needs numpy, scipy and thermo; run after
 building build/chemlarp: python3 scripts/validate_column.py).
 

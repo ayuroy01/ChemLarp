@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Rigorous distillation column.
 //
 // Reference values for benzene/toluene come from an independent equation-oriented solve of the same

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // MMFF94 / MMFF94s: atom types, partial charges, energy and gradient.
 //
 // data/mmff_reference.sdf holds twelve molecules (ChemLarp-generated coordinates) with the atom types,

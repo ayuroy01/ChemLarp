@@ -6,7 +6,7 @@ class Chemlarp < Formula
   homepage "https://ayuroy01.github.io/ChemLarp/"
   url "https://github.com/ayuroy01/ChemLarp/archive/refs/tags/v@VERSION@.tar.gz"
   sha256 "@SHA256@"
-  license "Apache-2.0"
+  license "AGPL-3.0-only"
   head "https://github.com/ayuroy01/ChemLarp.git", branch: "main"
 
   def install

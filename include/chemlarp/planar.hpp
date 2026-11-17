@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 #pragma once
 // Perception of planar (cyclophane, metallocene) and helical (helicene) chirality from 3D coordinates.
 // Descriptors (Rp/Sp, P/M) come from cip_label(state, PlanarStereo); see cip.hpp for the rules.

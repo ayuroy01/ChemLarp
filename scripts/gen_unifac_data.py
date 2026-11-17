@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Regenerates src/unifac_data.inc, the original UNIFAC parameters (VLE), from the tables published by DDBST
 (Dortmund Data Bank) as distributed with the `thermo` Python package (MIT licence).
 

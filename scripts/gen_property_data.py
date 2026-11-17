@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Regenerates src/property_data.inc, the pure-component property table, from published compilations as
 distributed with the `chemicals` Python package (MIT licence). Compounds are those of the ideal-gas heat
 capacity databank of Poling, Prausnitz & O'Connell, The Properties of Gases and Liquids, 5th ed. (2001),

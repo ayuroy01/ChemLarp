@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/ayuroy01/ChemLarp/actions/workflows/ci.yml/badge.svg)](https://github.com/ayuroy01/ChemLarp/actions/workflows/ci.yml)
 [![Web app](https://github.com/ayuroy01/ChemLarp/actions/workflows/web.yml/badge.svg)](https://ayuroy01.github.io/ChemLarp/)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSING.md)
 ![Platforms](https://img.shields.io/badge/runs%20on-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iPhone%20(web)-informational)
 
 <img src="docs/images/structure.jpg" alt="ChemLarp showing testosterone: 2D structure with all six stereocentres labelled R/S, the full IUPAC name, InChI and InChIKey, and the properties panel" width="100%">
@@ -27,7 +27,7 @@ thermodynamics and equilibrium, combustion kinetics, phase equilibrium, water ch
 process flowsheets and a virtual lab with safety checks.
 
 - **No installation needed.** The whole engine runs inside your web browser. Nothing is uploaded: every calculation happens on your own computer or phone, and it keeps working offline after the first visit.
-- **Free and open source** under the Apache 2.0 licence, for students, teachers, researchers and companies alike. No licence server, no account, no subscription.
+- **Free and open source** under the GNU AGPL-3.0, for students, teachers, researchers and companies alike. No licence server, no account, no subscription.
 - **Written from scratch.** Every part, from the SMILES reader to the DFT code and the stiff ODE solver, is ChemLarp's own C++20 code, with no third-party libraries. The same engine runs in the browser (WebAssembly), as a desktop and phone app, on the command line, and from Python, C and JavaScript.
 - **Checked against the reference tools.** Results are compared with established programs and published data (RDKit, PySCF, PHREEQC, OPSIN, PubChem, the official MMFF94 suite, NIST/JANAF). The numbers are [below](#how-accurate-is-it), and every known shortfall is listed openly in [docs/GAPS.md](docs/GAPS.md).
 
@@ -248,4 +248,10 @@ string or file) and what you expected, with a reference if you have one.
 
 ## License
 
-Apache License 2.0; see [LICENSE](LICENSE). Free for personal, academic and commercial use.
+ChemLarp is free software under the **GNU Affero General Public License v3.0** ([LICENSE](LICENSE)). You may use
+it for any purpose, including commercial research. If you distribute it, or offer a modified version as a
+service, you must publish your source under the same licence. **Commercial licences** for closed-source use, and
+the rules for the ChemLarp name and logo, are in [LICENSING.md](LICENSING.md). Version 0.1.0 was released under
+Apache-2.0.
+
+Copyright © 2026 ayuroy01.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Structure-based pKa prediction: geometric features with weights fitted to measured values.
 #include <cstring>
 #include <set>

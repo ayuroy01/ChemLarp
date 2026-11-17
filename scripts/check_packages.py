@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """The package version must be the same everywhere it is written (run in CI): CMakeLists.txt project(VERSION),
 cl_version() in src/c_api.cpp, pyproject.toml and release/npm/package.json. --version-only prints it."""
 import json

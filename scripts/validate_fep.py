@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Free-energy estimators and the alchemical Lennard-Jones particle (needs numpy and pymbar; build first).
 
     python3 scripts/validate_fep.py [--seeds N]

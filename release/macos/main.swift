@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // ChemLarp for macOS: the web app (WebAssembly engine and UI, bundled in Contents/Resources/web) in a native
 // window. A small HTTP server bound to 127.0.0.1 serves the bundled files, so the page runs exactly as in a
 // browser (workers, WebAssembly, file reading); nothing is fetched from the network.

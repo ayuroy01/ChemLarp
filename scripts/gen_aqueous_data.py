@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Generates src/aqueous_data.inc from PHREEQC's phreeqc.dat (USGS, public domain; Parkhurst & Appelo,
 U.S. Geological Survey Techniques and Methods 6-A43, 2013).
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Protonation states and hydrogens, with the hydrogen-bond network optimised over the movable groups.
 #include <cstring>
 #include <functional>

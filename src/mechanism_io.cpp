@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // Mechanism input: ChemLarp .ocm, CHEMKIN-II (+ NASA-7 thermo cards), Cantera YAML.
 //
 // All three formats feed one ReactionBuilder, so unit conversion, reaction-kind
