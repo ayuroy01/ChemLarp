@@ -1,6 +1,6 @@
 {
   "title": "ChemLarp roadmap",
-  "updated": "2026-11-14",
+  "updated": "2026-11-17",
   "weights": {
     "S": 1,
     "M": 2.5,
@@ -147,7 +147,7 @@
         {
           "name": "Hydration free energies in explicit water (FreeSolv)",
           "size": "L",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Quantum chemistry (Hartree-Fock, DFT)",
