@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // chemlarp — terminal front end for ChemLarp.
 //
 //   chemlarp parse <SMILES> [--json]
@@ -57,6 +59,7 @@
 #include "chemlarp/flowsheet.hpp"
 #include "chemlarp/free_energy.hpp"
 #include "chemlarp/lab.hpp"
+#include "chemlarp/solvation.hpp"
 #include "chemlarp/gibbs.hpp"
 #include "chemlarp/inchi.hpp"
 #include "chemlarp/iupac.hpp"
@@ -104,6 +107,10 @@ int usage() {
       "  chemlarp ljsolv [--cells n] [--density r] [-T t] [--equil N] [--steps N] [--insertions M] [--seed N]\n"
       "                  [--matrix]      excess chemical potential of an LJ particle: MBAR, BAR, TI, Widom\n"
       "  chemlarp mbar <file|->          MBAR on reduced potentials (first line: sample counts; then K rows u_kn)\n"
+      "  chemlarp water [--waters N] [-T K] [-P atm] [--equil ps] [--ps ps] [--seed N]\n"
+      "                                  TIP3P water box (PME, NPT): density, energy, g_OO\n"
+      "  chemlarp hydrate <SMILES|water> [--waters N] [-T K] [--equil ps] [--ps ps] [--seed N]\n"
+      "                                  hydration free energy in explicit TIP3P water (kcal/mol)\n"
       "  chemlarp lab <file|->           mix solutions: pH, heat, precipitates, gases, safety (include/chemlarp/lab.hpp)\n"
       "  chemlarp titrate <file|->       titration curve and equivalence points\n"
       "  chemlarp reagents               the virtual lab's reagent catalogue with GHS data\n"
@@ -1004,6 +1011,30 @@ int print_json(const std::string& out) {
 }
 }  // namespace
 
+// chemlarp water / chemlarp hydrate <solute>: explicit TIP3P water (solvation.hpp).
+int cmd_solvation(const std::vector<std::string>& args, bool hydrate) {
+  SolvationOptions o;
+  std::string solute;
+  std::size_t i = 0;
+  if (hydrate) {
+    if (args.empty()) return usage();
+    solute = args[i++];
+  }
+  for (; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    auto next = [&](double& v) { return i + 1 < args.size() && parse_double(args[++i].c_str(), v); };
+    double v = 0;
+    if (a == "--waters") { if (!next(v) || v < 8) return usage(); o.waters = int(v); }
+    else if (a == "-T") { if (!next(o.temperature_K) || o.temperature_K <= 0) return usage(); }
+    else if (a == "-P") { if (!next(o.pressure_atm)) return usage(); }
+    else if (a == "--equil") { if (!next(o.equilibration_ps) || o.equilibration_ps < 0) return usage(); }
+    else if (a == "--ps") { if (!next(o.production_ps) || o.production_ps <= 0) return usage(); }
+    else if (a == "--seed") { if (!next(v) || v < 0) return usage(); o.seed = std::uint64_t(v); }
+    else return usage();
+  }
+  return print_json(hydrate ? hydration_json(solute, o) : water_box_json(o, o.production_ps));
+}
+
 int cmd_lab(const std::vector<std::string>& args, bool titration) {
   std::string text;
   if (args.size() != 1 || !read_text_arg(args[0], text)) return usage();
@@ -1470,6 +1501,8 @@ int main(int argc, char** argv) {
   if (cmd == "lab" && !args.empty()) return cmd_lab(args, false);
   if (cmd == "titrate" && !args.empty()) return cmd_lab(args, true);
   if (cmd == "reagents") return print_json(lab_reagents_json());
+  if (cmd == "water") return cmd_solvation(args, false);
+  if (cmd == "hydrate" && !args.empty()) return cmd_solvation(args, true);
   if (cmd == "ghs" && !args.empty()) return cmd_ghs(args);
   if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
   if (cmd == "protein" && !args.empty()) return cmd_protein(args);

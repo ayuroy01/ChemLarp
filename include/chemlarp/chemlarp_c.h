@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 /* ChemLarp — stable C ABI for Python (ctypes/cffi), Node (N-API/ffi) and others.
  *
  * Two layers:
@@ -203,6 +205,21 @@ CHEMLARP_API char* cl_ghs_json(const char* smiles);
 CHEMLARP_API char* cl_lj_solvation_json(int cells, double density, double temperature, double cutoff, double dt,
                                         unsigned equilibration, unsigned production, unsigned insertions, unsigned seed,
                                         int keep_matrix);
+
+/* TIP3P water box (solvation.hpp): NPT Langevin dynamics with PME. Zero or negative arguments take the defaults
+ * (400 waters, 298.15 K, 1 atm, 20 ps equilibration, 100 ps production; pressure < 0 runs at constant volume).
+ * Returns {"ok","waters","box","density","density_error","potential_per_molecule","potential_error",
+ * "temperature","barostat_acceptance","g_oo":[[r,g]...],"diagnostics"}. */
+CHEMLARP_API char* cl_water_box_json(int waters, double temperature, double pressure_atm, double equilibration_ps,
+                                     double production_ps, unsigned seed);
+
+/* Hydration free energy of `solute` (SMILES of a neutral molecule, or "water") in TIP3P water by alchemical
+ * decoupling (solvation.hpp), kcal/mol. Defaults as for cl_water_box_json; production_ps is per window.
+ * Returns {"ok","solute","solute_atoms","waters","box","dg_hyd":{"mbar"|"bar"|"ti":{dg,error}},"dg_elec",
+ * "dg_vdw","min_neighbour_overlap","windows":[{lambda_elec,lambda_vdw,samples,inefficiency,dudl_elec,
+ * dudl_vdw}],"diagnostics"}. Minutes to hours of computation. */
+CHEMLARP_API char* cl_hydration_json(const char* solute, int waters, double temperature, double equilibration_ps,
+                                     double production_ps, unsigned seed);
 
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],

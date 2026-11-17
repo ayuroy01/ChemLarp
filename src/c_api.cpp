@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 // This translation unit defines the exported C ABI: export unless the static library is being built.
 #if !defined(CHEMLARP_STATIC) && !defined(CHEMLARP_BUILD_DLL)
 #define CHEMLARP_BUILD_DLL
@@ -24,6 +26,7 @@
 #include "chemlarp/eos.hpp"
 #include "chemlarp/flowsheet.hpp"
 #include "chemlarp/free_energy.hpp"
+#include "chemlarp/solvation.hpp"
 #include "chemlarp/lab.hpp"
 #include "chemlarp/properties.hpp"
 #include "chemlarp/gibbs.hpp"
@@ -115,6 +118,19 @@ std::string jnum(double v) {
   char b[40];
   std::snprintf(b, sizeof b, "%.12g", v);
   return std::isfinite(v) ? b : "null";
+}
+}  // namespace
+
+namespace {
+SolvationOptions solvation_options(int waters, double temperature, double equilibration_ps, double production_ps,
+                                   unsigned seed) {
+  SolvationOptions o;
+  if (waters > 0) o.waters = waters;
+  if (temperature > 0) o.temperature_K = temperature;
+  if (equilibration_ps > 0) o.equilibration_ps = equilibration_ps;
+  if (production_ps > 0) o.production_ps = production_ps;
+  if (seed > 0) o.seed = seed;
+  return o;
 }
 }  // namespace
 
@@ -951,6 +967,24 @@ char* cl_lj_solvation_json(int cells, double density, double temperature, double
     if (seed > 0) o.seed = seed;
     o.keep_matrix = keep_matrix != 0;
     return lj_solvation_json(o);
+  });
+}
+
+char* cl_water_box_json(int waters, double temperature, double pressure_atm, double equilibration_ps,
+                        double production_ps, unsigned seed) {
+  return guarded([&] {
+    SolvationOptions o = solvation_options(waters, temperature, equilibration_ps, production_ps, seed);
+    if (pressure_atm > 0) o.pressure_atm = pressure_atm;
+    else if (pressure_atm < 0) o.pressure_atm = 0.0;
+    return water_box_json(o, o.production_ps);
+  });
+}
+
+char* cl_hydration_json(const char* solute, int waters, double temperature, double equilibration_ps,
+                        double production_ps, unsigned seed) {
+  if (!solute) return nullptr;
+  return guarded([&] {
+    return hydration_json(solute, solvation_options(waters, temperature, equilibration_ps, production_ps, seed));
   });
 }
 

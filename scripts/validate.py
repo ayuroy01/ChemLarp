@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """One runner for every validation suite in the project, with a report.
 
     python3 scripts/validate.py --list
@@ -31,6 +33,7 @@ environment variable CHEMLARP_VALIDATION_DATA):
                 5CE4 5MOQ 5PTI 5ZN0 6EYM 6F2Q 6L46 7AZ9 7VOS
     mmff94/     the unpacked MMFF94 validation suite from www.ccl.net/cca/data/MMFF94/ (MMFF94.tar.gz)
     jars/       cdk-*.jar, centres-core-*.jar, centres-cdk-*.jar
+    freesolv/   database.txt from github.com/MobleyLab/FreeSolv (runs/ is created beside it)
     smiles.txt  one SMILES per line (first whitespace-separated field), e.g. a PubChem sample
 
 or write the paths explicitly in a JSON file (--config, or validation.json in the data directory):
@@ -64,6 +67,7 @@ PATHS = {
     "centres_core_jar": ("centres-core jar", "jars/centres-core*.jar"),
     "centres_cdk_jar": ("centres-cdk jar", "jars/centres-cdk*.jar"),
     "smiles_file": ("SMILES list, one per line", "smiles.txt"),
+    "freesolv_file": ("FreeSolv database.txt (github.com/MobleyLab/FreeSolv)", "freesolv/database.txt"),
 }
 
 # Validations docs/ARCHITECTURE.md reports that no script here reproduces.
@@ -202,6 +206,15 @@ def suites():
             reference="exact oscillator free energies; pymbar on the same matrices; Widom insertion in the pure fluid",
             needs=dict(python=["numpy", "pymbar"], build=["chemlarp"]),
             argv=lambda c: [c["python"], "scripts/validate_fep.py"],
+        ),
+        dict(
+            id="hydration",
+            title="Explicit TIP3P water and hydration free energies (hours)",
+            kind="independent",
+            modules=["Hydration free energies in explicit water (FreeSolv)"],
+            reference="published TIP3P liquid (Vega et al. 2009) and TIP3P self-hydration; FreeSolv experiment",
+            needs=dict(build=["chemlarp"], paths=["freesolv_file"]),
+            argv=lambda c: [c["python"], "scripts/validate_hydration.py", c["freesolv_file"]],
         ),
         dict(
             id="lab",

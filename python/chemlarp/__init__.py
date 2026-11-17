@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
 """Python bindings for ChemLarp via the C ABI (include/chemlarp/chemlarp_c.h).
 
 No compiled extension is needed: the shared library is loaded with ctypes.
@@ -21,7 +23,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "lab_mix", "titrate", "lab_reagents", "ghs", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "water_box", "hydration_free_energy", "lab_mix", "titrate", "lab_reagents", "ghs", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
 
 
 class ChemLarpError(RuntimeError):
@@ -114,6 +116,10 @@ _cl_lab_reagents = _sig("cl_lab_reagents_json", ctypes.c_void_p)
 _cl_ghs = _sig("cl_ghs_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_ljsolv = _sig("cl_lj_solvation_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
                   ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_uint, ctypes.c_int)
+_cl_water = _sig("cl_water_box_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double,
+                 ctypes.c_double, ctypes.c_double, ctypes.c_uint)
+_cl_hydration = _sig("cl_hydration_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_double,
+                     ctypes.c_double, ctypes.c_double, ctypes.c_uint)
 _cl_lj = _sig("cl_lj_json", ctypes.c_void_p, ctypes.c_int, ctypes.c_double, ctypes.c_double, ctypes.c_double,
               ctypes.c_double, ctypes.c_uint, ctypes.c_uint, ctypes.c_char_p, ctypes.c_uint)
 _cl_psat = _sig("cl_saturation_pressure_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_char_p)
@@ -449,6 +455,29 @@ def lj_solvation(cells: int = 3, density: float = 0.8, temperature: float = 1.2,
     in the pure fluid. keep_matrix returns the subsampled u_kn and N_k given to MBAR."""
     r = _take_json(_cl_ljsolv(cells, density, temperature, cutoff, dt, equilibration, production, insertions, seed,
                               1 if keep_matrix else 0))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def water_box(waters: int = 400, temperature: float = 298.15, pressure_atm: float = 1.0,
+              equilibration_ps: float = 20.0, production_ps: float = 100.0, seed: int = 1) -> dict:
+    """TIP3P water at constant temperature and pressure (PME electrostatics, Langevin dynamics, Monte Carlo
+    barostat): density, potential energy per molecule (kcal/mol), O-O radial distribution. pressure_atm=None
+    runs at constant volume."""
+    r = _take_json(_cl_water(waters, temperature, -1.0 if pressure_atm is None else pressure_atm,
+                             equilibration_ps, production_ps, seed))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def hydration_free_energy(solute: str, waters: int = 400, temperature: float = 298.15,
+                          equilibration_ps: float = 20.0, production_ps: float = 100.0, seed: int = 1) -> dict:
+    """Hydration free energy (kcal/mol) of a neutral molecule (SMILES) or "water" in explicit TIP3P water by
+    alchemical decoupling over lambda windows, analysed with MBAR (BAR and TI as checks). Slow: about a
+    quarter of an hour for a small molecule on 8 cores at the defaults."""
+    r = _take_json(_cl_hydration(solute.encode(), waters, temperature, equilibration_ps, production_ps, seed))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r
