@@ -100,3 +100,41 @@ jobs:
             -DCHEMLARP_TEST_DATA_DIR="\"$PWD/data\"" src/*.cpp tests/*.cpp -o tests_asan
           CHEMLARP_THREADS=4 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
             UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./tests_asan
+
+  fuzz:
+    name: ubuntu-latest (libFuzzer, parsers)
+    # Apple's clang does not ship libFuzzer, so this runs on Linux (docs/AUDITS.md, audit 1.5).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Build the fuzz target
+        run: |
+          clang++ -std=c++20 -O1 -g -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined \
+            -fno-omit-frame-pointer -pthread -Iinclude -DCHEMLARP_STATIC \
+            src/*.cpp tests/fuzz_parsers.cpp -o fuzz_parsers
+      - name: Seed a corpus from the repository's own inputs
+        run: |
+          mkdir -p corpus
+          i=0
+          for f in data/*.pdb data/mechanisms/* data/mechanisms/h2o2/* tests/data/* ; do
+            [ -f "$f" ] || continue
+            i=$((i+1)); printf '\%d' "$((i % 14))" > "corpus/seed$i"; head -c 4000 "$f" >> "corpus/seed$i"
+          done
+          for s in 'CC(=O)Oc1ccccc1C(=O)O' 'c1ccncc1' '[C@@H](N)(C)C(=O)O' 'add NaCl 1' 'feed F T=300'; do
+            i=$((i+1)); printf '\1%s' "$s" > "corpus/seed$i"
+          done
+          ls corpus | wc -l
+      - name: Fuzz
+        run: |
+          ASAN_OPTIONS=detect_leaks=0 ./fuzz_parsers corpus -max_total_time=240 -max_len=4096 \
+            -timeout=25 -rss_limit_mb=4096 -print_final_stats=1
+      - name: Upload any crash
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: fuzz-crashes
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore
