@@ -217,6 +217,16 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
 | Docking has no suite because the module is not built | — | Add when it lands (redocking RMSD on a public complex set). |
 
+## Canonical SMILES on very large structures (`src/canonical.cpp`)
+
+Fixed 2026-11-17: the writer no longer recurses per atom, so a long chain cannot overflow the stack (found by
+AddressSanitizer in CI). What is left is speed.
+
+| Gap | Where | To resume |
+|---|---|---|
+| Canonicalisation is superlinear in atom count: 1,000 atoms 0.17 s, 2,000 0.61 s, 4,000 2.2 s, 20,000 62 s, 50,000 369 s (about O(n²)). A structure of tens of thousands of atoms, such as a protein read from a PDB file, takes minutes, and in the web app that blocks the engine worker | `Writer::run` and the canonical ranking in `src/canonical.cpp` | Profile first: the quadratic part is most likely the refinement loop re-sorting all atoms each round rather than only the cells that split. A proper Hopcroft-style partition refinement would make it near-linear. Until then, callers that only need a structure (not an identity) should skip canonicalisation. |
+| Branches nested more than 4,000 deep are refused rather than written | `Writer::write`, `kMaxBranchDepth` | Only a crafted SMILES reaches this. Making branch writing iterative with an explicit stack would remove the limit. |
+
 ## Licensing and bundled data (`LICENSE`, `NOTICE`, `LICENSING.md`, `src/*_data.inc`)
 
 Done 2026-11-17: relicensed to AGPL-3.0-only with commercial licences offered separately; NOTICE, LICENSING.md

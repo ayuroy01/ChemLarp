@@ -4,7 +4,7 @@ The audits to run before ChemLarp is called production-ready, what each covers, 
 stands. Findings are recorded in the "Findings" column; open items move to docs/GAPS.md once they are
 understood. Status: **open** (not started), **partial**, **done** (date).
 
-Started 2026-11-17. Last run 2026-11-17: of 34 audits, 23 are done and 11 partial; none is untouched; four defects were found and fixed (audits 1.1, 1.7 and 1.8).
+Started 2026-11-17. Last run 2026-11-17: of 34 audits, 23 are done and 11 partial; none is untouched; five defects were found and fixed (audits 1.1, 1.3, 1.7 and 1.8).
 
 ## 1. Correctness (bugs)
 
@@ -12,7 +12,7 @@ Started 2026-11-17. Last run 2026-11-17: of 34 audits, 23 are done and 11 partia
 |---|---|---|---|---|
 | 1.1 | Unit tests on every platform | `make && build/chemlarp_tests`; CI on Windows (MSVC, MinGW), macOS, Linux | done 2026-11-17 | 251 tests pass. CI caught a Windows build break the macOS build could not: `tests/test_solvation.cpp` used `M_PI`, which MSVC does not define, so both Windows jobs failed from the hydration commit until it was replaced with `std::numbers::pi`. An MSVC-only warning (C4390, an empty `if` in `src/iupac.cpp` whose condition was pure and therefore a no-op) was cleared at the same time |
 | 1.2 | Undefined behaviour | UBSan build of the test suite (command in docs/ARCHITECTURE.md; ASan hangs on macOS) | done 2026-11-15 | clean |
-| 1.3 | Memory errors | AddressSanitizer + LeakSanitizer in CI (`asan` job, Linux) | done 2026-11-17 | CI job added. On macOS ASan spins inside its own scheduler with this thread pool (confirmed again 2026-11-17), so it runs on Linux. Valgrind on the CLI: still open |
+| 1.3 | Memory errors | AddressSanitizer + LeakSanitizer in CI (`asan` job, Linux) | done 2026-11-17 | **Found a crash on its first run.** The canonical SMILES writer recursed once per atom, so a long chain overflowed the stack and killed the process — reachable from any SMILES, file or web input. The writer now follows the last child in a loop, so a chain costs one frame; branches still recurse and are refused past 4,000 nested deep with a diagnostic instead of crashing. Pinned by `long_chains_and_deep_branches_do_not_overflow_the_stack`. On macOS ASan spins inside its own scheduler with this thread pool, so it runs on Linux. Valgrind on the CLI: still open |
 | 1.4 | Threading | ThreadSanitizer in CI (`tsan` job, Linux, 4 threads) | done | Runs on every push; was already in CI when this list was written |
 | 1.5 | Fuzzing of every text input | `tests/fuzz_parsers.cpp`: one libFuzzer target covering 14 entry points (SMILES, SMARTS, MOL/SDF, PDB/mmCIF, mechanisms, flowsheet, lab, aqueous, MBAR, reactions, equilibrium, VLE), run in CI (`fuzz` job) with ASan and UBSan and a corpus seeded from the repository's own inputs | partial 2026-11-17 | Target written and wired into CI for 4 minutes a push. Locally, 57 million mutated inputs across four seeds under UBSan found no crash, no hang and no undefined behaviour (Apple's clang ships no libFuzzer, so the local run uses a random-mutation driver seeded from the same corpus). Still to do: a long soak (hours) with a kept corpus, and crashes triaged from a stored corpus rather than from scratch each run |
 | 1.6 | Scientific validation | `make validate DATA=… PY=…` (`scripts/validate.py`): all suites against independent references | done 2026-11-14, hydration suite running | see docs/ARCHITECTURE.md |

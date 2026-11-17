@@ -203,3 +203,25 @@ TEST(search_entry_point_survives_hostile_input) {
   take(cl_search_json("CCO", "[#6]", "CCO", -1, -1));
   take(cl_search_json(std::string(20000, 'C').c_str(), "[#6]", "C", 2, 2048));
 }
+
+// A long chain used to recurse once per atom in the canonical SMILES writer, so it overflowed the stack and
+// crashed the process; AddressSanitizer caught it in CI on a 20,000-atom chain (docs/AUDITS.md, audit 1.3).
+// The writer now follows the last child in a loop. Deeply nested *branches* still recurse, so they are
+// refused with a diagnostic instead of crashing. 4,000 atoms keeps this test to a couple of seconds while
+// staying far past the depth that overflowed under a sanitizer's larger stack frames.
+TEST(long_chains_and_deep_branches_do_not_overflow_the_stack) {
+  const std::string chain(4000, 'C');
+  const std::string out = take(cl_parse_smiles_json(chain.c_str()));
+  CHECK(out.rfind("{\"ok\":true", 0) == 0);
+  CHECK(out.find(std::string(64, 'C')) != std::string::npos);  // the chain came back as a chain
+  take(cl_canonical_smiles_json(chain.c_str(), 0, 1));
+
+  // Branches nested past the writer's limit: an error, not a crash. "C(C(C(...)C)C)C" nests one per atom.
+  const std::size_t deep = 6000;
+  std::string nested;
+  nested.reserve(4 * deep);
+  for (std::size_t i = 0; i < deep; ++i) nested += "C(";
+  nested += "C";
+  for (std::size_t i = 0; i < deep; ++i) nested += ")C";
+  take(cl_parse_smiles_json(nested.c_str()));  // parses or is rejected; either way it must not crash
+}

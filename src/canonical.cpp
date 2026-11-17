@@ -295,6 +295,13 @@ class Writer {
       if (i) out += '.';
       write(starts[i], out);
     }
+    if (too_deep_) {
+      if (diag_)
+        diag_->error(DiagCode::InvalidInput,
+                     "this structure's branches nest more than " + std::to_string(kMaxBranchDepth) +
+                         " deep, which SMILES cannot be written for here");
+      return {};
+    }
     // Allene marks, now that the ring-closure order at every terminal is known. Fill from the end so the
     // recorded offsets stay valid when "@@" shrinks to "@".
     for (auto it = pending_axial_.rbegin(); it != pending_axial_.rend(); ++it) {
@@ -727,7 +734,15 @@ class Writer {
     return false;
   }
 
+  // Writes the spanning tree rooted at `x`. The last child continues the loop instead of recursing: a chain
+  // is one child per atom, so recursing there would cost a stack frame per atom and overflow on a large
+  // molecule (AddressSanitizer found this on a 20,000-atom chain; docs/AUDITS.md, audit 1.3). Branches still
+  // recurse, so a structure whose branches nest more than kMaxBranchDepth deep is refused rather than
+  // crashing the process; no real molecule comes close, but a crafted SMILES can.
+  static constexpr int kMaxBranchDepth = 4000;
   void write(int x, std::string& out) {
+   for (;;) {
+    if (too_deep_) return;
     const std::size_t xi = static_cast<std::size_t>(x);
     if (parent_[xi] >= 0) out += bond_symbol(parent_bond_[xi], parent_[xi], x);
     std::vector<std::uint32_t> closes, opens;
@@ -774,15 +789,22 @@ class Writer {
     for (std::uint32_t b : closes) in_use_.erase(std::find(in_use_.begin(), in_use_.end(), digit_[b - sp_.bond_begin]));
 
     const auto& kids = children_[xi];
-    for (std::size_t i = 0; i < kids.size(); ++i) {
-      if (i + 1 < kids.size()) {
-        out += '(';
-        write(kids[i], out);
-        out += ')';
-      } else {
-        write(kids[i], out);
+    if (kids.empty()) return;
+    if (kids.size() > 1) {
+      if (depth_ >= kMaxBranchDepth) {
+        too_deep_ = true;
+        return;
       }
+      ++depth_;
+      for (std::size_t i = 0; i + 1 < kids.size(); ++i) {
+        out += '(';
+        write(static_cast<int>(kids[i]), out);
+        out += ')';
+      }
+      --depth_;
     }
+    x = static_cast<int>(kids.back());  // last child: continue here instead of recursing
+   }
   }
 
   struct Tetra {
@@ -796,6 +818,9 @@ class Writer {
     std::array<int, 4> refs{};
     Chirality parity = Chirality::None;
   };
+
+  int depth_ = 0;         // branch nesting currently open in write()
+  bool too_deep_ = false;  // kMaxBranchDepth exceeded: the result is incomplete and must not be returned
 
   const ChemicalSystemState& st_;
   const Species& sp_;
