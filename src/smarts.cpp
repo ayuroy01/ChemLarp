@@ -104,7 +104,13 @@ class Parser {
   int number(std::size_t& i, int fallback) {
     if (!digit(i)) return fallback;
     int v = 0;
-    while (digit(i)) v = v * 10 + (s_[i++] - '0');
+    // Capped so a long run of digits cannot overflow (signed overflow is undefined); every primitive that
+    // takes a number here compares it against a small range, so a capped value is rejected just the same.
+    constexpr int kDigitCap = 1000000;
+    while (digit(i)) {
+      if (v < kDigitCap) v = v * 10 + (s_[i] - '0');
+      ++i;
+    }
     return v;
   }
 

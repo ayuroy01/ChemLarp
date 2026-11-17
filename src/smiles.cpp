@@ -21,6 +21,10 @@ namespace {
 constexpr std::uint8_t kOrderImplicit = 0;
 constexpr std::uint8_t kOrderAromatic = 5;
 constexpr std::size_t kKekuleStepLimit = 200000;
+// A number in a bracket atom stops growing here while its digits are still consumed. Every legal value is
+// far below it (isotope <= 999, hydrogen count <= 99, charge <= 15, atom class <= 65535), and letting the
+// accumulator run would overflow on input like [CH999999999999] — undefined behaviour for the signed ones.
+constexpr unsigned kDigitCap = 1000000u;
 constexpr std::int64_t kRefPending = -1;  // ring-closure slot not yet closed
 constexpr std::int64_t kRefH = -2;        // implicit H of a bracket atom
 constexpr std::int64_t kRefLP = -3;       // lone pair of a 3-coordinate stereocentre
@@ -266,7 +270,12 @@ std::size_t Parser::parse_bracket(std::size_t i) {
   if (k < body.size() && is_digit(body[k])) {
     unsigned iso = 0;
     std::size_t start = k;
-    while (k < body.size() && is_digit(body[k])) iso = iso * 10 + static_cast<unsigned>(body[k++] - '0');
+    // Stop the value growing once it is past anything legal: the digits are still consumed, so the
+    // length check below and the reported position stay right, but no overflow can happen.
+    while (k < body.size() && is_digit(body[k])) {
+      if (iso < kDigitCap) iso = iso * 10 + static_cast<unsigned>(body[k] - '0');
+      ++k;
+    }
     if (k - start > 3) error(DiagCode::InvalidBracketAtom, off + start, "isotope number has more than 3 digits");
     a.isotope = static_cast<std::uint16_t>(std::min(iso, 999u));
   }
@@ -339,7 +348,10 @@ std::size_t Parser::parse_bracket(std::size_t i) {
     int h = 1;
     if (k < body.size() && is_digit(body[k])) {
       h = 0;
-      while (k < body.size() && is_digit(body[k])) h = h * 10 + (body[k++] - '0');
+      while (k < body.size() && is_digit(body[k])) {
+        if (h < static_cast<int>(kDigitCap)) h = h * 10 + (body[k] - '0');
+        ++k;
+      }
     }
     if (h > 99) error(DiagCode::InvalidBracketAtom, off + k, "hydrogen count is unreasonably large");
     a.hcount = std::min(h, 99);
@@ -353,7 +365,10 @@ std::size_t Parser::parse_bracket(std::size_t i) {
     int mag = 1;
     if (k < body.size() && is_digit(body[k])) {
       mag = 0;
-      while (k < body.size() && is_digit(body[k])) mag = mag * 10 + (body[k++] - '0');
+      while (k < body.size() && is_digit(body[k])) {
+        if (mag < static_cast<int>(kDigitCap)) mag = mag * 10 + (body[k] - '0');
+        ++k;
+      }
     } else {
       while (k < body.size() && body[k] == sign) { ++mag; ++k; }
     }
@@ -369,7 +384,10 @@ std::size_t Parser::parse_bracket(std::size_t i) {
     ++k;
     unsigned m = 0;
     const std::size_t start = k;
-    while (k < body.size() && is_digit(body[k])) m = m * 10 + static_cast<unsigned>(body[k++] - '0');
+    while (k < body.size() && is_digit(body[k])) {
+      if (m < kDigitCap) m = m * 10 + static_cast<unsigned>(body[k] - '0');
+      ++k;
+    }
     if (k == start) error(DiagCode::InvalidBracketAtom, off + k, "atom class ':' must be followed by digits");
     a.map = static_cast<std::uint16_t>(std::min(m, 65535u));
   }

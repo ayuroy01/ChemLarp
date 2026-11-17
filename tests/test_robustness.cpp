@@ -241,3 +241,23 @@ TEST(protein_reader_survives_absurd_coordinates) {
     take(cl_protein_json(pdb, 7.4));
   }
 }
+
+// Numbers inside a bracket atom were accumulated digit by digit with no cap, so a long run of digits
+// overflowed before the range check could reject it — undefined behaviour for the signed ones. The fuzzer
+// found it with a hydrogen count (docs/AUDITS.md, audit 1.5); the same shape was in the isotope, the charge
+// magnitude, the atom class and SMARTS's number(). All are capped now, and still rejected as out of range.
+TEST(bracket_atom_numbers_do_not_overflow) {
+  for (const char* s : {"[CH999999999999]", "[999999999999CH4]", "[C+999999999999]", "[C-999999999999]",
+                        "[12345678901234567890CH4]", "[C+++++++++++++++++++++++++++++++++]"}) {
+    const std::string j = take(cl_parse_smiles_json(s));
+    CHECK(j.rfind("{\"ok\":false", 0) == 0);  // out of range, reported rather than wrapped
+  }
+  // The atom class is clamped to 65535 instead of rejected, which is what it did before; what matters here
+  // is that the digits no longer overflow on the way.
+  take(cl_parse_smiles_json("[CH4:999999999999]"));
+  // The legal forms still parse, so the cap did not narrow what SMILES accepts.
+  for (const char* s : {"[13CH3]", "[235U]", "[NH4+]", "[O-2]", "[Fe+3]", "[CH4:99]", "[CH3:65535]"})
+    CHECK(take(cl_parse_smiles_json(s)).rfind("{\"ok\":true", 0) == 0);
+  take(cl_smarts_match_json("CCO", "[R999999999999]", 0, 10));
+  take(cl_smarts_match_json("CCO", "[v999999999999]", 0, 10));
+}
