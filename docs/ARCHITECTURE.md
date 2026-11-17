@@ -159,7 +159,8 @@ Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 thread
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Virtual lab and safety rules (`include/chemlarp/lab.hpp`, web Virtual Lab view, `chemlarp lab|titrate|reagents|ghs`): mixing aqueous solutions (pH, reaction heat and temperature change by Hess's law from the database's log K(T), precipitates that form in the laboratory, gases leaving an open vessel), titration curves with equivalence points, a catalogue of 53 reagents; safety findings computed from the result (GHS pH presumption, boiling, gases with their GHS class), incompatibility rules from NRC *Prudent Practices in the Laboratory* (2011) with section citations, and GHS classifications of 207 laboratory chemicals from PubChem | **done** (`src/lab.cpp`, `src/ghs_data.inc`); against PHREEQC on the same solutions: pH within 0.002, precipitate and gas amounts within 0.3 %, titration curves within 0.001 pH; heat of neutralisation 56.36 kJ/mol (the database's own value; CODATA 55.815, 1 %); see "Virtual lab: validation" below. Not covered: redox between valence states (bleach + acid is not simulated), organic solutes, non-ideal heats; the safety checks are not a risk assessment; see docs/GAPS.md |
 | Docking scoring | planned |
-| Free energies (`include/chemlarp/free_energy.hpp`): exponential averaging, BAR, MBAR with asymptotic uncertainties and the overlap matrix, thermodynamic integration, statistical inefficiency and subsampling, on reduced potentials from any source (`chemlarp mbar`, Python `mbar()`); a soft-core Lennard-Jones particle coupled into the LJ fluid over λ windows, with Widom insertion in the pure fluid as a second route (`chemlarp ljsolv`, Python `lj_solvation()`) | **done** (`src/free_energy.cpp`); MBAR agrees with pymbar 4.0.3 to 5×10⁻¹⁰ kT in free energies and 5×10⁻¹² in uncertainties, is unbiased on exactly sampled oscillators, and agrees with Widom insertion; see "Free energies: validation" below. Not covered: molecules in explicit solvent (no water model or PME), so no hydration free energies; see docs/GAPS.md |
+| Free energies (`include/chemlarp/free_energy.hpp`): exponential averaging, BAR, MBAR with asymptotic uncertainties and the overlap matrix, thermodynamic integration, statistical inefficiency and subsampling, on reduced potentials from any source (`chemlarp mbar`, Python `mbar()`); a soft-core Lennard-Jones particle coupled into the LJ fluid over λ windows, with Widom insertion in the pure fluid as a second route (`chemlarp ljsolv`, Python `lj_solvation()`) | **done** (`src/free_energy.cpp`); MBAR agrees with pymbar 4.0.3 to 5×10⁻¹⁰ kT in free energies and 5×10⁻¹² in uncertainties, is unbiased on exactly sampled oscillators, and agrees with Widom insertion; see "Free energies: validation" below. Molecules in explicit water: next row; see docs/GAPS.md |
+| Explicit water and hydration free energies (`include/chemlarp/solvation.hpp`, `include/chemlarp/ewald.hpp`, `chemlarp water|hydrate`, Python `water_box()`, `hydration_free_energy()`): rigid TIP3P (SETTLE), Ewald with smooth PME (own mixed-radix FFT), Langevin BAOAB at 2 fs, Monte Carlo barostat, long-range dispersion correction; a neutral solute from SMILES (MMFF94 charges and intramolecular terms, UFF Lennard-Jones, hydrogen-mass repartitioning) decoupled in 19 windows, charges then soft-core van der Waals; MBAR with BAR and TI | **done** (`src/solvation.cpp`, `src/ewald.cpp`); PME within 10⁻³ of the exact Ewald sum, the rock-salt Madelung constant to 10⁻⁶; bulk TIP3P density 0.9856 g/cm³ and U −9.59 kcal/mol against 0.982 and −9.66 published; FreeSolv (8 molecules): RMS error 1.67 kcal/mol against experiment, where GAFF/AM1-BCC gives 0.97 — benzene and acetone are 2.5–3.1 kcal/mol too negative because UFF’s Lennard-Jones parameters are not meant for solvation; see "Hydration free energies: validation" below. Not covered: charged solutes, other water models, published small-molecule force fields (GAFF, OPLS); about 25 min per molecule on 8 cores; see docs/GAPS.md |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
 | Michelsen stability test + Rachford–Rice two-phase flash; pure-component vapour pressure | **done** |
 | NRTL and original UNIFAC activity coefficients (any number of components), UNIFAC subgroups from structure, Antoine vapour pressures (320 compounds), bubble and dew T and P by modified Raoult's law; `chemlarp vle`, `cl_vle_text_json`, Python `vle()`; web Phase Behaviour panel with T–x–y / P–x–y diagrams and azeotrope marking for binaries | **done** (`src/activity.cpp`); validation in "Activity models: validation" below. Not covered: NRTL parameter database (parameters are supplied by the caller), modified UNIFAC (Dortmund), vapour non-ideality, liquid-liquid splits (dew points that need one fail with VleNotConverged) |
@@ -583,6 +584,63 @@ of charges and van der Waals terms. None of those exist in ChemLarp yet, so Free
 literature value of μ_ex for this truncated-and-shifted fluid was not checked: equations of state for the
 full Lennard-Jones potential do not apply, and the one for the truncated-and-shifted fluid (Thol et al. 2015)
 was not implemented.
+
+## Hydration free energies: validation
+
+`scripts/validate_hydration.py` (suite `hydration` of `scripts/validate.py`) and `tests/test_solvation.cpp`.
+The engine and the solute model are validated separately, because they come out very differently.
+
+**The engine.** Every part that can be checked against an exact answer agrees with it:
+
+| Test | Result |
+|---|---|
+| Smooth PME against the direct reciprocal-space Ewald sum (60 charges, 20x22x24 A box, 9 A cutoff, 1e-5 tolerance) | energy within 1e-3 of the exact sum at 1 A grid spacing, forces within 0.02 kcal/mol/A; a 0.6 A grid converges further |
+| The exact reciprocal sum against finite differences of its own energy | forces agree to 1e-5 kcal/mol/A |
+| Full Ewald sum (real + reciprocal + self) on rock salt, against the Madelung constant 1.747565 (Kittel) | 1.747565 exactly (1e-6); PME 1e-4 |
+| Mixed-radix FFT (2, 3, 5) against a direct discrete Fourier transform | within 1e-12 n for every length tested, both directions |
+| Total forces against finite differences of the total energy (ethanol in 400 waters, lambda_elec 0.6, lambda_vdw 0.7) | largest difference 1.4e-7 |
+| SETTLE rigid-water constraints | bond and angle error 8e-15 A |
+| Energy conservation without a thermostat (NVE) | drift 0.004-0.04 kcal/mol/ps |
+| Bulk TIP3P at 298.15 K and 1 atm, 400 molecules, 20 + 100 ps, two seeds | density 0.9856 +- 0.0003 g/cm3 and potential energy -9.587 +- 0.007 kcal/mol, against 0.982 and -9.66 published for TIP3P with Ewald and a long-range correction (Vega, Abascal, Conde & Aragones, Faraday Discuss. 141 (2009) 251, table 6); first O-O peak at 2.775 A |
+| Two seeds of the whole bulk calculation | density and energy repeat to 0.0001 g/cm3 and 0.014 kcal/mol |
+| MBAR, BAR and thermodynamic integration on the same windows | agree within 0.2 kcal/mol for every molecule run |
+
+A TIP3P water decoupled from TIP3P water gives **-6.07 +- 0.18** and **-6.11 +- 0.22** kcal/mol (two seeds).
+This is *not* confirmed: the TIP3P values that could be found, -5.4 and -5.6 kcal/mol (-22.6 and -23.43
+kJ/mol, quoted in arXiv:0809.1628), were computed with cut-off electrostatics and 216 molecules, not Ewald, so
+they are not a like-for-like reference; the experimental value is -6.3. The script prints the comparison
+without scoring it, and docs/GAPS.md records the open question.
+
+**The solute model is the weak part.** ChemLarp's solute is MMFF94 (charges and intramolecular terms) with
+UFF Lennard-Jones parameters mixed with TIP3P oxygen. That combination is not a published force field, and on
+FreeSolv (Mobley & Guthrie, J. Comput.-Aided Mol. Des. 28 (2014) 711, v0.52) it is systematically too
+negative for aromatics and carbonyls. Eight molecules at 50 ps per window, one seed:
+
+| Molecule | ChemLarp (MBAR) | Experiment | ChemLarp − experiment | FreeSolv's GAFF/AM1-BCC |
+|---|---|---|---|---|
+| methane | 1.57 ± 0.15 | 2.00 | −0.43 | 2.45 |
+| ethane | 0.90 ± 0.18 | 1.83 | −0.93 | 2.46 |
+| methanol | −3.82 ± 0.22 | −5.10 | +1.28 | −3.49 |
+| ethanol | −4.69 ± 0.27 | −5.00 | +0.31 | −3.39 |
+| acetone | −6.35 ± 0.27 | −3.80 | **−2.55** | −3.51 |
+| benzene | −4.00 ± 0.27 | −0.90 | **−3.10** | −0.81 |
+| phenol | −6.23 ± 0.32 | −6.60 | +0.37 | −5.71 |
+| acetamide | −7.93 ± 0.27 | −9.71 | +1.78 | −8.82 |
+
+**RMS error 1.67 kcal/mol** (mean −0.41); GAFF/AM1-BCC on the same eight is 0.97. Acetone and benzene are
+outside the 2.5 kcal/mol the suite allows, and the suite reports them as failures rather than widening the
+tolerance.
+
+The cause is in the Lennard-Jones parameters, not in the free-energy machinery: UFF's well depths were fitted
+to molecular geometries, not to condensed-phase solvation. Against the values published force fields use for
+hydration (GAFF), UFF's epsilon is **2.9x larger for hydrogen** (0.044 against 0.015 kcal/mol), 1.2x larger for
+aromatic carbon, and 0.29x as large for carbonyl oxygen. Hydrogen-rich and aromatic solutes therefore attract
+water too strongly, which is exactly the pattern in the table. Fixing this needs GAFF or OPLS atom types and
+AM1-BCC charges, not a change to the sampling or the estimators; it is recorded in docs/GAPS.md.
+
+**What this means in practice.** The machinery (PME, constraints, barostat, decoupling, MBAR) is sound and
+reproduces the water model it was given. The absolute hydration free energies of organic solutes carry errors
+of up to about 3 kcal/mol and should not be used quantitatively.
 
 ## Virtual lab: validation
 

@@ -3949,6 +3949,7 @@ bool Namer::number_fused(const FusedSys& F, std::vector<FusedNumbering>& out) {
     }
     const int r = bfs[idx];
     const int n = static_cast<int>(cw[r].size());
+    if (n < 3) return;  // ring perception never yields one, and the code below divides by n
     int e = 0;
     const int de = dir[r][0];  // entry direction, left in slot 0 by the parent (or the root loop)
     if (parent_edge[r] >= 0) e = bond_index(r, F.edges[parent_edge[r]].u, F.edges[parent_edge[r]].v);

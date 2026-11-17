@@ -1,0 +1,10 @@
+# Keep the pinned GitHub Actions up to date: Dependabot opens a pull request when a
+# pinned commit falls behind, so the pins never become stale, unpatched versions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"

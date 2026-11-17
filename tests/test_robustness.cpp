@@ -1,0 +1,205 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 ayuroy01. See LICENSE and NOTICE.
+// Hostile and extreme input through the public C API (docs/AUDITS.md, audits 1.7 and 2.6).
+//
+// Every entry point must come back with a JSON object and an error vector, never crash, hang, read out of
+// bounds or loop forever. Null pointers return null. Nothing here checks chemistry: only that malformed,
+// empty, enormous, deeply nested, non-UTF-8 and out-of-range input is rejected in an orderly way. Run it
+// under the sanitizers as well as normally.
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "chemlarp/chemlarp_c.h"
+#include "test_framework.hpp"
+
+namespace {
+
+// Calls f, requires a non-null JSON object back, and frees it.
+std::string take(char* s) {
+  CHECK(s != nullptr);
+  std::string out = s ? s : "";
+  cl_free_string(s);
+  CHECK(!out.empty());
+  CHECK(out.front() == '{' || out.front() == '[');
+  return out;
+}
+
+// Inputs that have broken parsers before: empty, blank, huge, deeply nested, unterminated, binary.
+std::vector<std::string> nasty_strings() {
+  std::vector<std::string> v = {
+      "", " ", "\n", "\t\t\t", "C" + std::string(20000, 'C'), std::string(5000, '('),
+      std::string(5000, ')'), std::string(2000, '['), "[", "]", "(", ")", "%", "%%", "%99", "@", "@@",
+      "/\\", "$", "&", "*", "~", "#", "=", ".", "..", "....", "-]", "[*]", "[]", "[C@@H", "C1CC", "C%",
+      "C1" + std::string(500, 'C'), std::string(1000, '1'), "\xff\xfe\xfd", "\xc3\x28", "\xe2\x82",
+      "C\xff", "<<<>>>", "{\"a\":", "\"", "'", "\\", "\\\\", "N[C@@H](C)C(=O)O\n\n\n", "0", "-1", "1e400",
+      "NaN", "inf", "null", "undefined", std::string(20000, 'x'), std::string(200, '\n'),
+      "C(((((((((((((((((((((C)))))))))))))))))))))", "c1ccccc1" + std::string(100, '1'),
+  };
+  return v;
+}
+
+}  // namespace
+
+TEST(c_api_rejects_null_pointers) {
+  CHECK(cl_parse_smiles_json(nullptr) == nullptr);
+  CHECK(cl_canonical_smiles_json(nullptr, 0, 0) == nullptr);
+  CHECK(cl_inchi_json(nullptr) == nullptr);
+  CHECK(cl_iupac_name_json(nullptr) == nullptr);
+  CHECK(cl_check_reaction_json(nullptr, 298.15) == nullptr);
+  CHECK(cl_aqueous_json(nullptr) == nullptr);
+  CHECK(cl_flowsheet_json(nullptr) == nullptr);
+  CHECK(cl_lab_mix_json(nullptr) == nullptr);
+  CHECK(cl_lab_titration_json(nullptr) == nullptr);
+  CHECK(cl_mbar_json(nullptr) == nullptr);
+  CHECK(cl_ghs_json(nullptr) == nullptr);
+  CHECK(cl_hydration_json(nullptr, 0, 0, 0, 0, 0) == nullptr);
+  CHECK(cl_smarts_match_json(nullptr, "C", 0, 10) == nullptr);
+  CHECK(cl_smarts_match_json("C", nullptr, 0, 10) == nullptr);
+  CHECK(cl_similarity_json(nullptr, "C", 2, 2048) == nullptr);
+  CHECK(cl_read_molecules_json(nullptr, nullptr, 0, 0) == nullptr);
+  cl_free_string(nullptr);  // must be a no-op
+}
+
+TEST(structure_parsers_survive_hostile_input) {
+  for (const auto& s : nasty_strings()) {
+    take(cl_parse_smiles_json(s.c_str()));  // the parser sees everything, however large
+    if (s.size() > 2000) continue;          // canonicalisation and identity are superlinear
+    take(cl_canonical_smiles_json(s.c_str(), 2, 1));
+    take(cl_inchi_json(s.c_str()));
+    take(cl_ghs_json(s.c_str()));
+    take(cl_smarts_match_json("CCO", s.c_str(), 0, 100));
+    take(cl_smarts_match_json(s.c_str(), "[#6]", 0, 100));
+    take(cl_similarity_json(s.c_str(), "CCO", 2, 2048));
+    take(cl_read_molecules_json(s.c_str(), nullptr, 0, 0));
+  }
+}
+
+TEST(naming_and_depiction_survive_hostile_input) {
+  for (const auto& s : nasty_strings()) {
+    if (s.size() > 4096) continue;  // naming is superlinear; the parser is covered above
+    take(cl_iupac_name_json(s.c_str()));
+    take(cl_depict_json(s.c_str(), 30.0, 0));
+  }
+}
+
+TEST(file_readers_survive_malformed_files) {
+  const std::vector<std::string> files = {
+      "", "\n\n\n", "$$$$", "M  END", "garbage\nnot a molfile\n$$$$\n",
+      // A V2000 header promising atoms and bonds the file does not have.
+      "x\n\n\n 99 99  0  0  0  0  0  0  0  0999 V2000\nM  END\n",
+      "x\n\n\n-1 -1  0  0  0  0  0  0  0  0999 V2000\nM  END\n",
+      "x\n\n\n  1  0  0  0  0  0  0  0  0  0999 V3000\nM  V30 BEGIN CTAB\n",
+      "ATOM  xxxx\n", "ATOM      1  CA  ALA A   1       x       y       z\n",
+      "HETATM\nATOM\nTER\nEND\n", "data_x\nloop_\n_atom_site.id\n",
+      std::string(100000, 'A') + "\n",
+  };
+  for (const auto& f : files) {
+    take(cl_read_molecules_json(f.c_str(), nullptr, 0, 0));
+    take(cl_read_molecules_json(f.c_str(), "sdf", 1, 5));
+    take(cl_protein_json(f.c_str(), 7.4));
+  }
+}
+
+TEST(numeric_entry_points_reject_out_of_range_conditions) {
+  const double bad_T[] = {0.0, -1.0, -1e30, 1e30, 1e-30};
+  for (double T : bad_T) {
+    take(cl_check_reaction_json("1 C + 1 O=O -> 1 O=C=O", T));
+    take(cl_equilibrate_text_json("O 1\n[H][H] 1", T, 1e5));
+    take(cl_saturation_pressure_json("CCO", T, "pr"));
+    take(cl_pure_component_json("CCO", T, 1e5));
+    take(cl_flash_text_json("CCO 1", T, 1e5, "pr"));
+  }
+  const double bad_P[] = {0.0, -1.0, -1e20, 1e30};
+  for (double P : bad_P) {
+    take(cl_equilibrate_text_json("O 1\n[H][H] 1", 1000.0, P));
+    take(cl_flash_text_json("CCO 0.5\nCCCC 0.5", 300.0, P, "srk"));
+  }
+  // Zero and negative amounts, and a mixture that sums to nothing.
+  take(cl_equilibrate_text_json("O 0\n[H][H] 0", 1000.0, 1e5));
+  take(cl_equilibrate_text_json("O -1", 1000.0, 1e5));
+  take(cl_equilibrate_text_json("", 1000.0, 1e5));
+  take(cl_flash_text_json("CCO 0\nCCCC 0", 300.0, 1e5, "pr"));
+  take(cl_vle_text_json("CCO 0.5\nO 0.5", "txy", -5.0));
+  take(cl_vle_text_json("", "txy", 1.0));
+}
+
+TEST(simulation_entry_points_reject_absurd_settings) {
+  // Zero, negative and enormous step counts, step sizes and system sizes.
+  take(cl_md_json("CCO", 300.0, 0, 0.0, nullptr, 0.0, 0, 0, 0, nullptr));
+  take(cl_md_json("CCO", -300.0, 10, -1.0, "bussi", -1.0, 0, 1, 1, "uff"));
+  take(cl_md_json("", 300.0, 10, 1.0, nullptr, 100.0, 1, 1, 0, nullptr));
+  take(cl_md_json("CCO", 300.0, 5, 1.0, "no-such-thermostat", 100.0, 1, 1, 0, "no-such-field"));
+  take(cl_lj_json(0, 0.0, 0.0, 0.0, 0.0, 0, 0, nullptr, 0));
+  take(cl_lj_json(-5, -1.0, -1.0, -1.0, -1.0, 0, 0, "none", 1));
+  take(cl_mmff_json("", "mmff94", 1));
+  take(cl_mmff_json("CCO", "not-a-variant", 1));
+  take(cl_embed_json("", 1, 1, 1));
+  take(cl_embed_json("CCO", 1, 0, 0));
+  take(cl_embed_json("CCO", 1, -3, 1));
+  take(cl_qc_json("", "hf", "STO-3G", 0, 2, 0));
+  take(cl_qc_json("CCO", "no-such-method", "no-such-basis", -2, -1, 0));
+  // Boxes too small for the cutoff, and no molecules at all.
+  take(cl_water_box_json(1, 298.15, 1.0, 0.01, 0.01, 1));
+}
+
+// An argument out of range must be reported at once. These used to fall back to the defaults, so a caller
+// passing -1 started a 400-water, 120 ps simulation instead of getting an error (docs/AUDITS.md, audit 2.6).
+TEST(expensive_entry_points_reject_out_of_range_arguments_at_once) {
+  const auto rejected = [](char* s) {
+    const std::string j = take(s);
+    CHECK(j.rfind("{\"ok\":false", 0) == 0);
+  };
+  rejected(cl_water_box_json(-10, 298.15, 1.0, 1.0, 1.0, 1));
+  rejected(cl_water_box_json(100, -5.0, 1.0, 1.0, 1.0, 1));
+  rejected(cl_water_box_json(100, 298.15, 1.0, -1.0, 1.0, 1));
+  rejected(cl_water_box_json(100, 298.15, 1.0, 1.0, -1.0, 1));
+  rejected(cl_water_box_json(1 << 20, 298.15, 1.0, 1.0, 1.0, 1));
+  rejected(cl_water_box_json(100, 1e9, 1.0, 1.0, 1.0, 1));
+  rejected(cl_water_box_json(100, 298.15, 1.0, 1e9, 1.0, 1));
+  rejected(cl_hydration_json("CCO", -1, 298.15, 1.0, 1.0, 1));
+  rejected(cl_hydration_json("CCO", 100, -1.0, 1.0, 1.0, 1));
+  rejected(cl_hydration_json("CCO", 100, 298.15, -1.0, 1.0, 1));
+  rejected(cl_hydration_json("CCO", 100, 298.15, 1.0, -1.0, 1));
+}
+
+TEST(text_formats_survive_hostile_input) {
+  for (const auto& s : nasty_strings()) {
+    if (s.size() > 70000) continue;
+    take(cl_aqueous_json(s.c_str()));
+    take(cl_flowsheet_json(s.c_str()));
+    take(cl_lab_mix_json(s.c_str()));
+    take(cl_lab_titration_json(s.c_str()));
+    take(cl_mbar_json(s.c_str()));
+    take(cl_check_reaction_json(s.c_str(), 298.15));
+    take(cl_equilibrate_text_json(s.c_str(), 1000.0, 1e5));
+    take(cl_vle_text_json(s.c_str(), "txy", 1.0));
+    take(cl_flash_text_json(s.c_str(), 300.0, 1e5, "pr"));
+  }
+}
+
+TEST(mechanism_readers_survive_malformed_mechanisms) {
+  const std::vector<std::string> mechs = {
+      "", "ELEMENTS\n", "REACTIONS\nEND\n", "species:\n", "phases:\n  - name: x\n",
+      "reaction H2 + O2 => H2O  1 0 0\n", "reaction  => \n", "reaction A => B 1e300 1e300 1e300\n",
+      "species A\nreaction A => A 1 0 0\n", "{\"not\": \"a mechanism\"}",
+      std::string(50000, 'r') + "\n",
+  };
+  for (const auto& m : mechs) {
+    take(cl_kinetics_text_json(m.c_str(), nullptr, nullptr, "adiabatic-v", 1000.0, 1e5, "", 1e-6, 10, 1e-8));
+    take(cl_kinetics_text_json(m.c_str(), m.c_str(), m.c_str(), "no-such-model", -1.0, -1.0, "H2=1", -1.0, 0, 0.0));
+    take(cl_kinetics_text_json(m.c_str(), nullptr, nullptr, "iso-p", 300.0, 1e5, "not a feed line", 1e-6, 1, 1e-8));
+  }
+  // `mechanism_text` and `model` are required: NULL in, NULL out (the header says so).
+  CHECK(cl_kinetics_text_json(nullptr, nullptr, nullptr, "iso-v", 300.0, 1e5, "", 1e-6, 1, 1e-8) == nullptr);
+  CHECK(cl_kinetics_text_json("", nullptr, nullptr, nullptr, 300.0, 1e5, "", 1e-6, 1, 1e-8) == nullptr);
+}
+
+TEST(search_entry_point_survives_hostile_input) {
+  take(cl_search_json("", "[#6]", "CCO", 2, 2048));
+  take(cl_search_json("CCO\nCCC\n", "", "", 2, 2048));
+  take(cl_search_json("CCO\n\n\nnot-a-smiles\n", "[", "](", 0, 0));
+  take(cl_search_json("CCO", "[#6]", "CCO", -1, -1));
+  take(cl_search_json(std::string(20000, 'C').c_str(), "[#6]", "C", 2, 2048));
+}

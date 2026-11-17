@@ -78,7 +78,7 @@ CHEMLARP_API char* cl_equilibrate_json(const char* const* smiles, const double* 
 
 /* Batch-reactor kinetics. `mechanism_text` is .ocm, CHEMKIN-II or Cantera YAML source (detected
  * from content); `thermo_text` (CHEMKIN therm.dat) and `smiles_map_text` ("NAME SMILES" lines) may
- * be NULL. `model` is "iso-v", "iso-p",
+ * be NULL; `mechanism_text` and `model` may not, and NULL is returned if they are. `model` is "iso-v", "iso-p",
  * "adiabatic-v" or "adiabatic-p"; species are given by mechanism name. Returns
  * {"ok", "species":[names], "samples":[{t,T,P,n:[...]}], "ignition_time", "stats", "diagnostics"}
  * with `n_samples` evenly spaced samples in (0, t_end]. */
@@ -208,6 +208,9 @@ CHEMLARP_API char* cl_lj_solvation_json(int cells, double density, double temper
 
 /* TIP3P water box (solvation.hpp): NPT Langevin dynamics with PME. Zero or negative arguments take the defaults
  * (400 waters, 298.15 K, 1 atm, 20 ps equilibration, 100 ps production; pressure < 0 runs at constant volume).
+ * A negative or non-finite argument, or one past what the engine can finish (20000 waters, 10000 K, 1 us), is
+ * rejected with an InvalidInput diagnostic rather than silently falling back to the defaults, which would start
+ * a simulation lasting minutes.
  * Returns {"ok","waters","box","density","density_error","potential_per_molecule","potential_error",
  * "temperature","barostat_acceptance","g_oo":[[r,g]...],"diagnostics"}. */
 CHEMLARP_API char* cl_water_box_json(int waters, double temperature, double pressure_atm, double equilibration_ps,

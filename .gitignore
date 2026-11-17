@@ -9,3 +9,5 @@ CMakeUserPresets.json
 .DS_Store
 *.egg-info/
 dist/
+CLAUDE.md
+AGENTS.md

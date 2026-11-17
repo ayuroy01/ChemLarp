@@ -122,15 +122,34 @@ std::string jnum(double v) {
 }  // namespace
 
 namespace {
-SolvationOptions solvation_options(int waters, double temperature, double equilibration_ps, double production_ps,
-                                   unsigned seed) {
-  SolvationOptions o;
+// Zero means "use the default", as the header says. A negative or non-finite argument is a mistake by the
+// caller, so it is reported: taking the defaults instead would silently start a simulation of minutes to
+// hours. The upper bounds are what this engine can finish in a sensible time, not physical limits.
+bool solvation_options(int waters, double temperature, double equilibration_ps, double production_ps,
+                       unsigned seed, SolvationOptions& o, std::string& error) {
+  auto bad = [&error](const char* what) {
+    error = what;
+    return false;
+  };
+  auto ok_time = [](double t) { return std::isfinite(t) && t >= 0.0; };
+  if (waters < 0) return bad("waters cannot be negative (0 uses the default)");
+  if (waters > 20000) return bad("waters above 20000 is beyond what this engine can simulate in a sensible time");
+  if (!std::isfinite(temperature) || temperature < 0.0) return bad("temperature must be a positive number of kelvin (0 uses the default)");
+  if (temperature > 10000.0) return bad("temperature above 10000 K is outside the range of this water model");
+  if (!ok_time(equilibration_ps)) return bad("equilibration_ps cannot be negative (0 uses the default)");
+  if (!ok_time(production_ps)) return bad("production_ps cannot be negative (0 uses the default)");
+  if (equilibration_ps > 1e6 || production_ps > 1e6) return bad("more than a microsecond of simulation is not supported");
   if (waters > 0) o.waters = waters;
   if (temperature > 0) o.temperature_K = temperature;
   if (equilibration_ps > 0) o.equilibration_ps = equilibration_ps;
   if (production_ps > 0) o.production_ps = production_ps;
   if (seed > 0) o.seed = seed;
-  return o;
+  return true;
+}
+
+char* solvation_bad_input(const std::string& message) {
+  return dup(std::string("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\",\"message\":") +
+             json_escape(message) + "}]}");
 }
 }  // namespace
 
@@ -972,20 +991,24 @@ char* cl_lj_solvation_json(int cells, double density, double temperature, double
 
 char* cl_water_box_json(int waters, double temperature, double pressure_atm, double equilibration_ps,
                         double production_ps, unsigned seed) {
-  return guarded([&] {
-    SolvationOptions o = solvation_options(waters, temperature, equilibration_ps, production_ps, seed);
-    if (pressure_atm > 0) o.pressure_atm = pressure_atm;
-    else if (pressure_atm < 0) o.pressure_atm = 0.0;
-    return water_box_json(o, o.production_ps);
-  });
+  SolvationOptions o;
+  std::string error;
+  if (!solvation_options(waters, temperature, equilibration_ps, production_ps, seed, o, error))
+    return solvation_bad_input(error);
+  if (!std::isfinite(pressure_atm)) return solvation_bad_input("pressure_atm must be a number (negative: constant volume)");
+  if (pressure_atm > 0) o.pressure_atm = pressure_atm;
+  else if (pressure_atm < 0) o.pressure_atm = 0.0;
+  return guarded([&] { return water_box_json(o, o.production_ps); });
 }
 
 char* cl_hydration_json(const char* solute, int waters, double temperature, double equilibration_ps,
                         double production_ps, unsigned seed) {
   if (!solute) return nullptr;
-  return guarded([&] {
-    return hydration_json(solute, solvation_options(waters, temperature, equilibration_ps, production_ps, seed));
-  });
+  SolvationOptions o;
+  std::string error;
+  if (!solvation_options(waters, temperature, equilibration_ps, production_ps, seed, o, error))
+    return solvation_bad_input(error);
+  return guarded([&] { return hydration_json(solute, o); });
 }
 
 char* cl_lab_mix_json(const char* text) {

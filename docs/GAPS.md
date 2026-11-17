@@ -123,7 +123,7 @@ in the LJ fluid with Widom insertion as a second route. MBAR matches pymbar 4.0.
 
 | Gap | Where | To resume |
 |---|---|---|
-| No molecules in explicit solvent, so no hydration or binding free energies | roadmap module "Hydration free energies in explicit water" | See the roadmap list below. |
+| No binding free energies (protein–ligand) | — | Needs docking poses and restraints on top of `solvation.hpp`; see the next section for the solvent side. |
 | BAR summed over neighbouring windows adds the pair errors as if independent; neighbouring pairs share a window's samples, so the error was 0.49 of the scatter between seeds | `lj_solvation` | Report MBAR's error for the BAR route too, or compute the covariance of adjacent pair estimates. |
 | TI error 0.65 of the scatter: the statistical inefficiency of the slowest windows (λ ≈ 0.25, g ≈ 20) is underestimated from 4,000 frames | `statistical_inefficiency` | Longer runs, or block averaging as a second estimate of g; pymbar's warning applies equally. |
 | Widom insertion error is about twice the scatter (too conservative) | `lj_solvation` | Compute the error from blocks of frames instead of the delta method on the per-frame means. |
@@ -132,6 +132,24 @@ in the LJ fluid with Widom insertion as a second route. MBAR matches pymbar 4.0.
 | The LJ simulation is O(N²) without neighbour lists; one solute; no replica exchange between λ windows | `src/free_energy.cpp` | Cell lists for N > 500; Hamiltonian replica exchange for windows with poor overlap. |
 | Uncertainties of unsampled states are reported as NaN | `mbar` | Use the full N × N form of Θ restricted to the needed columns (pymbar does). |
 | No web UI | `web/` | A panel that runs `lj_solvation` and plots ∂u/∂λ and the overlap matrix. |
+
+## Explicit water and hydration free energies (`src/solvation.cpp`, `src/ewald.cpp`, `include/chemlarp/solvation.hpp`)
+
+Done 2026-11-15: TIP3P with SETTLE, PME, Langevin BAOAB, Monte Carlo barostat; neutral solutes from SMILES
+decoupled in 19 windows; MBAR/BAR/TI. Validation: `scripts/validate_hydration.py` (suite `hydration`, needs
+FreeSolv's `database.txt` from https://github.com/MobleyLab/FreeSolv, v0.52, under `freesolv/` in the data
+directory; results are cached in `freesolv/runs/`).
+
+| Gap | Where | To resume |
+|---|---|---|
+| TIP3P water in TIP3P water gives −6.07 ± 0.18 and −6.11 ± 0.22 kcal/mol (two seeds); the published TIP3P values found, −5.4 and −5.6, used cut-off electrostatics and 216 molecules, so the 0.5 kcal/mol difference is not resolved either way | `scripts/validate_hydration.py` part B | Find a PME value for TIP3P self-hydration (water-model papers' supporting information), or run the same decoupling in OpenMM/GROMACS (TIP3P, PME, 9 Å, LJ tail correction) and compare like for like. |
+| **The solute's Lennard-Jones parameters are wrong for solvation, so hydration free energies of aromatics and carbonyls are 2.5-3 kcal/mol too negative.** UFF's well depths were fitted to geometries, not condensed phases: against GAFF's, UFF's epsilon is 2.9x larger for hydrogen (0.044 vs 0.015 kcal/mol), 1.2x for aromatic carbon and 0.29x for carbonyl oxygen, so hydrogen-rich and aromatic solutes attract water far too strongly (benzene -4.00 against -0.90 measured; acetone -6.35 against -3.80). Alkanes and alcohols are within 1.3 kcal/mol. The free-energy machinery is not implicated: see "Hydration free energies: validation" in docs/ARCHITECTURE.md | `add_solute` in `src/solvation.cpp` (`assign_uff_types`, `uff_parameters`) | Implement GAFF atom types with AM1-BCC charges (AM1 is not in the QC module, so semiempirical support would come first), or OPLS-AA, and revalidate against FreeSolv. A cheaper interim step: use a published Lennard-Jones set for the common elements instead of UFF's, and state plainly that charges remain MMFF94. Do not tune parameters against FreeSolv: that would fit the test set. |
+| FreeSolv's calculated column is GAFF/AM1-BCC, so ChemLarp's numbers can only be compared with experiment, never used to reproduce FreeSolv's own calculations | `scripts/validate_hydration.py` part C | Follows from the row above. |
+| Charged solutes are rejected: no finite-size or net-charge corrections, no ion parameters | `add_solute` | Add the Rocklin et al. (J. Chem. Phys. 139 (2013) 184103) corrections and Joung–Cheatham ions. |
+| Kinetic temperature at 2 fs is 296–297 K for a 298.15 K thermostat (BAOAB's known O(Δt²) bias in the momenta; 299 ± 2 K at 1 fs). The configurational temperature, which the free energies depend on, was not measured | `Dynamics::temperature` | Compute the configurational temperature ⟨|∇U|²⟩/⟨∇²U⟩ for the water box, or report the kinetic temperature at the O step. |
+| Speed: about 5.6 ms per step on one thread for 1,200 atoms; the neighbour list is O(N²); windows run one per thread, so 19 windows on 8 threads leave threads idle in the last round | `Engine::compute`, `build_list`, `hydration_free_energy` | Cell lists, molecule-based water–water kernels (9 site pairs with one O–O cutoff test), SIMD; let a window use idle threads or pick a window count that fills the pool. |
+| Cubic boxes only, one water model (TIP3P), no constraints on the solute's bonds, no replica exchange between windows | `src/solvation.cpp` | Rectangular boxes are a small change (PME already takes three edges); TIP4P-Ew needs a virtual site; SHAKE for X–H bonds would allow 2 fs without hydrogen-mass repartitioning. |
+| No web UI and not in the web build | `web/` | Too slow for the browser at this size; a panel could show stored results or run a short water box. |
 
 ## Packages (`pyproject.toml`, `setup.py`, `release/`, `.github/workflows/packages.yml`, docs/PACKAGING.md)
 
@@ -197,11 +215,10 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | The runner does not run in CI: the reference data is not redistributable and the Python packages are not installed there | `.github/workflows/ci.yml` | A job could install thermo/rdkit/biopython and run the suites that need no downloads (md, rdkit-structure with a committed SMILES sample, mmff-rdkit). |
 | Tolerances live inside each script, so the report shows pass/fail but not how close each number was to its limit | the suite scripts | Have each script print a machine-readable line (name, value, tolerance) and collect those in the report. |
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
-| Docking and hydration free energies have no suites because those modules are not built | — | Add when they land (redocking RMSD on a public complex set; FreeSolv hydration free energies). |
+| Docking has no suite because the module is not built | — | Add when it lands (redocking RMSD on a public complex set). |
 
 ## Roadmap modules not started (data/roadmap.json)
 
 | Module | Size | Notes for starting |
 |---|---|---|
 | Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
-| Hydration free energies in explicit water (FreeSolv) | L | Split from the FEP module on 2026-11-14. Needs a water model (TIP3P), periodic molecular MD with neighbour lists, PME electrostatics, SETTLE/SHAKE constraints, a barostat, and decoupling of charges then van der Waals terms of the solute; the estimators (`free_energy.hpp`) are ready. Validate against FreeSolv (Mobley & Guthrie 2014, public, CC-BY) on 20–50 small neutral molecules. |

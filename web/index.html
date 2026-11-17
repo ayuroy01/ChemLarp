@@ -9,6 +9,11 @@
   <meta name="theme-color" content="#0b0d11" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!-- Everything is same-origin: scripts, styles, the engine and its worker. WebAssembly needs
+       'wasm-unsafe-eval'; inline styles are set by the DOM helper in app.js; the only outside host is
+       RCSB, for downloading a protein structure in the Protein view. frame-ancestors and sandbox are
+       ignored in a meta element, so they are not listed here. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://files.rcsb.org; worker-src 'self' blob:; manifest-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
