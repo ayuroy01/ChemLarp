@@ -217,6 +217,19 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
 | Docking has no suite because the module is not built | — | Add when it lands (redocking RMSD on a public complex set). |
 
+## Licensing and bundled data (`LICENSE`, `NOTICE`, `LICENSING.md`, `src/*_data.inc`)
+
+Done 2026-11-17: relicensed to AGPL-3.0-only with commercial licences offered separately; NOTICE, LICENSING.md
+(name and logo terms, earlier Apache-2.0 releases), CONTRIBUTING.md with a sign-off that keeps relicensing
+possible, SPDX headers in every source file. Full audit in docs/AUDITS.md.
+
+| Gap | Where | To resume |
+|---|---|---|
+| **`src/transport_data.inc` stores DIPPR correlation coefficients (as printed in Perry's Handbook) and VDI Heat Atlas PPDS coefficients.** Both are commercially licensed databases. The coefficients are fitted constants, which US law treats as facts, and they reach ChemLarp through the MIT-licensed `chemicals` package, but the EU database right protects substantial extraction regardless, and selling a commercial licence to software containing them is more exposed than giving it away | `src/transport_data.inc`, `scripts/gen_transport_data.py` | Before commercial licences are sold, either have a lawyer look at it, or replace those columns with openly licensed correlations (NIST/TDE, or fits of published measurements made here), or move the file out of the repository and load it from a user-supplied data directory. The Yaws Collection is already safe: it only votes between candidates and none of its values are stored. |
+| Commits and tags are not signed, so GitHub does not show "Verified" and a forged commit in someone's fork could be passed off as the author's | the repository | Add an SSH or GPG signing key to the owner's GitHub account, then `git config commit.gpgsign true` and `git config tag.gpgsign true`, and sign future tags with `git tag -s`. |
+| Releases are not signed or notarised: macOS warns on first launch, Windows SmartScreen may warn, and a download cannot be proved to come from the author beyond `SHA256SUMS` published on the same page | `.github/workflows/packages.yml` | Sigstore/cosign signing of the release assets is free and needs no certificate; an Apple Developer ID (paid) for notarisation and an Authenticode certificate (paid) remove the warnings. |
+| Builds are not reproducible, so a release cannot be rebuilt bit-for-bit from its tag to prove it matches the source | the build | Set `SOURCE_DATE_EPOCH`, strip build paths (`-ffile-prefix-map`), and pin the toolchain versions in the workflow. |
+
 ## Roadmap modules not started (data/roadmap.json)
 
 | Module | Size | Notes for starting |
