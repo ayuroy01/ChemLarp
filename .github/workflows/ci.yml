@@ -7,6 +7,12 @@ on:
 permissions:
   contents: read
 
+# One run per branch or pull request: a new push cancels a run that is already queued or going,
+# so superseded commits do not hold the runners (tags and the default branch are not cancelled).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   cmake:
     name: ${{ matrix.os }} (CMake)
