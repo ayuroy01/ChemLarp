@@ -123,7 +123,7 @@ in the LJ fluid with Widom insertion as a second route. MBAR matches pymbar 4.0.
 
 | Gap | Where | To resume |
 |---|---|---|
-| No binding free energies (protein–ligand) | — | Needs docking poses and restraints on top of `solvation.hpp`; see the next section for the solvent side. |
+| No binding free energies (protein–ligand) | — | `docking.hpp` now gives poses; what is missing is restraints and an absolute binding free-energy protocol on top of `solvation.hpp`. See the next section for the solvent side. |
 | BAR summed over neighbouring windows adds the pair errors as if independent; neighbouring pairs share a window's samples, so the error was 0.49 of the scatter between seeds | `lj_solvation` | Report MBAR's error for the BAR route too, or compute the covariance of adjacent pair estimates. |
 | TI error 0.65 of the scatter: the statistical inefficiency of the slowest windows (λ ≈ 0.25, g ≈ 20) is underestimated from 4,000 frames | `statistical_inefficiency` | Longer runs, or block averaging as a second estimate of g; pymbar's warning applies equally. |
 | Widom insertion error is about twice the scatter (too conservative) | `lj_solvation` | Compute the error from blocks of frames instead of the delta method on the per-frame means. |
@@ -215,7 +215,7 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | The runner does not run in CI: the reference data is not redistributable and the Python packages are not installed there | `.github/workflows/ci.yml` | A job could install thermo/rdkit/biopython and run the suites that need no downloads (md, rdkit-structure with a committed SMILES sample, mmff-rdkit). |
 | Tolerances live inside each script, so the report shows pass/fail but not how close each number was to its limit | the suite scripts | Have each script print a machine-readable line (name, value, tolerance) and collect those in the report. |
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
-| Docking has no suite because the module is not built | — | Add when it lands (redocking RMSD on a public complex set). |
+| The `docking` suite needs twelve PDB entries and their ligands, which are not in the repository and are not downloaded by the runner | `scripts/validate_docking.py`, `dock_dir` | The entries are named in the script with the RCSB URLs to fetch them from. A small committed subset (one or two complexes) would let CI run a redock. |
 
 ## Canonical SMILES on very large structures (`src/canonical.cpp`)
 
@@ -240,8 +240,25 @@ possible, SPDX headers in every source file. Full audit in docs/AUDITS.md.
 | Releases are not signed or notarised: macOS warns on first launch, Windows SmartScreen may warn, and a download cannot be proved to come from the author beyond `SHA256SUMS` published on the same page | `.github/workflows/packages.yml` | Sigstore/cosign signing of the release assets is free and needs no certificate; an Apple Developer ID (paid) for notarisation and an Authenticode certificate (paid) remove the warnings. |
 | Builds are not reproducible, so a release cannot be rebuilt bit-for-bit from its tag to prove it matches the source | the build | Set `SOURCE_DATE_EPOCH`, strip build paths (`-ffile-prefix-map`), and pin the toolchain versions in the workflow. |
 
+## Docking (`src/docking.cpp`, `include/chemlarp/docking.hpp`)
+
+Done 2026-11-18: a flexible ligand into a rigid receptor, the scoring function in the published AutoDock Vina
+form written from the paper, receptor terms on grid maps, Monte Carlo with a local L-BFGS, symmetry-corrected
+RMSD. Eight of twelve crystal complexes redock within 2 Å (median 0.79 Å); the table and the term-by-term
+reasons are in docs/ARCHITECTURE.md. What is left:
+
+| Gap | Where | To resume |
+|---|---|---|
+| **Four of the twelve complexes are not reproduced.** Two are the search's fault (4DFR methotrexate 3.38 Å, 1HVR XK263 3.80 Å: the crystal pose scores 1.3 and 2.4 kcal/mol better than anything found) and two the function's (1DWB benzamidine 2.35 Å, 1PPH 4.26 Å: the pose found scores better than the crystal pose) | the Monte Carlo in `dock()`; the weights in `ScoringWeights` | For the search: both misses are large ligands in sites with a two-fold symmetry, and both have the crystal pose somewhere in the nine reported, so the ranking is close. Worth trying: starting each run from a different embedded conformer instead of random torsions (`EmbedOptions::candidates` already generates several), and a simulated-annealing temperature schedule instead of a fixed 1.2 kcal/mol. For the function: nothing short of refitting the weights, which needs a training set with measured affinities. |
+| `gauss2` is truncated at 8 Å where it is still 0.7 of its peak, so it works as a count of how buried an atom is and dominates the specific terms. The published weights were fitted that way, so this is faithful, not a defect — but it is what the four misses turn on | `pair_terms` in `src/docking.cpp` | Only a refit can change it. A smooth cut-off would be a different function, with different weights. |
+| The receptor is rigid: no side-chain rotation, no backbone motion, no induced fit | `prepare_receptor`, the pose model | Side-chain torsions would be the first step: the rotamer machinery already exists in `src/protein_build.cpp`, and the grid would have to be split into a fixed part and the flexible residues summed directly. |
+| No solvent term, no electrostatics beyond the empirical hydrogen-bond term, and no metal-coordination geometry (a metal is a generic donor) | `pair_terms`, `xs_type` | A desolvation term in the AutoDock 4 style, or a Poisson–Boltzmann or generalised-Born correction on the final poses. |
+| Tautomer and protonation state of the ligand are whatever the caller supplies; nothing enumerates them | `ligand_from_smiles` | Enumerate the states a pH implies and dock each, as the commercial tools do. |
+| Ring conformations are frozen at the one the embedding produced, so a ligand whose bound form needs another ring pucker cannot reach it | `finish_ligand` | Dock an ensemble of embedded conformers and merge the pose lists. |
+| No binding free energies: the affinity is an empirical score, not a ΔG, and it is not calibrated against measurements | — | `solvation.hpp` has the free-energy machinery; what is missing is restraints and an absolute binding free-energy protocol on top of a docked pose. |
+| Ligands are capped at 300 heavy atoms, because generating a conformation smooths a full distance matrix | `kMaxLigandHeavyAtoms` | Reading a conformation from a file instead of generating one would lift the cap for peptide ligands. |
+| The suite needs twelve PDB entries that are not in the repository, so it cannot run in CI | `scripts/validate_docking.py` | Commit one small complex (3PTB is 183 kB and the ligand 1.5 kB, both public domain) and have CI redock it. |
+
 ## Roadmap modules not started (data/roadmap.json)
 
-| Module | Size | Notes for starting |
-|---|---|---|
-| Docking | M | Needs protein module (done) + MMFF/UFF ligand; Vina-like empirical score, grid maps, Monte Carlo + BFGS. Validate redocking RMSD on PDBbind core set or CASF (licence check before download). |
+Every module on the roadmap is built. This section is kept for the next one.

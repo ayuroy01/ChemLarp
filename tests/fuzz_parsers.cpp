@@ -27,6 +27,11 @@ void consume(char* s) {
   if (s) cl_free_string(s);
 }
 
+// A receptor of one atom, so that fuzzing the docking entry point costs a parse and a one-step search
+// rather than a real docking run.
+const char* kTinyReceptor =
+    "HETATM    1  C1  PKT A   1       0.000   0.000   0.000  1.00  0.00           C\nEND\n";
+
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -34,7 +39,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const uint8_t which = data[0];
   // Keep inputs small: the point is parser edge cases, not how long a 100,000-atom molecule takes.
   const std::string in(reinterpret_cast<const char*>(data) + 1, size > 8193 ? 8192 : size - 1);
-  switch (which % 14) {
+  switch (which % 16) {
     case 0: consume(cl_parse_smiles_json(in.c_str())); break;
     case 1: consume(cl_canonical_smiles_json(in.c_str(), 1, 1)); break;
     case 2: consume(cl_read_molecules_json(in.c_str(), nullptr, 0, 4)); break;
@@ -52,6 +57,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       consume(cl_kinetics_text_json(in.c_str(), nullptr, nullptr, "iso-v", 1000.0, 1e5, "", 1e-9, 2, 1e-6));
       break;
     case 13: consume(cl_vle_text_json(in.c_str(), "txy", 1.0)); break;
+    case 14:
+      // Docking, with the input as the receptor: the PDB/mmCIF reader again, then the receptor typing, the
+      // grid and the search, all of which convert coordinates to grid indices.
+      consume(cl_dock_json(in.c_str(), "C", nullptr, 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+      break;
+    case 15:
+      // The input as the ligand (SMILES or MOL/SDF, detected) and as the reference, against a receptor of
+      // one atom: the torsion tree, the isomorphism search and the pose code.
+      consume(cl_dock_json(kTinyReceptor, in.c_str(), in.c_str(), 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+      break;
     default: break;
   }
   return 0;

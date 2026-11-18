@@ -6,6 +6,7 @@
 // bounds or loop forever. Null pointers return null. Nothing here checks chemistry: only that malformed,
 // empty, enormous, deeply nested, non-UTF-8 and out-of-range input is rejected in an orderly way. Run it
 // under the sanitizers as well as normally.
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -55,6 +56,8 @@ TEST(c_api_rejects_null_pointers) {
   CHECK(cl_mbar_json(nullptr) == nullptr);
   CHECK(cl_ghs_json(nullptr) == nullptr);
   CHECK(cl_hydration_json(nullptr, 0, 0, 0, 0, 0) == nullptr);
+  CHECK(cl_dock_json(nullptr, "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1, 1, 7.4, 1, 0) == nullptr);
+  CHECK(cl_dock_json("ATOM\n", nullptr, nullptr, 0, 0, 0, 10, 10, 10, 1, 1, 1, 7.4, 1, 0) == nullptr);
   CHECK(cl_smarts_match_json(nullptr, "C", 0, 10) == nullptr);
   CHECK(cl_smarts_match_json("C", nullptr, 0, 10) == nullptr);
   CHECK(cl_similarity_json(nullptr, "C", 2, 2048) == nullptr);
@@ -162,6 +165,51 @@ TEST(expensive_entry_points_reject_out_of_range_arguments_at_once) {
   rejected(cl_hydration_json("CCO", 100, -1.0, 1.0, 1.0, 1));
   rejected(cl_hydration_json("CCO", 100, 298.15, -1.0, 1.0, 1));
   rejected(cl_hydration_json("CCO", 100, 298.15, 1.0, -1.0, 1));
+  // Docking: a negative or absurd box, run count, step count, pose count or pH is a mistake by the caller,
+  // not a request for the default, which could start a search of hours.
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, -10, 10, 10, 1, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 1e9, 10, 10, 1, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 0, 10, 1, 1, 1, 7.4, 1, 0));  // two edges of three
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, std::nan(""), 0, 0, 10, 10, 10, 1, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, HUGE_VAL, 0, 0, 10, 10, 10, 1, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, -1, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1 << 20, 1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, -1, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1 << 24, 1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1, -1, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1, 10000, 7.4, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1, 1, -5.0, 1, 0));
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 10, 10, 10, 1, 1, 1, 100.0, 1, 0));
+  // No box and no reference ligand: there is nothing to say where to search.
+  rejected(cl_dock_json("ATOM\n", "C", nullptr, 0, 0, 0, 0, 0, 0, 1, 1, 1, 7.4, 1, 0));
+}
+
+TEST(docking_survives_hostile_receptors_and_ligands) {
+  // A receptor of one atom, so a search is cheap, and every nasty string in turn as the ligand.
+  const char* receptor =
+      "HETATM    1  C1  PKT A   1       0.000   0.000   0.000  1.00  0.00           C\nEND\n";
+  for (const auto& s : nasty_strings()) {
+    // Edge cases, not long inputs: a docking call parses its ligand, builds a grid and searches, and the
+    // long strings are already put through every parser by the tests above. One oversized ligand is checked
+    // on its own below.
+    if (s.size() > 500) continue;
+    take(cl_dock_json(receptor, s.c_str(), nullptr, 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+    take(cl_dock_json(s.c_str(), "C", nullptr, 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+    take(cl_dock_json(receptor, "C", s.c_str(), 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+  }
+  // A "ligand" of hundreds of atoms is refused on sight: generating a conformation for it would take hours.
+  {
+    const std::string huge = "C" + std::string(400, 'C');
+    const std::string j = take(cl_dock_json(receptor, huge.c_str(), nullptr, 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+    CHECK(j.rfind("{\"ok\":false", 0) == 0);
+    CHECK(j.find("heavy atoms") != std::string::npos);
+  }
+  // A receptor whose coordinates are absurd: the grid and the cell lists must clamp, not overflow.
+  const char* far =
+      "HETATM    1  C1  PKT A   1    99999.9 99999.9 99999.9  1.00  0.00           C\n"
+      "HETATM    2  C2  PKT A   1   -99999.9-99999.9-99999.9  1.00  0.00           C\nEND\n";
+  take(cl_dock_json(far, "C", nullptr, 0, 0, 0, 8, 8, 8, 1, 1, 1, 7.4, 1, 0));
+  take(cl_dock_json(far, "C", nullptr, 99999.9, 99999.9, 99999.9, 200, 200, 200, 1, 1, 1, 7.4, 1, 0));
 }
 
 TEST(text_formats_survive_hostile_input) {

@@ -23,7 +23,7 @@ Each algorithm cites its public source in its header. Use the same rule for ever
 | 2D→3D embedding | Crippen & Havel, *Distance Geometry and Molecular Conformation* (1988); Riniker & Landrum ETKDG, *JCIM* 55 (2015) 2562 |
 | Force fields | MMFF94: Halgren, *J. Comput. Chem.* 17 (1996) 490, 520, 553, 587, 616 and MMFF94s 20 (1999) 720, 730; parameter tables (Copyright Merck & Co., 1994–1996, published as the papers' supplementary material) converted by `scripts/gen_mmff_data.py` from the verbatim copies in RDKit's `Params.cpp` (BSD; only the data are used, the typing and energy code is written from the papers and checked against the official validation suite); UFF: Rappé et al., *JACS* 114 (1992) 10024; OPLS-AA: Jorgensen et al., *JACS* 118 (1996) 11225 |
 | MD integrators | Verlet (1967); Swope et al. velocity Verlet, *JCP* 76 (1982) 637; Bussi, Donadio & Parrinello, *JCP* 126 (2007) 014101 (stochastic velocity rescaling); Leimkuhler & Matthews, *Appl. Math. Res. Express* 2013, 34 (BAOAB Langevin); Marsaglia & Tsang, *ACM TOMS* 26 (2000) 363 (gamma deviates) |
-| Docking scoring | AutoDock Vina, Trott & Olson, *J. Comput. Chem.* 31 (2010) 455 (open, Apache-2) |
+| Docking | Scoring function in the form published for AutoDock Vina: Trott & Olson, *J. Comput. Chem.* 31 (2010) 455, written from the paper (that program's own code was not read, and it is not installed here, so there is no comparison against its numbers); atom types and radii from X-Score, Wang, Lai & Wang, *J. Comput.-Aided Mol. Des.* 16 (2002) 11; the search is Monte Carlo with a local quasi-Newton step, as in the same paper; reference poses from the RCSB PDB |
 | FEP / MBAR | Zwanzig (1954); Shirts & Chodera, *JCP* 129 (2008) 124105 |
 | Thermo data | GRI-Mech 3.0; NASA Glenn (McBride, Zehe & Gordon, NASA/TP-2002-211556); Burcat database |
 | Gibbs minimisation | White, Johnson & Dantzig, *JCP* 28 (1958) 751; Reynolds STANJAN (1986); Smith & Missen, *Chemical Reaction Equilibrium Analysis* (1982) |
@@ -96,6 +96,17 @@ The earlier design (Chase–Lev work-stealing deques and a reaction dependency g
 
 Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 threads. ThreadSanitizer crashes at start-up on this macOS version, even for a two-line program, so it cannot run locally.
 
+## Sanitizers
+
+CI runs the whole test suite under ThreadSanitizer, and under AddressSanitizer with UndefinedBehaviorSanitizer and LeakSanitizer together (the `tsan` and `asan` jobs), and fuzzes every text entry point under ASan and UBSan (the `fuzz` job; docs/AUDITS.md records what it found). Locally on macOS, ASan spins inside its own scheduler with this thread pool and Apple's clang ships no libFuzzer, so only UBSan runs here:
+
+```sh
+clang++ -std=c++20 -O1 -g -fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer \
+  -pthread -Itests -Iinclude -DCHEMLARP_STATIC -DCHEMLARP_TEST_DATA_DIR="\"$PWD/data\"" \
+  src/*.cpp tests/*.cpp -o build/tests_ubsan
+UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./build/tests_ubsan
+```
+
 ## Sparse linear algebra
 
 `include/chemlarp/sparse.hpp`: CSC matrices, a minimum-degree column ordering on A + Aᵀ, and left-looking Gilbert–Peierls LU with threshold partial pivoting (the diagonal is kept when it is at least 0.1 of its column's largest entry). The BDF integrator (`ode.hpp`, used by kinetics) switches to it automatically when the system has at least 60 equations and at most a fifth of the Newton matrix is nonzero (`BdfOptions::linear_solver` forces either). It reuses the ordering while the pattern is unchanged. Checks: 20 random sparse systems (n up to 200, half with weak diagonals so that pivoting happens) give residuals below 1e-9 and agree with the dense LU. A tridiagonal matrix gives no fill. The 1-D Brusselator (Hairer & Wanner, problem BRUS) gives the same trajectory, the same step count and solutions within 1e-6 with either solver. For BRUS, the time for the whole integration to t = 10 at rtol 1e-6 is:
@@ -158,7 +169,7 @@ Testing: a Linux CI job runs the whole suite under ThreadSanitizer with 4 thread
 | Proteins (`include/chemlarp/protein.hpp`): PDB and mmCIF readers (format detected; first model, highest-occupancy alternate location, insertion codes, chain names of any length, HETATM ligands kept as-is, residues listed as missing), disulfides from SSBOND/`_struct_conn` records and S–S distances, chain breaks and termini from C–N distances; `repair()`: missing side-chain atoms from a rotamer library with a backbone-dependent chi1 factor and overlap scoring, residues with incomplete backbone and missing loops built with ideal geometry and closed by cyclic coordinate descent (marked as predicted), missing chain ends on request; `predict_pka()`: pKa of every Asp, Glu, His, Lys and terminus from burial, hydrogen-bond partners and charge–charge terms, with weights fitted to 1,265 measured values; protonation at a pH from those pKa values, disulfide and metal-bound cysteines without HG; hydrogen-bond network optimisation over Asn/Gln/His flips, His tautomers (metal-bound nitrogens bare), Ser/Thr/Cys/Tyr hydroxyl and thiol rotors, NH3+ groups and protonated carboxyl groups, with the undecided groups reported; all hydrogens rebuilt with PDB version 3 names, missing C-terminal OXT added; PDB writer and mmCIF writer (for more than 99,999 atoms or long chain names); sequence net charge, isoelectric point and average molecular weight; `chemlarp protein`, `cl_protein_json`, `cl_protein_json_opts`, Python `protein()`, web Protein panel (PDB ID from RCSB with mmCIF fallback or a file, 3D view or chain trace for large structures, sequences, titration curves from structure and sequence, pKa and state of each residue, flips and built residues listed, download) | **done** (`src/protein.cpp`, `src/protein_build.cpp`, `src/protein_pka.cpp`, `src/protein_protonate.cpp`); measured accuracy in "Proteins: validation" below. Not covered: nucleic acids and ligands are read and kept but get no hydrogens or pKa; Arg, Tyr and Cys keep reference pKa values |
 | ETKDG-style torsion preferences; conformer ensembles with RMSD pruning | planned |
 | Virtual lab and safety rules (`include/chemlarp/lab.hpp`, web Virtual Lab view, `chemlarp lab|titrate|reagents|ghs`): mixing aqueous solutions (pH, reaction heat and temperature change by Hess's law from the database's log K(T), precipitates that form in the laboratory, gases leaving an open vessel), titration curves with equivalence points, a catalogue of 53 reagents; safety findings computed from the result (GHS pH presumption, boiling, gases with their GHS class), incompatibility rules from NRC *Prudent Practices in the Laboratory* (2011) with section citations, and GHS classifications of 207 laboratory chemicals from PubChem | **done** (`src/lab.cpp`, `src/ghs_data.inc`); against PHREEQC on the same solutions: pH within 0.002, precipitate and gas amounts within 0.3 %, titration curves within 0.001 pH; heat of neutralisation 56.36 kJ/mol (the database's own value; CODATA 55.815, 1 %); see "Virtual lab: validation" below. Not covered: redox between valence states (bleach + acid is not simulated), organic solutes, non-ideal heats; the safety checks are not a risk assessment; see docs/GAPS.md |
-| Docking scoring | planned |
+| Docking (`include/chemlarp/docking.hpp`): a flexible ligand into a rigid receptor. Scoring in the published AutoDock Vina form, written from the paper: gauss1, gauss2, repulsion, hydrophobic and hydrogen-bond terms in the surface distance d = r − R_i − R_j over heavy-atom pairs within 8 Å, X-Score typing (hydrophobic against polar carbon, nitrogen and oxygen donors and acceptors from the hydrogens and the bonds they have left, metals as donors) and radii, affinity = intermolecular / (1 + 0.058459·N_rot). Receptor terms precomputed on 0.375 Å grid maps, one per ligand atom type, read back by trilinear interpolation. Ligand from SMILES (embedded by `conformer.hpp`) or MOL/SDF (conformation kept); torsion tree over the single, acyclic, non-amide bonds with two heavy neighbours at each end, ring conformations fixed. Search: Monte Carlo over position, orientation (a rotation vector with exact exponential-map derivatives) and torsions, each step followed by a local L-BFGS on a landscape whose repulsion is squashed, Metropolis acceptance, independent runs through `parallel_for` with per-run generators so the result is the same at any thread count; poses clustered by symmetry-corrected heavy-atom RMSD and rescored exactly. Receptor from `read_protein` + `protonate`, waters and the reference ligand's site-mates dropped, cofactors, metals and modified chain residues kept. Heavy-atom RMSD to a reference pose by graph isomorphism over elements and connectivity. `chemlarp dock`, `cl_dock_json`, Python `dock()` | **done** (`src/docking.cpp`); redocking of twelve crystal complexes in "Docking: validation" below, which is honest about a success rate below the published program's. Not covered: a rigid receptor only (no side-chain or backbone flexibility), no solvent and no electrostatics beyond the empirical terms, no metal-coordination geometry, no scoring-function refitting, tautomer and protonation state are the caller's choice, and no comparison against AutoDock Vina's own output; see docs/GAPS.md |
 | Free energies (`include/chemlarp/free_energy.hpp`): exponential averaging, BAR, MBAR with asymptotic uncertainties and the overlap matrix, thermodynamic integration, statistical inefficiency and subsampling, on reduced potentials from any source (`chemlarp mbar`, Python `mbar()`); a soft-core Lennard-Jones particle coupled into the LJ fluid over λ windows, with Widom insertion in the pure fluid as a second route (`chemlarp ljsolv`, Python `lj_solvation()`) | **done** (`src/free_energy.cpp`); MBAR agrees with pymbar 4.0.3 to 5×10⁻¹⁰ kT in free energies and 5×10⁻¹² in uncertainties, is unbiased on exactly sampled oscillators, and agrees with Widom insertion; see "Free energies: validation" below. Molecules in explicit water: next row; see docs/GAPS.md |
 | Explicit water and hydration free energies (`include/chemlarp/solvation.hpp`, `include/chemlarp/ewald.hpp`, `chemlarp water|hydrate`, Python `water_box()`, `hydration_free_energy()`): rigid TIP3P (SETTLE), Ewald with smooth PME (own mixed-radix FFT), Langevin BAOAB at 2 fs, Monte Carlo barostat, long-range dispersion correction; a neutral solute from SMILES (MMFF94 charges and intramolecular terms, UFF Lennard-Jones, hydrogen-mass repartitioning) decoupled in 19 windows, charges then soft-core van der Waals; MBAR with BAR and TI | **done** (`src/solvation.cpp`, `src/ewald.cpp`); PME within 10⁻³ of the exact Ewald sum, the rock-salt Madelung constant to 10⁻⁶; bulk TIP3P density 0.9856 g/cm³ and U −9.59 kcal/mol against 0.982 and −9.66 published; FreeSolv (8 molecules): RMS error 1.67 kcal/mol against experiment, where GAFF/AM1-BCC gives 0.97 — benzene and acetone are 2.5–3.1 kcal/mol too negative because UFF’s Lennard-Jones parameters are not meant for solvation; see "Hydration free energies: validation" below. Not covered: charged solutes, other water models, published small-molecule force fields (GAFF, OPLS); about 25 min per molecule on 8 cores; see docs/GAPS.md |
 | Peng–Robinson and SRK cubic EoS, mixture fugacities, 30-compound critical table, then the pure-component database (319 compounds with Tc, Pc and ω) | **done**; vapour pressures within 0.1–0.7% of NIST for non-polar compounds; with database constants, median 1.3% (Tr = 0.6) and 0.9% (Tr = 0.9) from McGarry's Wagner equations over about 160 compounds (below) |
@@ -641,6 +652,79 @@ AM1-BCC charges, not a change to the sampling or the estimators; it is recorded 
 **What this means in practice.** The machinery (PME, constraints, barostat, decoupling, MBAR) is sound and
 reproduces the water model it was given. The absolute hydration free energies of organic solutes carry errors
 of up to about 3 kcal/mol and should not be used quantitatively.
+
+## Docking: validation
+
+`scripts/validate_docking.py` (suite `docking` of `scripts/validate.py`) and `tests/test_docking.cpp`.
+
+**The scoring function and the pose model** are checked against things that have exact answers:
+
+| Test | Result |
+|---|---|
+| The five terms at hand-computed distances (a hydrophobic carbon pair at 4.0 Å, a donor–acceptor pair at 2.9 Å), term by term and weighted | exact to 1e-9 |
+| The derivative of each type pair's energy against central differences, every 0.07 Å from 0.5 to 7.9 Å, for five type pairs | agree to 1e-5 away from the corners of the two piecewise-linear ramps |
+| The gradient with respect to the nine pose variables (three translations, a rotation vector, three torsions) against central differences, at three poses with the rotation vector well away from the identity | largest relative error 4e-8 |
+| The pose variables at the centroid, zero rotation and zero torsion | reproduce the input coordinates to 1e-9, and the energy equals `score_pose`'s to 1e-9 |
+| Refining a pose: every bond length after the move | unchanged to 1e-7 Å (only position, orientation and torsions may vary) |
+| Symmetry-corrected RMSD of benzene against itself turned 60° about its own axis | 0.00 Å, where the atom order alone gives 1.39 Å; the twelve automorphisms of its heavy-atom graph are all found |
+| The same molecule read from a file with its atoms in the opposite order | RMSD 0.00 Å (the isomorphism search matches the two orders) |
+| Rotatable bonds of twelve molecules (amides, rings, triple bonds, terminal methyls, biphenyl, benzamidine) | as expected in every case |
+| A redock into a synthetic hydrophobic slot, whose best pose is known by construction | the ring is found lying in the middle plane, centroid within 1 Å of it; the same seed repeats to 1e-12 |
+
+**Redocking.** Twelve complexes from the RCSB PDB. The deposited ligand supplies only its chemical identity:
+its canonical SMILES is read, a conformation is generated from scratch, and that molecule is docked into the
+structure with its own site cleared, so the crystal geometry is never an input. The top-ranked pose is then
+compared with the deposited one by heavy-atom RMSD with the atoms matched by graph isomorphism. Sixteen
+independent Monte Carlo runs, seed 42, a box 4 Å larger than the ligand on every side:
+
+| Complex | | Heavy atoms | Rotatable bonds | Affinity | Crystal pose | RMSD | Waters out |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 1STP BTN | streptavidin + biotin | 16 | 5 | −8.10 | −7.90 | **0.69** | 0.62 |
+| 3PTB BEN | β-trypsin + benzamidine | 9 | 1 | −6.41 | −6.32 | **0.36** | 0.38 |
+| 4DFR MTX | dihydrofolate reductase + methotrexate | 33 | 9 | −8.61 | −9.92 | 3.38 (search) | 7.10 |
+| 2CPP CAM | cytochrome P450cam + camphor | 11 | 0 | −7.74 | −7.84 | **0.51** | 0.51 |
+| 1ABE ARA | arabinose binding protein + arabinose | 10 | 0 | −7.29 | −7.27 | **0.31** | 0.31 |
+| 1HSG MK1 | HIV-1 protease + indinavir | 45 | 12 | −11.17 | −12.55 | **0.90** | 4.72 |
+| 1ACJ THA | acetylcholinesterase + tacrine | 15 | 0 | −9.69 | −9.71 | **0.27** | 3.33 |
+| 1HVR XK2 | HIV-1 protease + XK263 | 46 | 8 | −12.52 | −14.89 | 3.80 (search) | 3.80 |
+| 1DWB BEN | thrombin + benzamidine | 9 | 1 | −5.61 | −5.02 | 2.35 (scoring) | 2.40 |
+| 2BRB PFQ | PDE4 + a furanone inhibitor | 25 | 5 | −8.62 | −8.45 | **0.51** | 6.14 |
+| 1PPH 0ZG | trypsin + a peptidyl inhibitor | 30 | 7 | −8.86 | −8.55 | 4.26 (scoring) | 2.35 |
+| 1ETS MID | thrombin + NAPAP | 37 | 9 | −10.48 | −10.92 | **1.34** | 1.42 |
+
+Affinities are kcal/mol and "crystal pose" is the deposited pose minimised where it stands. **Eight of the
+twelve reproduce the crystal pose, median RMSD 0.79 Å**, in 102 seconds for the whole set on 8 cores
+(0.2 s for a rigid ligand, 30 s for indinavir's twelve torsions). The crystal pose is somewhere in the nine
+poses reported for ten of the twelve. Every deposited pose stays where it is when minimised — at most 0.58 Å
+— which is a check on the local minimiser and the receptor preparation rather than on the search.
+
+Each failure is attributed: **search** means the crystal pose, minimised where it stands, scores better than
+anything the search found, so the function knows the answer and the search did not reach it; **scoring**
+means the pose found scores better than the crystal pose, so the search did its job and the function prefers
+somewhere else. Separating the two is what the `reference` block of the result is for.
+
+**The waters matter more than anything else tried here.** The last column is the same run with the
+structure's waters taken out, which is what docking programs conventionally do: **5 of 12 instead of 8, and
+the median RMSD goes from 0.79 to 2.38 Å.** Tacrine, indinavir and the PDE4 inhibitor all lose their site
+(1ACJ 0.27 → 3.33, 1HSG 0.90 → 4.72, 2BRB 0.51 → 6.14), and only 1PPH is better without them. A water a
+crystal structure resolves is part of the site: taking it away opens a cavity, and the `gauss2` term — a
+wide, shallow attraction peaking 3 Å beyond contact, which in effect counts how buried an atom is — sinks
+the ligand into it. That is why `ReceptorOptions::remove_waters` is off by default, against convention.
+
+**What the term decomposition shows about the failures.** For the complexes the function gets wrong, the
+crystal pose wins on the specific terms — more `gauss1` (contact), more hydrophobic contact, more hydrogen
+bonds — and loses on `gauss2` and on repulsion. The pose that wins is more deeply buried and less
+specifically bound. That is a property of the published function, not a defect of this implementation: the
+truncation at 8 Å leaves `gauss2` at about 0.7 of its peak at the cutoff, so it acts as a burial counter, and
+the published weights were fitted with it that way. Refitting the weights is not attempted here.
+
+**Limits of this validation.** Twelve complexes is a small sample: at eight successes the binomial standard
+error on the rate is about 12 points. AutoDock Vina's own output is not compared against, because that
+program has no macOS build on PyPI and its binaries were not downloaded; what can be said is that the
+affinities this implementation gives for the deposited poses (−6.3 for benzamidine in trypsin, −7.9 for
+biotin in streptavidin, −7.8 for camphor in P450cam, −12.5 for indinavir in HIV protease) are in the range
+that program is reported to give for the same complexes. The scoring function was not refitted, the receptor
+is rigid, and there is no solvent model; docs/GAPS.md lists what that leaves open.
 
 ## Virtual lab: validation
 

@@ -224,6 +224,33 @@ CHEMLARP_API char* cl_water_box_json(int waters, double temperature, double pres
 CHEMLARP_API char* cl_hydration_json(const char* solute, int waters, double temperature, double equilibration_ps,
                                      double production_ps, unsigned seed);
 
+/* Protein-ligand docking (docking.hpp): a flexible ligand into a rigid receptor, with an empirical score in
+ * the style of AutoDock Vina, receptor terms on grid maps, and Monte Carlo with a local L-BFGS.
+ * `receptor` is a PDB or mmCIF file. `ligand` is a SMILES string or MOL/SDF text (detected from the
+ * content); from SMILES the conformation is generated, from MOL/SDF it is kept. `reference` is optional and
+ * is either the name of a hetero residue of the receptor file ("MK1") or MOL/SDF text of a known pose: it
+ * places the search box when none is given, clears the hetero groups sharing that site, and (as MOL/SDF) is
+ * the pose the RMSD of each result is measured against.
+ * The box is the centre and the edge lengths in angstrom; all six zero means "around the reference ligand".
+ * Zero means the default for runs (8 independent Monte Carlo runs), steps (200 per run plus 100 per
+ * rotatable bond), modes (9 poses), pH (7.4) and seed (42). A negative or non-finite argument, or one past
+ * what the engine can finish (a box edge over 200 A, over 256 runs, over 10^6 steps, over 100 poses, a pH
+ * outside -2 to 16), is rejected with an InvalidInput diagnostic rather than silently falling back to the
+ * default, which could start a search lasting hours.
+ * `flags` (sum): 1 drop the waters the structure resolves (they are kept by default, since a resolved water
+ * is part of the site), 2 complete missing side chains first, 4 take the donors from the hydrogens already
+ * in the file instead of predicting the protonation at the pH.
+ * Returns {"ok","smiles","heavy_atoms","rotatable_bonds","receptor_atoms","box":{"centre","size"},"runs",
+ * "steps","evaluations","seconds","poses":[{"affinity","intermolecular","internal","rmsd","terms":{...},
+ * "coordinates":[[x,y,z]...]}],"reference":{"atoms","smiles","affinity","rmsd"},"receptor":{...},"sdf",
+ * "diagnostics"}. Affinities are kcal/mol, best pose first. Seconds to minutes of computation. */
+#define CL_DOCK_REMOVE_WATERS 1
+#define CL_DOCK_REPAIR 2
+#define CL_DOCK_FILE_HYDROGENS 4
+CHEMLARP_API char* cl_dock_json(const char* receptor, const char* ligand, const char* reference, double centre_x,
+                                double centre_y, double centre_z, double size_x, double size_y, double size_z,
+                                int runs, int steps, int modes, double pH, unsigned seed, int flags);
+
 /* 2D structure drawing. bond_px: bond length in pixels (<= 0 for 30). flags: CL_DEPICT_* bits.
  * {"ok","svg","molfile","width","height","atoms":[{atom,x,y,label}],"bonds":[{a,b,order,stereo}],
  *  "stereo":{"centres","centres_ok","bonds","bonds_ok"},"diagnostics"}.

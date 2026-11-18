@@ -20,6 +20,7 @@
 #include "chemlarp/cip.hpp"
 #include "chemlarp/conformer.hpp"
 #include "chemlarp/depict.hpp"
+#include "chemlarp/docking.hpp"
 #include "chemlarp/diagnostics.hpp"
 #include "chemlarp/activity.hpp"
 #include "chemlarp/aqueous.hpp"
@@ -1009,6 +1010,55 @@ char* cl_hydration_json(const char* solute, int waters, double temperature, doub
   if (!solvation_options(waters, temperature, equilibration_ps, production_ps, seed, o, error))
     return solvation_bad_input(error);
   return guarded([&] { return hydration_json(solute, o); });
+}
+
+char* cl_dock_json(const char* receptor, const char* ligand, const char* reference, double centre_x, double centre_y,
+                   double centre_z, double size_x, double size_y, double size_z, int runs, int steps, int modes,
+                   double pH, unsigned seed, int flags) {
+  if (!receptor || !ligand) return nullptr;
+  // Zero means "the default", as the header says. Anything negative, not a number, or beyond what the engine
+  // can finish is the caller's mistake and is reported: taking the default instead would quietly start a
+  // search that can run for hours.
+  std::string error;
+  auto bad = [&error](const char* what) {
+    error = what;
+    return false;
+  };
+  auto ok = [&]() {
+    auto finite_size = [](double v) { return std::isfinite(v) && v >= 0.0; };
+    if (!std::isfinite(centre_x) || !std::isfinite(centre_y) || !std::isfinite(centre_z))
+      return bad("the box centre must be three numbers");
+    if (!finite_size(size_x) || !finite_size(size_y) || !finite_size(size_z))
+      return bad("a box edge cannot be negative (all three zero: around the reference ligand)");
+    if (size_x > 200 || size_y > 200 || size_z > 200) return bad("a box edge above 200 A is not supported");
+    const bool any = size_x > 0 || size_y > 0 || size_z > 0;
+    if (any && (size_x <= 0 || size_y <= 0 || size_z <= 0))
+      return bad("give all three box edges, or none of them");
+    if (runs < 0) return bad("runs cannot be negative (0 uses the default)");
+    if (runs > 256) return bad("more than 256 runs is beyond what this engine can finish in a sensible time");
+    if (steps < 0) return bad("steps cannot be negative (0 uses the default)");
+    if (steps > 1000000) return bad("more than a million Monte Carlo steps per run is not supported");
+    if (modes < 0) return bad("modes cannot be negative (0 uses the default)");
+    if (modes > 100) return bad("more than 100 poses is not supported");
+    if (!std::isfinite(pH) || pH < -2.0 || pH > 16.0) return bad("pH must be a number between -2 and 16 (0 uses 7.4)");
+    return true;
+  };
+  if (!ok())
+    return dup(std::string("{\"ok\":false,\"diagnostics\":[{\"code\":\"InvalidInput\",\"severity\":\"error\","
+                           "\"message\":") +
+               json_escape(error) + "}]}");
+  DockJsonOptions o;
+  if (size_x > 0) o.dock.box = DockBox{centre_x, centre_y, centre_z, size_x, size_y, size_z};
+  if (runs > 0) o.dock.runs = runs;
+  if (steps > 0) o.dock.steps = steps;
+  if (modes > 0) o.dock.modes = modes;
+  if (seed > 0) o.dock.seed = seed;
+  if (pH != 0.0) o.receptor.pH = pH;
+  o.receptor.remove_waters = (flags & CL_DOCK_REMOVE_WATERS) != 0;
+  o.receptor.repair = (flags & CL_DOCK_REPAIR) != 0;
+  o.receptor.protonate = (flags & CL_DOCK_FILE_HYDROGENS) == 0;
+  if (reference) o.reference = reference;
+  return guarded([&] { return dock_json(receptor, ligand, o); });
 }
 
 char* cl_lab_mix_json(const char* text) {

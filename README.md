@@ -125,6 +125,7 @@ hydroxide. These are teaching aids, not a risk assessment.
 | Quantum chemistry | Gaussian, ORCA, PySCF | HF and DFT single points, in the browser |
 | Force fields and molecular dynamics | Schrödinger, OpenMM, RDKit | MMFF94/94s, UFF, NVE/NVT dynamics, normal modes |
 | Protein preparation | Schrödinger Protein Preparation, PDB2PQR, PROPKA | Repair, pKa, protonation and hydrogen placement |
+| Protein–ligand docking | AutoDock Vina, Glide, GOLD | Flexible ligand into a rigid receptor, poses ranked by an empirical score |
 | Combustion kinetics and equilibrium | Cantera, CHEMKIN | Stiff kinetics, CHEMKIN/YAML import, Gibbs minimisation |
 | Process simulation | Aspen Plus, HYSYS, DWSIM | Flash, unit operations, flowsheets with recycle, distillation |
 | Aqueous chemistry | PHREEQC, Visual MINTEQ | Speciation, saturation, minerals and gases |
@@ -157,6 +158,7 @@ Building these from scratch and getting them to agree with established programs 
 | Vapour pressures | NIST | 0.1–0.7 % for non-polar compounds |
 | Protein hydrogens | Deposited NMR structures | 0.06–0.14 Å RMS |
 | Free-energy estimators | pymbar | within 5×10⁻¹⁰ kT |
+| Protein–ligand docking | Deposited crystal poses (12 RCSB complexes) | 8 of 12 reproduced within 2 Å, median 0.79 Å |
 
 Details, methods and every exception are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The validation scripts
 are in [`scripts/`](scripts) and run with one command (`make validate`). The C++ test suite (251 tests) runs on
@@ -210,6 +212,7 @@ make -j8                 # or: scripts/build.sh (CMake if installed); Windows: s
 ./build/chemlarp equilibrate -T 2500 C 1 O=O 2 O=C=O 0 O 0 '[C-]#[O+]' 0
 ./build/chemlarp kinetics data/mechanisms/h2o2.ocm -m adiabatic-v -T 1000 -P 1 -t 1e-3 H2=2 O2=1 AR=7
 ./build/chemlarp protein 1crn.pdb --pH 7.4
+./build/chemlarp dock 3ptb.pdb 'NC(=N)c1ccccc1' --ref BEN --out poses.sdf  # protein-ligand docking
 ./build/chemlarp                                             # lists every command
 ```
 
@@ -228,6 +231,7 @@ chemlarp.embed("N[C@@H](C)C(=O)O")["sdf"]            # 3D molfile
 chemlarp.equilibrate({"[C-]#[O+]": 1, "O": 1, "O=C=O": 0, "[H][H]": 0}, temperature_K=1000)
 chemlarp.kinetics("data/mechanisms/h2o2.ocm", {"H2": 2, "O2": 1, "AR": 7}, 1000, 1e5, t_end=1e-3)["ignition_time"]
 chemlarp.protein("1crn.pdb", pH=7.4)
+chemlarp.dock("3ptb.pdb", "NC(=N)c1ccccc1", reference="BEN")["poses"][0]["affinity"]   # kcal/mol
 ```
 </details>
 

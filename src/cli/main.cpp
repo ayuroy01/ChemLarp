@@ -53,6 +53,7 @@
 #include "chemlarp/cip.hpp"
 #include "chemlarp/conformer.hpp"
 #include "chemlarp/depict.hpp"
+#include "chemlarp/docking.hpp"
 #include "chemlarp/uff.hpp"
 #include "chemlarp/elements.hpp"
 #include "chemlarp/eos.hpp"
@@ -111,6 +112,10 @@ int usage() {
       "                                  TIP3P water box (PME, NPT): density, energy, g_OO\n"
       "  chemlarp hydrate <SMILES|water> [--waters N] [-T K] [--equil ps] [--ps ps] [--seed N]\n"
       "                                  hydration free energy in explicit TIP3P water (kcal/mol)\n"
+      "  chemlarp dock <receptor.pdb|.cif|-> <SMILES|ligand.sdf> [--ref RES|file.sdf] [--centre x,y,z]\n"
+      "               [--size x,y,z] [--margin A] [--runs N] [--steps N] [--modes N] [--seed N] [--pH x]\n"
+      "               [--remove-waters] [--repair] [--file-hydrogens] [--out poses.sdf] [--json]\n"
+      "                                  protein-ligand docking: poses ranked by an empirical score (kcal/mol)\n"
       "  chemlarp lab <file|->           mix solutions: pH, heat, precipitates, gases, safety (include/chemlarp/lab.hpp)\n"
       "  chemlarp titrate <file|->       titration curve and equivalence points\n"
       "  chemlarp reagents               the virtual lab's reagent catalogue with GHS data\n"
@@ -1035,6 +1040,155 @@ int cmd_solvation(const std::vector<std::string>& args, bool hydrate) {
   return print_json(hydrate ? hydration_json(solute, o) : water_box_json(o, o.production_ps));
 }
 
+// chemlarp dock <receptor> <ligand>: protein-ligand docking (docking.hpp).
+int cmd_dock(const std::vector<std::string>& args) {
+  std::string receptor_path, ligand_arg, reference_arg, out_path;
+  DockJsonOptions o;
+  bool json = false;
+  auto three = [](const std::string& s, double& a, double& b, double& c) {
+    return std::sscanf(s.c_str(), "%lf,%lf,%lf", &a, &b, &c) == 3;
+  };
+  for (std::size_t i = 0; i < args.size(); ++i) {
+    const std::string& a = args[i];
+    auto next = [&]() -> const std::string& { return args[++i]; };
+    if (a == "--json") json = true;
+    else if (a == "--ref" && i + 1 < args.size()) reference_arg = next();
+    else if (a == "--centre" && i + 1 < args.size()) {
+      if (!three(next(), o.dock.box.cx, o.dock.box.cy, o.dock.box.cz)) return usage();
+    } else if (a == "--size" && i + 1 < args.size()) {
+      if (!three(next(), o.dock.box.sx, o.dock.box.sy, o.dock.box.sz)) return usage();
+      if (!(o.dock.box.sx > 0 && o.dock.box.sy > 0 && o.dock.box.sz > 0)) return usage();
+    } else if (a == "--margin" && i + 1 < args.size()) {
+      o.box_margin = std::atof(next().c_str());
+      if (!(o.box_margin >= 0)) return usage();
+    } else if (a == "--runs" && i + 1 < args.size()) {
+      o.dock.runs = std::atoi(next().c_str());
+      if (o.dock.runs < 1 || o.dock.runs > 256) return usage();
+    } else if (a == "--steps" && i + 1 < args.size()) {
+      o.dock.steps = std::atoi(next().c_str());
+      if (o.dock.steps < 1) return usage();
+    } else if (a == "--modes" && i + 1 < args.size()) {
+      o.dock.modes = std::atoi(next().c_str());
+      if (o.dock.modes < 1 || o.dock.modes > 100) return usage();
+    } else if (a == "--seed" && i + 1 < args.size()) {
+      o.dock.seed = std::strtoull(next().c_str(), nullptr, 10);
+    } else if ((a == "--pH" || a == "--ph") && i + 1 < args.size()) {
+      o.receptor.pH = std::atof(next().c_str());
+      if (!(o.receptor.pH >= 0 && o.receptor.pH <= 14)) return usage();
+    } else if (a == "--remove-waters") o.receptor.remove_waters = true;
+    else if (a == "--repair") o.receptor.repair = true;
+    else if (a == "--file-hydrogens") o.receptor.protonate = false;
+    else if (a == "--out" && i + 1 < args.size()) out_path = next();
+    else if (receptor_path.empty()) receptor_path = a;
+    else if (ligand_arg.empty()) ligand_arg = a;
+    else return usage();
+  }
+  if (receptor_path.empty() || ligand_arg.empty()) return usage();
+
+  std::string receptor;
+  if (!read_text_arg(receptor_path, receptor)) return 1;
+  // A ligand or reference that names a readable file is that file's contents; otherwise it is taken as it
+  // stands (a SMILES string, or a hetero residue name such as MK1).
+  auto as_text = [](const std::string& arg, std::string& text) {
+    std::ifstream in(arg, std::ios::binary);
+    if (!in) {
+      text = arg;
+      return;
+    }
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+  std::string ligand;
+  as_text(ligand_arg, ligand);
+  if (!reference_arg.empty()) as_text(reference_arg, o.reference);
+
+  if (json) {
+    o.poses_sdf = !out_path.empty();
+    return print_json(dock_json(receptor, ligand, o));
+  }
+
+  // The readable form: the same work through the C++ interface, so the poses can be printed as a table.
+  Diagnostics d;
+  const std::optional<Protein> protein = read_protein(receptor, d);
+  if (!protein) {
+    print_diagnostics(d, {});
+    return 1;
+  }
+  PointCloud reference_atoms;
+  std::optional<DockLigand> reference;
+  if (!o.reference.empty()) {
+    if (o.reference.find('\n') != std::string::npos) {
+      reference = ligand_from_molfile(o.reference, d, o.dock.seed);
+      if (!reference) {
+        print_diagnostics(d, {});
+        return 1;
+      }
+      for (std::uint32_t i : reference->heavy) reference_atoms.push_back(reference->coordinates[i]);
+    } else {
+      reference_atoms = protein_ligand_atoms(*protein, o.reference);
+      if (reference_atoms.empty()) {
+        std::fprintf(stderr, "error: no residue named %s in %s\n", o.reference.c_str(), receptor_path.c_str());
+        return 1;
+      }
+    }
+  }
+  if (!o.dock.box.valid()) {
+    if (reference_atoms.empty()) {
+      std::fprintf(stderr, "error: give --size (and --centre), or --ref to place the box around\n");
+      return 1;
+    }
+    o.dock.box = box_around(reference_atoms, o.box_margin);
+  }
+  const DockReceptor rec = prepare_receptor(*protein, o.receptor, reference_atoms, d);
+  if (rec.atoms.empty()) {
+    print_diagnostics(d, {});
+    return 1;
+  }
+  const std::optional<DockLigand> lig = ligand.find('\n') != std::string::npos
+                                            ? ligand_from_molfile(ligand, d, o.dock.seed)
+                                            : ligand_from_smiles(ligand, d, o.dock.seed);
+  if (!lig) {
+    print_diagnostics(d, ligand);
+    return 1;
+  }
+  const std::optional<DockResult> r = dock(rec, *lig, o.dock, d, reference ? &*reference : nullptr);
+  if (!r) {
+    print_diagnostics(d, {});
+    return 1;
+  }
+  std::printf("receptor  %zu atoms (%zu donors, %zu acceptors, %zu hydrophobic); %zu waters and %zu overlapping "
+              "hetero groups removed\n",
+              rec.atoms.size(), rec.donors, rec.acceptors, rec.hydrophobic, rec.waters_removed, rec.hetero_removed);
+  std::printf("ligand    %s: %zu heavy atoms, %zu rotatable bonds\n", lig->smiles.c_str(), lig->heavy_atoms(),
+              lig->rotatable_bonds());
+  std::printf("box       %.1f x %.1f x %.1f A at (%.2f, %.2f, %.2f)\n", r->box.sx, r->box.sy, r->box.sz, r->box.cx,
+              r->box.cy, r->box.cz);
+  std::printf("search    %d runs x %d steps, %zu evaluations, %.2f s\n\n", r->runs, r->steps, r->evaluations,
+              r->seconds);
+  std::printf("  pose  affinity   inter  ligand%s\n", reference ? "    rmsd" : "");
+  std::printf("        kcal/mol             own%s\n", reference ? "       A" : "");
+  for (std::size_t k = 0; k < r->poses.size(); ++k) {
+    const DockedPose& p = r->poses[k];
+    std::printf("  %4zu %9.2f %7.2f %7.2f", k + 1, p.affinity, p.intermolecular, p.internal);
+    if (reference) std::printf(" %7.2f", p.rmsd);
+    std::printf("\n");
+  }
+  if (r->has_reference)
+    std::printf("\nthe reference pose minimised where it stands: affinity %.2f, %.2f A from the pose given\n",
+                r->reference_affinity, r->reference_rmsd);
+  if (!out_path.empty()) {
+    std::ofstream out(out_path, std::ios::binary);
+    const std::string sdf = write_poses_sdf(*lig, r->poses);
+    out.write(sdf.data(), static_cast<std::streamsize>(sdf.size()));
+    if (!out) {
+      std::fprintf(stderr, "error: cannot write %s\n", out_path.c_str());
+      return 1;
+    }
+    std::printf("\n%zu poses written to %s\n", r->poses.size(), out_path.c_str());
+  }
+  print_diagnostics(d, {});
+  return 0;
+}
+
 int cmd_lab(const std::vector<std::string>& args, bool titration) {
   std::string text;
   if (args.size() != 1 || !read_text_arg(args[0], text)) return usage();
@@ -1506,6 +1660,7 @@ int main(int argc, char** argv) {
   if (cmd == "ghs" && !args.empty()) return cmd_ghs(args);
   if (cmd == "mmff" && !args.empty()) return cmd_mmff(args);
   if (cmd == "protein" && !args.empty()) return cmd_protein(args);
+  if (cmd == "dock" && !args.empty()) return cmd_dock(args);
   if (cmd == "depict" && !args.empty()) return cmd_depict(args);
   if (cmd == "inchi" && !args.empty()) return cmd_inchi(args);
   if (cmd == "name" && !args.empty()) return cmd_name(args);

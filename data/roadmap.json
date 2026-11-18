@@ -1,6 +1,6 @@
 {
   "title": "ChemLarp roadmap",
-  "updated": "2026-11-17",
+  "updated": "2026-11-18",
   "weights": {
     "S": 1,
     "M": 2.5,
@@ -137,7 +137,7 @@
         {
           "name": "Docking",
           "size": "M",
-          "status": "planned"
+          "status": "done"
         },
         {
           "name": "Free-energy perturbation (MBAR, BAR, TI; alchemical LJ)",

@@ -68,6 +68,7 @@ PATHS = {
     "centres_cdk_jar": ("centres-cdk jar", "jars/centres-cdk*.jar"),
     "smiles_file": ("SMILES list, one per line", "smiles.txt"),
     "freesolv_file": ("FreeSolv database.txt (github.com/MobleyLab/FreeSolv)", "freesolv/database.txt"),
+    "dock_dir": ("crystal complexes: <ID>.pdb with its ligand as <ID>_<CODE>.sdf", "dock"),
 }
 
 # Validations docs/ARCHITECTURE.md reports that no script here reproduces.
@@ -215,6 +216,15 @@ def suites():
             reference="published TIP3P liquid (Vega et al. 2009) and TIP3P self-hydration; FreeSolv experiment",
             needs=dict(build=["chemlarp"], paths=["freesolv_file"]),
             argv=lambda c: [c["python"], "scripts/validate_hydration.py", c["freesolv_file"]],
+        ),
+        dict(
+            id="docking",
+            title="Redocking crystal complexes (minutes)",
+            kind="independent",
+            modules=["Docking"],
+            reference="the deposited poses of twelve RCSB PDB complexes (heavy-atom RMSD under 2 A)",
+            needs=dict(build=["chemlarp"], paths=["dock_dir"]),
+            argv=lambda c: [c["python"], "scripts/validate_docking.py", c["dock_dir"]],
         ),
         dict(
             id="lab",

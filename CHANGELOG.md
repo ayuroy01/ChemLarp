@@ -7,6 +7,22 @@ and versions follow [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **Protein–ligand docking** (`include/chemlarp/docking.hpp`): a flexible ligand placed into a rigid
+  receptor. The scoring function has the form published for AutoDock Vina and is written from the paper —
+  gauss1, gauss2, repulsion, hydrophobic and hydrogen-bond terms in the surface distance over heavy-atom
+  pairs within 8 Å, X-Score atom types and radii, the affinity divided by the rotatable-bond factor. The
+  receptor's share is precomputed on 0.375 Å grid maps and read back by trilinear interpolation; the ligand
+  comes from SMILES (a conformation is generated) or from MOL/SDF (it is kept) and is varied over its
+  position, orientation and the torsions of a torsion tree; the search is Monte Carlo with a local L-BFGS
+  after every step on a landscape whose repulsion is squashed, Metropolis acceptance and independent runs in
+  parallel, and the poses are clustered by heavy-atom RMSD with the atoms matched by graph isomorphism.
+  New `chemlarp dock` command, `cl_dock_json` in the C API and `dock()` in Python. Redocking of twelve
+  crystal complexes is reported in `docs/ARCHITECTURE.md`, including the complexes it gets wrong.
+- Validation suite `docking` (`scripts/validate_docking.py`): the deposited pose of each complex against the
+  top-ranked docked pose, with each failure attributed to the search or to the scoring function.
+- Two more entry points in the fuzz target (docking receptors and ligands) and docking cases in
+  `tests/test_robustness.cpp`.
+
 - **Explicit water and hydration free energies** (`include/chemlarp/solvation.hpp`,
   `include/chemlarp/ewald.hpp`): rigid TIP3P water with SETTLE constraints, Ewald electrostatics with smooth
   particle-mesh Ewald over a mixed-radix FFT written for the project, Langevin BAOAB dynamics at 2 fs, a Monte

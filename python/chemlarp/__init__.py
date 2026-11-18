@@ -23,7 +23,7 @@ import platform
 from pathlib import Path
 from typing import Sequence
 
-__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "water_box", "hydration_free_energy", "lab_mix", "titrate", "lab_reagents", "ghs", "mmff", "protein", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
+__all__ = ["parse", "canonical", "depict", "inchi", "iupac_name", "read_molecules", "smarts_match", "similarity", "search", "qc", "embed", "flash", "vapor_pressure", "vle", "pure_component", "flowsheet", "solution", "molecular_dynamics", "lennard_jones", "mbar", "lj_solvation", "water_box", "hydration_free_energy", "lab_mix", "titrate", "lab_reagents", "ghs", "mmff", "protein", "dock", "kinetics", "check_reaction", "equilibrate", "System", "ChemLarpError", "library_path", "set_threads", "threads"]
 
 
 class ChemLarpError(RuntimeError):
@@ -109,6 +109,9 @@ _cl_protein = _sig("cl_protein_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c
 _cl_set_threads = _sig("cl_set_threads", None, ctypes.c_int)
 _cl_threads = _sig("cl_threads", ctypes.c_int)
 _cl_protein_opts = _sig("cl_protein_json_opts", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_double, ctypes.c_int)
+_cl_dock = _sig("cl_dock_json", ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_double,
+                ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_int,
+                ctypes.c_int, ctypes.c_int, ctypes.c_double, ctypes.c_uint, ctypes.c_int)
 _cl_mbar = _sig("cl_mbar_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_lab_mix = _sig("cl_lab_mix_json", ctypes.c_void_p, ctypes.c_char_p)
 _cl_lab_titration = _sig("cl_lab_titration_json", ctypes.c_void_p, ctypes.c_char_p)
@@ -478,6 +481,48 @@ def hydration_free_energy(solute: str, waters: int = 400, temperature: float = 2
     alchemical decoupling over lambda windows, analysed with MBAR (BAR and TI as checks). Slow: about a
     quarter of an hour for a small molecule on 8 cores at the defaults."""
     r = _take_json(_cl_hydration(solute.encode(), waters, temperature, equilibration_ps, production_ps, seed))
+    if not r["ok"]:
+        raise ChemLarpError(r["diagnostics"])
+    return r
+
+
+def dock(receptor: str, ligand: str, reference: str = "", centre=None, size=None, margin: float = 4.0,
+         runs: int = 8, steps: int = 0, modes: int = 9, pH: float = 7.4, seed: int = 42,
+         remove_waters: bool = False, repair: bool = False, file_hydrogens: bool = False) -> dict:
+    """Dock a flexible ligand into a rigid receptor and return the poses, best first, with their affinity in
+    kcal/mol (an empirical score in the style of AutoDock Vina; see include/chemlarp/docking.hpp).
+
+    `receptor` is PDB or mmCIF text, or a path to a .pdb, .ent or .cif file. `ligand` is a SMILES string (the
+    conformation is generated), or MOL/SDF text or a path to a .mol or .sdf file (the conformation is kept).
+    `reference` is optional and is either the name of a hetero residue of the receptor file ("MK1") or a known
+    pose as MOL/SDF text or a file: it places the search box, clears the hetero groups sharing that site, and
+    as a structure is the pose each result's "rmsd" is measured against.
+
+    `centre` and `size` are (x, y, z) in angstrom; leave them out to take the box from the reference ligand
+    plus `margin` on every side. `runs` is how many independent Monte Carlo runs to make (the usual
+    exhaustiveness knob), `steps` their length (0: 200 plus 100 per rotatable bond), `modes` how many poses
+    to report. Seconds to minutes of computation. A negative or absurd argument raises ChemLarpError rather
+    than falling back to the default. The waters a structure resolves are kept unless `remove_waters` is
+    set: they are part of the site, and dropping them costs accuracy (docs/ARCHITECTURE.md). `repair`
+    completes missing side chains first; `file_hydrogens` takes the donors from the hydrogens already in the
+    file instead of predicting the protonation at `pH`."""
+    def _text(arg, suffixes):
+        if arg and "\n" not in arg and arg.lower().endswith(suffixes):
+            with open(arg) as f:
+                return f.read()
+        return arg
+    receptor = _text(receptor, (".pdb", ".ent", ".cif", ".mmcif"))
+    ligand = _text(ligand, (".mol", ".sdf", ".smi"))
+    reference = _text(reference, (".mol", ".sdf"))
+    cx, cy, cz = centre if centre else (0.0, 0.0, 0.0)
+    sx, sy, sz = size if size else (0.0, 0.0, 0.0)
+    if size is None and not reference:
+        raise ChemLarpError("give size=(x, y, z), or a reference ligand to place the box around")
+    if margin < 0:
+        raise ChemLarpError("margin cannot be negative")
+    flags = (1 if remove_waters else 0) | (2 if repair else 0) | (4 if file_hydrogens else 0)
+    r = _take_json(_cl_dock(receptor.encode(), ligand.encode(), reference.encode(), cx, cy, cz, sx, sy, sz,
+                            runs, steps, modes, pH, seed, flags))
     if not r["ok"]:
         raise ChemLarpError(r["diagnostics"])
     return r
