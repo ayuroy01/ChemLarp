@@ -670,8 +670,15 @@ of up to about 3 kcal/mol and should not be used quantitatively.
 | The same molecule read from a file with its atoms in the opposite order | RMSD 0.00 Å (the isomorphism search matches the two orders) |
 | Rotatable bonds of twelve molecules (amides, rings, triple bonds, terminal methyls, biphenyl, benzamidine) | as expected in every case |
 | A redock into a synthetic hydrophobic slot, whose best pose is known by construction | the ring is found lying in the middle plane, centroid within 1 Å of it; the same seed repeats to 1e-12 |
+| A redock of benzamidine into trypsin (`data/dock`, PDB 3PTB) from its SMILES alone, in the test suite | top pose within 2 Å of the deposited one, affinity in the expected range, and the deposited pose stays put when minimised |
+| A box far larger than any site | the grid spacing widens so the maps stay inside memory, and the result reports the spacing used |
 
-**Redocking.** Twelve complexes from the RCSB PDB. The deposited ligand supplies only its chemical identity:
+**Redocking.** Twelve complexes from the RCSB PDB. One of them, 3PTB, is committed under `data/dock` and
+redocked by the C++ test suite (`docking_redocks_benzamidine_into_trypsin`), so every CI job — the sanitizer
+ones included — checks the whole job end to end on a real complex without downloading anything; the other
+eleven are named in `scripts/validate_docking.py` with the URLs to fetch them from.
+
+The deposited ligand supplies only its chemical identity:
 its canonical SMILES is read, a conformation is generated from scratch, and that molecule is docked into the
 structure with its own site cleared, so the crystal geometry is never an input. The top-ranked pose is then
 compared with the deposited one by heavy-atom RMSD with the atoms matched by graph isomorphism. Sixteen

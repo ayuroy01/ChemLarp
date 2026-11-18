@@ -7,6 +7,8 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -16,6 +18,14 @@
 using namespace chemlarp;
 
 namespace {
+
+// A file under data/, valid from any working directory.
+std::string read_data_file(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  std::stringstream ss;
+  ss << f.rdbuf();
+  return ss.str();
+}
 
 // --- the scoring function ---------------------------------------------------------------------
 
@@ -689,6 +699,62 @@ TEST(docking_rejects_impossible_requests) {
   CHECK(bad.has_errors());
   Diagnostics flat;
   CHECK(!ligand_from_molfile("not a molfile at all\n\n\n\n", flat).has_value());
+}
+
+// The whole job on a real complex, with the one structure the repository carries (data/dock, PDB entry
+// 3PTB: bovine beta-trypsin with benzamidine). The deposited ligand gives only its chemical identity — its
+// canonical SMILES — and a conformation is generated from scratch, so the crystal geometry is the reference
+// for the RMSD and never an input to the search. docs/ARCHITECTURE.md reports the other eleven complexes of
+// the set, which are not in the repository.
+TEST(docking_redocks_benzamidine_into_trypsin) {
+  const std::string pdb = read_data_file(cltest::data_path("dock/3PTB.pdb"));
+  const std::string sdf = read_data_file(cltest::data_path("dock/3PTB_BEN.sdf"));
+  CHECK(pdb.size() > 100000);
+  CHECK(sdf.size() > 500);
+
+  Diagnostics diag;
+  const std::optional<Protein> protein = read_protein(pdb, diag);
+  CHECK(protein.has_value());
+  const auto crystal = ligand_from_molfile(sdf, diag);
+  CHECK(crystal.has_value());
+  CHECK_EQ(crystal->smiles, std::string("N=C(N)c1ccccc1"));
+  CHECK_EQ(crystal->heavy_atoms(), 9u);
+
+  PointCloud site;
+  for (std::uint32_t i : crystal->heavy) site.push_back(crystal->coordinates[i]);
+  const DockReceptor rec = prepare_receptor(*protein, ReceptorOptions{}, site, diag);
+  // The ligand's own copy is cleared from the receptor; the calcium ion and the waters away from the site
+  // stay, since a resolved water is part of the structure.
+  CHECK_EQ(rec.hetero_removed, 1u);
+  CHECK_EQ(rec.waters_removed, 0u);
+  CHECK(rec.atoms.size() > 1600);
+  CHECK(rec.donors > 100 && rec.acceptors > 100 && rec.hydrophobic > 100);
+
+  // The molecule rebuilt from its SMILES, which is what gets docked.
+  const auto ligand = ligand_from_smiles(crystal->smiles, diag);
+  CHECK(ligand.has_value());
+  CHECK_EQ(ligand->heavy_atoms(), 9u);
+  CHECK_EQ(ligand->rotatable_bonds(), 1u);  // only the ring-to-amidine bond
+
+  DockOptions o;
+  o.box = box_around(site, 4.0);
+  o.runs = 4;
+  o.seed = 42;
+  const auto result = dock(rec, *ligand, o, diag, &*crystal);
+  CHECK(result.has_value());
+  CHECK(!result->poses.empty());
+  CHECK(result->has_reference);
+
+  const DockedPose& best = result->poses.front();
+  CHECK(best.rmsd >= 0);
+  CHECK(best.rmsd < 2.0);          // the crystal pose, reproduced
+  CHECK(best.affinity < -4.0);     // benzamidine in trypsin scores about -6 kcal/mol
+  CHECK(best.affinity > -12.0);
+  // The deposited pose, minimised where it stands, stays where it is and scores in the same range: that is
+  // the yardstick that tells a search failure from a scoring failure.
+  CHECK(result->reference_rmsd >= 0 && result->reference_rmsd < 1.0);
+  CHECK(result->reference_affinity < -4.0);
+  CHECK(!diag.has_errors());
 }
 
 TEST(docking_json_reports_a_run_and_refuses_bad_input) {

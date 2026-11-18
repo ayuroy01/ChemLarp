@@ -80,5 +80,5 @@ and web workflows. Last run 2026-11-17: of 34 audits, 23 are done and 11 partial
 | GHS classifications | `src/ghs_data.inc` | PubChem (mostly ECHA C&L Inventory) | PubChem: public; ECHA requires attribution and no implied endorsement |
 | Thermo (GRI-Mech 3.0), H₂/O₂ mechanism | `data/mechanisms/` | GRI-Mech (free with citation), Li et al. 2004 | credit given in the files |
 | Protein pKa fit | `src/protein_pka.inc` | PKAD-2 measured values | check the PKAD-2 licence; fitted weights only |
-| Test structures | `data/*.pdb`, `data/planar_chirality_cod.sdf` | RCSB PDB (CC0), COD (CC0) | free |
+| Test structures | `data/*.pdb`, `data/dock/3PTB.pdb`, `data/dock/3PTB_BEN.sdf`, `data/planar_chirality_cod.sdf` | RCSB PDB (CC0), COD (CC0) | free |
 | Lab incompatibility rules | `src/lab.cpp` | NRC *Prudent Practices in the Laboratory* (2011) | rules paraphrased with section citations, no text copied |

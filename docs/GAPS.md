@@ -215,7 +215,7 @@ modules with no independent suite. `make validate DATA=... PY=...`.
 | The runner does not run in CI: the reference data is not redistributable and the Python packages are not installed there | `.github/workflows/ci.yml` | A job could install thermo/rdkit/biopython and run the suites that need no downloads (md, rdkit-structure with a committed SMILES sample, mmff-rdkit). |
 | Tolerances live inside each script, so the report shows pass/fail but not how close each number was to its limit | the suite scripts | Have each script print a machine-readable line (name, value, tolerance) and collect those in the report. |
 | No history: each run overwrites the report, so a slow drift in an agreement rate is invisible | `scripts/validate.py` | Append a row per run to a CSV beside the report. |
-| The `docking` suite needs twelve PDB entries and their ligands, which are not in the repository and are not downloaded by the runner | `scripts/validate_docking.py`, `dock_dir` | The entries are named in the script with the RCSB URLs to fetch them from. A small committed subset (one or two complexes) would let CI run a redock. |
+| The `docking` suite needs twelve PDB entries and their ligands; only 3PTB is in the repository (`data/dock`), and the runner downloads nothing | `scripts/validate_docking.py`, `dock_dir` | The other eleven are named in the script with the RCSB URLs to fetch them from. The committed one is redocked by the C++ test suite in every CI job. |
 
 ## Canonical SMILES on very large structures (`src/canonical.cpp`)
 
@@ -257,7 +257,7 @@ reasons are in docs/ARCHITECTURE.md. What is left:
 | Ring conformations are frozen at the one the embedding produced, so a ligand whose bound form needs another ring pucker cannot reach it | `finish_ligand` | Dock an ensemble of embedded conformers and merge the pose lists. |
 | No binding free energies: the affinity is an empirical score, not a ΔG, and it is not calibrated against measurements | — | `solvation.hpp` has the free-energy machinery; what is missing is restraints and an absolute binding free-energy protocol on top of a docked pose. |
 | Ligands are capped at 300 heavy atoms, because generating a conformation smooths a full distance matrix | `kMaxLigandHeavyAtoms` | Reading a conformation from a file instead of generating one would lift the cap for peptide ligands. |
-| The suite needs twelve PDB entries that are not in the repository, so it cannot run in CI | `scripts/validate_docking.py` | Commit one small complex (3PTB is 183 kB and the ligand 1.5 kB, both public domain) and have CI redock it. |
+| Eleven of the twelve PDB entries are not in the repository, so only one complex is redocked in CI | `scripts/validate_docking.py`, `data/dock` | 3PTB and its benzamidine are committed and redocked by `docking_redocks_benzamidine_into_trypsin` in every CI job, the sanitizers included. The other eleven are named in the script with the URLs to fetch them from; adding a second small complex with a flexible ligand (1STP, 118 kB, five torsions) would cover the torsion tree end to end in CI as well. |
 
 ## Roadmap modules not started (data/roadmap.json)
 

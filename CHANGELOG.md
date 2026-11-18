@@ -19,7 +19,9 @@ and versions follow [semantic versioning](https://semver.org/).
   New `chemlarp dock` command, `cl_dock_json` in the C API and `dock()` in Python. Redocking of twelve
   crystal complexes is reported in `docs/ARCHITECTURE.md`, including the complexes it gets wrong.
 - Validation suite `docking` (`scripts/validate_docking.py`): the deposited pose of each complex against the
-  top-ranked docked pose, with each failure attributed to the search or to the scoring function.
+  top-ranked docked pose, with each failure attributed to the search or to the scoring function. One complex
+  (PDB 3PTB, trypsin with benzamidine) is committed under `data/dock` and redocked by the test suite, so
+  every CI job checks a real complex end to end without downloading anything.
 - Two more entry points in the fuzz target (docking receptors and ligands) and docking cases in
   `tests/test_robustness.cpp`.
 
